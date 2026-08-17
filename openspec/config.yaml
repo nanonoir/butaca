@@ -1,0 +1,61 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Next.js 16.3.1 (React 19.2.8), TypeScript, Tailwind CSS v4, Supabase, Drizzle ORM, Zod v4, Motion, AI SDK
+  Architecture: Modular Monolith (Route/Server Action -> Application Service -> Repository/Integration)
+  Testing: Vitest, Playwright, Testing Library, JSDOM
+  Style: Tailwind CSS 4, ESLint, Prettier
+
+testing:
+  strict_tdd: false
+  detected_date: "2026-08-17"
+  runner:
+    command: "pnpm test:run"
+    framework: "Vitest, Playwright"
+  layers:
+    unit:
+      available: true
+      tool: "Vitest"
+    integration:
+      available: true
+      tool: "Testing Library / React"
+    e2e:
+      available: true
+      tool: "Playwright"
+  coverage:
+    available: true
+    command: "pnpm exec vitest run --coverage"
+  quality_tools:
+    linter:
+      available: true
+      command: "pnpm lint"
+    type_checker:
+      available: true
+      command: "pnpm typecheck"
+    formatter:
+      available: true
+      command: "pnpm exec prettier --check ."
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    guidelines:
+      - Follow existing code patterns
+    tdd: false
+    test_command: "pnpm test:run"
+  verify:
+    test_command: "pnpm test:run"
+    build_command: "pnpm build"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas

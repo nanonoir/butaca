@@ -1,36 +1,117 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Film Match
 
-## Getting Started
+### Descubrí películas que realmente van con vos.
 
-First, run the development server:
+Film Match es una experiencia de descubrimiento cinematográfico que aprende de tus gustos, entiende tus reacciones y te ayuda a encontrar tu próxima película favorita.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+> **Estado:** MVP en construcción · películas solamente · recomendaciones basadas en contenido
+
+<p align="center">
+  <strong>Preferencias + Reacciones + Catálogo TMDB → Recomendaciones con criterio</strong>
+</p>
+
+## La idea
+
+Encontrar una buena película no debería sentirse como navegar infinitamente entre opciones. Film Match combina tus preferencias, tus likes y dislikes, y la información del catálogo de TMDB para construir recomendaciones relevantes sin convertir la experiencia en una caja negra.
+
+### Lo que estamos construyendo
+
+- **Onboarding con intención:** elegí géneros y películas que ya disfrutaste.
+- **Discover personalizado:** explorá candidatos ordenados por nuestro motor.
+- **Reacciones simples:** `LIKE` y `DISLIKE`, sin ruido ni watchlists innecesarias.
+- **Películas, no contenido genérico:** TMDB es nuestro catálogo canónico.
+- **Chat contextual:** conversá sobre recomendaciones usando el mismo motor que alimenta Discover.
+- **Reviews útiles:** compartí si una película vale la pena, con contexto real.
+
+## Stack
+
+| Capa | Tecnología |
+| --- | --- |
+| Aplicación | Next.js 16 · React 19 · TypeScript |
+| Estilos y motion | Tailwind CSS 4 · Motion |
+| Datos | Supabase · Drizzle ORM · PostgreSQL |
+| Validación | Zod 4 · contratos compartidos |
+| Catálogo | TMDB |
+| IA | AI SDK |
+| Testing | Vitest · Testing Library · Playwright |
+
+## Arquitectura
+
+El proyecto utiliza un **monolito modular**. La lógica de negocio no vive en los componentes ni en los handlers de ruta:
+
+```text
+Route / Server Action
+        ↓
+Application Service
+        ↓
+Repository / Integration
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+La estructura principal está organizada por responsabilidades y dominios:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+src/
+├── app/            # Routes, API endpoints and application shell
+├── contracts/      # Shared Zod schemas and inferred types
+├── db/             # Drizzle schema and migrations
+├── features/       # Domain-focused application logic
+├── integrations/   # Supabase and TMDB adapters
+├── fixtures/       # Validated development and test data
+└── lib/            # Shared infrastructure utilities
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Primeros pasos
 
-## Learn More
+### Requisitos
 
-To learn more about Next.js, take a look at the following resources:
+- Node.js 20+
+- pnpm 11+
+- Variables de entorno de Supabase, TMDB y los servicios de IA cuando sus módulos estén habilitados
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Instalación
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm install
+pnpm dev
+```
 
-## Deploy on Vercel
+Abrí [http://localhost:3000](http://localhost:3000) para ver la aplicación.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Comandos útiles
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+pnpm dev          # Servidor de desarrollo
+pnpm lint         # ESLint
+pnpm typecheck    # Verificación estricta de TypeScript
+pnpm test:run     # Suite de tests con Vitest
+pnpm build        # Build de producción
+```
+
+## Principios del producto
+
+- Las películas se identifican directamente por su ID de TMDB.
+- Un `LIKE` o `DISLIKE` excluye la película de Discover.
+- Cambiar entre `LIKE` y `DISLIKE` conserva `watchedAt`.
+- Quitar una reacción también quita `watchedAt`.
+- Las reviews no modifican las recomendaciones en V1.
+- Los contratos Zod son la fuente única de verdad para frontend y backend.
+
+## Documentación de decisiones
+
+El desarrollo se organiza con Spec-Driven Development:
+
+- [`openspec/specs/`](./openspec/specs/) — comportamiento y contratos aprobados.
+- [`openspec/changes/archive/`](./openspec/changes/archive/) — cambios implementados y verificados.
+
+## Calidad antes de integrar
+
+Antes de considerar una feature terminada:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test:run
+pnpm build
+```
+
+Film Match está empezando, pero la base ya está pensada para crecer sin perder claridad: contratos explícitos, dominios aislados y decisiones que se puedan explicar.

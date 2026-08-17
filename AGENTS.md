@@ -1,9 +1,167 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# AGENTS.md
 
-# This is NOT the Next.js you know
+## Project
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+Movie discovery and recommendation MVP built with Next.js, TypeScript, Supabase, Drizzle, Zod, TMDB, Motion, and AI SDK.
 
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+## Core Product Rules
 
-<!-- END:nextjs-agent-rules -->
+- Movies only; no TV shows in the MVP.
+- TMDB is the canonical movie catalog and its movie IDs are used directly.
+- `LIKE` and `DISLIKE` are the only persisted movie reactions.
+- `watchedAt` may exist with either `LIKE` or `DISLIKE` and must be preserved when switching reactions.
+- Removing a reaction also removes `watchedAt`.
+- The user's "Liked Movies" list is derived from `reaction = LIKE`.
+- No watchlist.
+- Reviews contain:
+  - `RECOMMENDED` or `NOT_WORTH_IT`
+  - title: 3–30 characters
+  - description: 10–400 characters
+- Reviews do not affect recommendations in V1.
+- A movie is excluded from Discover once it has a `LIKE` or `DISLIKE`.
+- Onboarding requires at least 2 genres and 3 liked movies.
+- Onboarding movies are stored as `LIKE` with `watchedAt = now()`.
+
+## Architecture
+
+Use a modular monolith.
+
+```text
+Route / Server Action
+        ↓
+Application Service
+        ↓
+Repository / Integration
+```
+
+Keep business logic out of React components and route handlers.
+
+Main areas:
+
+```text
+src/
+  app/
+  contracts/
+  db/
+  features/
+  integrations/
+  lib/
+  fixtures/
+```
+
+## Contracts
+
+- Zod schemas are the single source of truth.
+- Infer TypeScript types with `z.infer`.
+- Do not duplicate contract types manually.
+- Frontend and backend must consume the same contracts.
+- Validate all external input at boundaries.
+- Do not change a shared contract silently; update dependent code in the same PR.
+
+## TMDB
+
+- Access TMDB only through the TMDB integration layer.
+- Do not call TMDB directly from React components.
+- Keep TMDB naming/details inside the adapter.
+- Store image paths, not full TMDB image URLs.
+- Use TMDB for catalog/search/discovery metadata, not for user data.
+- Do not replicate the full TMDB catalog locally.
+- Local movie cache is disposable and never a source of truth.
+
+## Recommendation Engine
+
+MVP uses Content-Based Filtering only.
+
+```text
+Preferences + Likes + Dislikes
+        ↓
+Taste Profile
+        ↓
+Candidate Generation
+        ↓
+Local Ranking
+        ↓
+Discover
+```
+
+- TMDB may generate candidates.
+- Our application owns the final ranking.
+- Do not use TMDB Recommendations as the main recommender.
+- Do not add collaborative filtering, embeddings, or pgvector unless explicitly required.
+
+## AI Chat
+
+- Chat is not persisted in the MVP.
+- The LLM must use the existing Recommendation Service.
+- Do not implement a second recommendation algorithm inside the chat.
+- Prefer structured movie references over LLM-invented movie data.
+
+## Database
+
+User-owned data belongs in our database:
+
+- users
+- user preferences
+- movie interactions
+- reviews
+- optional movie cache
+
+Enforce important invariants in both Zod and the database when possible.
+
+## Git Workflow
+
+```text
+main
+  └── develop
+        └── feature/*
+```
+
+- Never develop directly on `main`.
+- Start feature branches from updated `develop`.
+- Keep branches short-lived and focused.
+- PRs target `develop`.
+- `develop` is merged into `main` for stable releases.
+
+Commit style:
+
+```text
+feat: ...
+fix: ...
+refactor: ...
+test: ...
+docs: ...
+chore: ...
+```
+
+## Code Quality
+
+Before opening a PR, run:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test:run
+pnpm build
+```
+
+Prefer:
+
+- small modules;
+- explicit names;
+- simple control flow;
+- server-side secrets;
+- reusable domain logic;
+- tests for recommendation and business rules.
+
+Avoid:
+
+- premature abstractions;
+- microservices;
+- duplicated types;
+- giant route handlers;
+- hidden side effects;
+- unnecessary dependencies.
+
+## Decision Rule
+
+For the MVP, choose the simplest implementation that satisfies the agreed contracts and preserves a clear path for future evolution.
