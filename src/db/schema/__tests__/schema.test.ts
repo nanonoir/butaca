@@ -3,7 +3,11 @@ import {
   extractTablesRelationalConfig,
   normalizeRelation,
 } from "drizzle-orm";
-import { getTableConfig, type AnyPgTable } from "drizzle-orm/pg-core";
+import {
+  getTableConfig,
+  PgDialect,
+  type AnyPgTable,
+} from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -197,6 +201,26 @@ describe("foundation database schema", () => {
         "movie_cache_language_length_check",
       ],
     });
+  });
+
+  it("rejects null preferred genre IDs", () => {
+    const positiveGenresCheck = getTableConfig(userPreferences).checks.find(
+      (constraint) =>
+        constraint.name === "user_preferences_positive_genres_check",
+    );
+
+    expect(positiveGenresCheck).toBeDefined();
+    if (!positiveGenresCheck) {
+      return;
+    }
+
+    const compiledSql = new PgDialect().sqlToQuery(
+      positiveGenresCheck.value,
+    ).sql;
+
+    expect(compiledSql).toBe(
+      'coalesce(0 < ALL("user_preferences"."preferred_genre_ids"), false)',
+    );
   });
 
   it("declares only the required non-unique indexes and sort order", () => {

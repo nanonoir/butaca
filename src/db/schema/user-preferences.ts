@@ -30,7 +30,7 @@ export const userPreferences = pgTable(
     ),
     check(
       "user_preferences_positive_genres_check",
-      sql`0 < ALL(${table.preferredGenreIds})`,
+      sql`coalesce(0 < ALL(${table.preferredGenreIds}), false)`,
     ),
   ],
 );
