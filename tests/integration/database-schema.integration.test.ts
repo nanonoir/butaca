@@ -45,15 +45,39 @@ it("verifies the approved public database schema", async () => {
         constraintName: string;
         constraintType: string;
         deleteAction: string | null;
+        localColumns: string[] | null;
+        referencedSchema: string | null;
+        referencedTable: string | null;
+        referencedColumns: string[] | null;
       }>`
           SELECT
             relation.relname AS "tableName",
             catalogConstraint.conname AS "constraintName",
             catalogConstraint.contype AS "constraintType",
-            CASE catalogConstraint.confdeltype WHEN 'c' THEN 'CASCADE' END AS "deleteAction"
+            CASE catalogConstraint.confdeltype WHEN 'c' THEN 'CASCADE' END AS "deleteAction",
+            CASE WHEN catalogConstraint.contype = 'f' THEN (
+              SELECT array_agg(localAttribute.attname ORDER BY localKey.ordinality)
+              FROM unnest(catalogConstraint.conkey) WITH ORDINALITY AS localKey(attnum, ordinality)
+              INNER JOIN pg_attribute AS localAttribute
+                ON localAttribute.attrelid = catalogConstraint.conrelid
+                AND localAttribute.attnum = localKey.attnum
+            ) END AS "localColumns",
+            referencedNamespace.nspname AS "referencedSchema",
+            referencedRelation.relname AS "referencedTable",
+            CASE WHEN catalogConstraint.contype = 'f' THEN (
+              SELECT array_agg(referencedAttribute.attname ORDER BY referencedKey.ordinality)
+              FROM unnest(catalogConstraint.confkey) WITH ORDINALITY AS referencedKey(attnum, ordinality)
+              INNER JOIN pg_attribute AS referencedAttribute
+                ON referencedAttribute.attrelid = catalogConstraint.confrelid
+                AND referencedAttribute.attnum = referencedKey.attnum
+            ) END AS "referencedColumns"
           FROM pg_constraint AS catalogConstraint
           INNER JOIN pg_class AS relation ON relation.oid = catalogConstraint.conrelid
           INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+          LEFT JOIN pg_class AS referencedRelation
+            ON referencedRelation.oid = catalogConstraint.confrelid
+          LEFT JOIN pg_namespace AS referencedNamespace
+            ON referencedNamespace.oid = referencedRelation.relnamespace
           WHERE namespace.nspname = 'public'
             AND relation.relname IN (
               'movie_cache', 'reviews', 'user_movie_interactions',
@@ -129,9 +153,18 @@ it("verifies the approved public database schema", async () => {
     grantee: row.grantee,
     privilegeType: row.privilegeType,
   }));
-  const authForeignKeyDeleteAction = constraintRows.find(
+  const normalizedConstraints = constraintRows.map(
+    ({ tableName, constraintName, constraintType, deleteAction }) => ({
+      tableName,
+      constraintName,
+      constraintType,
+      deleteAction,
+    }),
+  );
+  const authForeignKey = constraintRows.find(
     (row) => row.constraintName === "users_id_auth_users_id_fk",
-  )?.deleteAction;
+  );
+  const authForeignKeyDeleteAction = authForeignKey?.deleteAction;
 
   expect(publicTables).toEqual([
     "movie_cache",
@@ -142,7 +175,7 @@ it("verifies the approved public database schema", async () => {
   ]);
   expect(movieReactionValues).toEqual(["LIKE", "DISLIKE"]);
   expect(reviewVerdictValues).toEqual(["RECOMMENDED", "NOT_WORTH_IT"]);
-  expect(constraintRows).toEqual(
+  expect(normalizedConstraints).toEqual(
     [
       ["movie_cache", "movie_cache_language_length_check", "c", null],
       ["movie_cache", "movie_cache_movie_id_language_pk", "p", null],
@@ -220,5 +253,14 @@ it("verifies the approved public database schema", async () => {
   ]);
   expect(tablesWithoutRls).toEqual([]);
   expect(browserRoleGrants).toEqual([]);
+  expect(authForeignKey).toMatchObject({
+    tableName: "users",
+    localColumns: ["id"],
+    referencedSchema: "auth",
+    referencedTable: "users",
+    referencedColumns: ["id"],
+    constraintType: "f",
+    deleteAction: "CASCADE",
+  });
   expect(authForeignKeyDeleteAction).toBe("CASCADE");
 });
