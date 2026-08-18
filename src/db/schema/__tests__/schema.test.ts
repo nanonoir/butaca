@@ -10,7 +10,9 @@ import {
 } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
-import {
+import * as schema from "..";
+
+const {
   movieCache,
   movieReactionEnum,
   reviewVerdictEnum,
@@ -22,7 +24,9 @@ import {
   userPreferencesRelations,
   users,
   usersRelations,
-} from "..";
+} = schema;
+
+const pgDialect = new PgDialect();
 
 const getColumnNames = (table: AnyPgTable) =>
   getTableConfig(table).columns.map((column) => column.name);
@@ -43,6 +47,14 @@ const getPrimaryKeyColumns = (table: AnyPgTable) => {
 const getUniqueConstraintColumns = (table: AnyPgTable) =>
   getTableConfig(table).uniqueConstraints.map((constraint) =>
     constraint.columns.map((column) => column.name),
+  );
+
+const getCheckSqlByName = (table: AnyPgTable) =>
+  Object.fromEntries(
+    getTableConfig(table).checks.map((constraint) => [
+      constraint.name,
+      pgDialect.sqlToQuery(constraint.value).sql,
+    ]),
   );
 
 const getIndexSummary = (table: AnyPgTable) =>
@@ -70,7 +82,23 @@ const getForeignKeySummary = (table: AnyPgTable) =>
   });
 
 describe("foundation database schema", () => {
-  it("exports exactly the five public tables", () => {
+  it("exports only the approved runtime schema surface", () => {
+    expect(Object.keys(schema).sort()).toEqual([
+      "movieCache",
+      "movieReactionEnum",
+      "reviewVerdictEnum",
+      "reviews",
+      "reviewsRelations",
+      "userMovieInteractions",
+      "userMovieInteractionsRelations",
+      "userPreferences",
+      "userPreferencesRelations",
+      "users",
+      "usersRelations",
+    ]);
+  });
+
+  it("uses the five approved public table names", () => {
     expect(
       [users, userPreferences, userMovieInteractions, reviews, movieCache].map(
         (table) => getTableConfig(table).name,
@@ -167,60 +195,41 @@ describe("foundation database schema", () => {
     });
   });
 
-  it("declares the required checks", () => {
+  it("declares the exact SQL for every required check", () => {
     expect({
-      users: getTableConfig(users).checks.map((constraint) => constraint.name),
-      userPreferences: getTableConfig(userPreferences).checks.map(
-        (constraint) => constraint.name,
-      ),
-      userMovieInteractions: getTableConfig(userMovieInteractions).checks.map(
-        (constraint) => constraint.name,
-      ),
-      reviews: getTableConfig(reviews).checks.map(
-        (constraint) => constraint.name,
-      ),
-      movieCache: getTableConfig(movieCache).checks.map(
-        (constraint) => constraint.name,
-      ),
+      users: getCheckSqlByName(users),
+      userPreferences: getCheckSqlByName(userPreferences),
+      userMovieInteractions: getCheckSqlByName(userMovieInteractions),
+      reviews: getCheckSqlByName(reviews),
+      movieCache: getCheckSqlByName(movieCache),
     }).toEqual({
-      users: ["users_display_name_length_check"],
-      userPreferences: [
-        "user_preferences_minimum_genres_check",
-        "user_preferences_positive_genres_check",
-      ],
-      userMovieInteractions: [
-        "user_movie_interactions_movie_id_positive_check",
-      ],
-      reviews: [
-        "reviews_movie_id_positive_check",
-        "reviews_title_length_check",
-        "reviews_description_length_check",
-      ],
-      movieCache: [
-        "movie_cache_movie_id_positive_check",
-        "movie_cache_language_length_check",
-      ],
+      users: {
+        users_display_name_length_check:
+          'char_length(btrim("users"."display_name")) between 1 and 80',
+      },
+      userPreferences: {
+        user_preferences_minimum_genres_check:
+          'cardinality("user_preferences"."preferred_genre_ids") >= 2',
+        user_preferences_positive_genres_check:
+          'coalesce(0 < ALL("user_preferences"."preferred_genre_ids"), false)',
+      },
+      userMovieInteractions: {
+        user_movie_interactions_movie_id_positive_check:
+          '"user_movie_interactions"."movie_id" > 0',
+      },
+      reviews: {
+        reviews_movie_id_positive_check: '"reviews"."movie_id" > 0',
+        reviews_title_length_check:
+          'char_length(btrim("reviews"."title")) between 3 and 30',
+        reviews_description_length_check:
+          'char_length(btrim("reviews"."description")) between 10 and 400',
+      },
+      movieCache: {
+        movie_cache_movie_id_positive_check: '"movie_cache"."movie_id" > 0',
+        movie_cache_language_length_check:
+          'char_length(btrim("movie_cache"."language")) between 2 and 10',
+      },
     });
-  });
-
-  it("rejects null preferred genre IDs", () => {
-    const positiveGenresCheck = getTableConfig(userPreferences).checks.find(
-      (constraint) =>
-        constraint.name === "user_preferences_positive_genres_check",
-    );
-
-    expect(positiveGenresCheck).toBeDefined();
-    if (!positiveGenresCheck) {
-      return;
-    }
-
-    const compiledSql = new PgDialect().sqlToQuery(
-      positiveGenresCheck.value,
-    ).sql;
-
-    expect(compiledSql).toBe(
-      'coalesce(0 < ALL("user_preferences"."preferred_genre_ids"), false)',
-    );
   });
 
   it("declares only the required non-unique indexes and sort order", () => {
