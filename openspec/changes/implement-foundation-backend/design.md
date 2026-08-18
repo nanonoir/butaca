@@ -69,7 +69,11 @@ TMDB API
 
 Drizzle será la única vía de acceso de la aplicación a PostgreSQL. Las rutas y componentes futuros no importarán tablas ni clientes SQL. Los servicios consumirán repositorios.
 
-Supabase Data API permanecerá desactivada. Las migraciones no otorgarán privilegios a `anon` ni `authenticated`. Cada tabla pública tendrá RLS habilitada como defensa adicional y no tendrá policies mientras no exista acceso mediante Data API.
+Supabase Data API permanecerá desactivada. Las migraciones no otorgarán privilegios a `anon` ni `authenticated`. Cada tabla pública tendrá RLS habilitada y no tendrá policies mientras no exista acceso mediante Data API.
+
+La conexión Drizzle usa el rol administrativo `postgres`, que puede omitir RLS. Por eso RLS no autoriza las consultas del runtime. Su función en esta fase es bloquear una exposición accidental mediante Data API. Los servicios autorizarán cada operación y los repositorios exigirán `userId` en todas las consultas y mutaciones de datos privados.
+
+Las lecturas comunitarias de reviews y el cache global quedan fuera de esa regla. Las mutaciones de reviews siempre incluirán el usuario propietario en el filtro SQL.
 
 ### 3.2 Separación de conexiones
 
@@ -93,14 +97,16 @@ Supabase Auth signUp
         ↓
 AuthService.ensureUserProfile
         ↓
-UserRepository upsert por authUserId
+UserRepository upsert por authUser.id
         ↓
 Usuario autenticado de aplicación
 ```
 
-No se crearán triggers sobre `auth.users`. `AuthService` ejecutará `ensureUserProfile` después de un registro o login exitoso. La operación usará un upsert por `authUserId`; así, el login puede reparar una alta parcial sin duplicar registros.
+No se crearán triggers sobre `auth.users`. `AuthService` ejecutará `ensureUserProfile` después de un registro o login exitoso. La operación usará un upsert por `authUser.id`; así, el login puede reparar una alta parcial sin duplicar registros.
 
-`getCurrentUser()` será de sólo lectura: validará la identidad con `supabase.auth.getUser()` y buscará el usuario interno por `authUserId`. Devolverá `null` cuando no exista autenticación y lanzará un error interno `UserProfileNotProvisionedError` si Auth contiene al usuario pero falta su perfil local. `requireCurrentUser()` convertirá el caso no autenticado en un error estable. Ninguna API futura aceptará `userId` en el request.
+`getCurrentUser()` será de sólo lectura: validará el JWT con `supabase.auth.getClaims()`, validará `claims.sub` como UUID y buscará `users.id = claims.sub`. Devolverá `null` cuando no exista autenticación y lanzará un error interno `UserProfileNotProvisionedError` si Auth contiene al usuario pero falta su perfil local. `requireCurrentUser()` convertirá el caso no autenticado en un error estable. Ninguna API futura aceptará `userId` en el request.
+
+`getUser()` se reservará para operaciones que necesiten email, metadata actualizada o confirmación explícita contra el servidor de Auth.
 
 ```mermaid
 sequenceDiagram
@@ -137,6 +143,14 @@ La URL y la publishable key podrán llegar al cliente browser. Las URLs PostgreS
 
 `.env.example` documentará los nombres sin valores reales. Cada desarrollador guardará sus credenciales en `.env.local`, que permanece ignorado por Git.
 
+La suite de integración cargará una variable adicional desde `.env.integration.local`:
+
+```text
+SUPABASE_TEST_SECRET_KEY
+```
+
+El runtime no declarará ni importará esa variable. Un helper exclusivo de tests creará un cliente administrativo sin persistencia de sesión y lo usará sólo para limpiar usuarios temporales.
+
 ## 5. Supabase Auth
 
 La infraestructura incluirá:
@@ -144,12 +158,12 @@ La infraestructura incluirá:
 - Factory browser basada en `createBrowserClient`.
 - Factory server basada en `createServerClient` y cookies de Next.js.
 - Utilidad de renovación de sesión usada desde `src/proxy.ts`.
-- Servicio server-side para registro, login, logout, current user y protección de recursos.
+- Servicio server-side para registro, login, logout, current user y protección de recursos mediante `getClaims()`.
 - Errores internos estables para credenciales inválidas, usuario no autenticado y perfil local no disponible.
 
 El proyecto de desarrollo usa email y contraseña con confirmación de correo desactivada. La documentación exigirá confirmación y SMTP propio antes de un entorno productivo.
 
-No se incorporarán OAuth, service-role key ni operaciones administrativas al runtime.
+No se incorporarán OAuth, secret key ni operaciones administrativas al runtime.
 
 ## 6. Modelo de datos
 
@@ -162,15 +176,16 @@ review_verdict: RECOMMENDED | NOT_WORTH_IT
 
 ### 6.2 `users`
 
-| Columna                   | Tipo        | Restricciones                                           |
-| ------------------------- | ----------- | ------------------------------------------------------- |
-| `id`                      | UUID        | PK, default aleatorio                                   |
-| `auth_user_id`            | UUID        | not null, unique, FK `auth.users(id)` on delete cascade |
-| `display_name`            | varchar(80) | not null, longitud 1..80                                |
-| `avatar_url`              | text        | nullable                                                |
-| `onboarding_completed_at` | timestamptz | nullable                                                |
-| `created_at`              | timestamptz | not null, default now                                   |
-| `updated_at`              | timestamptz | not null, default now                                   |
+| Columna                   | Tipo        | Restricciones                              |
+| ------------------------- | ----------- | ------------------------------------------ |
+| `id`                      | UUID        | PK y FK `auth.users(id)` on delete cascade |
+| `display_name`            | varchar(80) | not null, longitud 1..80                   |
+| `avatar_url`              | text        | nullable                                   |
+| `onboarding_completed_at` | timestamptz | nullable                                   |
+| `created_at`              | timestamptz | not null, default now                      |
+| `updated_at`              | timestamptz | not null, default now                      |
+
+`users.id` será exactamente el UUID emitido por Supabase Auth. No existirá `auth_user_id`; todas las tablas propiedad del usuario referenciarán directamente `users.id`. El MVP acepta este acoplamiento para evitar una capa de traducción sin uso actual.
 
 ### 6.3 `user_preferences`
 
@@ -233,10 +248,11 @@ Los repositorios actualizarán `updated_at`. El diseño no agrega triggers para 
 
 Cada repositorio recibirá una conexión Drizzle. Las operaciones no contendrán lógica de UI, recomendación ni orquestación de features.
 
+Los métodos sobre preferencias e interacciones recibirán `userId` como argumento obligatorio y lo incluirán en el filtro SQL. `ReviewRepository.update`, `upsert` y `delete` también exigirán `userId`; `findByMovie` y `countByVerdict` podrán consultar datos comunitarios sin ese filtro. `MovieCacheRepository` operará sobre datos globales.
+
 ### `UserRepository`
 
 - `findById`
-- `findByAuthUserId`
 - `create`
 - `update`
 - `upsertFromAuthUser`
@@ -414,10 +430,11 @@ Vitest incluirá todos los tests bajo `src/`, no sólo `src/contracts/`.
 - Aplicación reproducible de migraciones.
 - Tablas, enums, constraints, foreign keys, índices y RLS.
 - Operaciones de los cinco repositorios.
-- Registro, login, current user y limpieza del usuario temporal.
+- Registro, login y current user mediante el flujo público normal.
+- Limpieza del usuario temporal mediante un cliente administrativo exclusivo de tests.
 - `getGenres`, `searchMovies`, `getMovieDetail`, `discoverMovies` y `getSimilarMovies` contra TMDB.
 
-Los datos temporales usarán identificadores únicos y se eliminarán al finalizar. La suite fallará con un mensaje claro si falta configuración y no registrará valores sensibles.
+Los datos temporales usarán identificadores únicos y se eliminarán en un bloque `finally`. La suite fallará con un mensaje claro si falta `SUPABASE_TEST_SECRET_KEY` u otra configuración y no registrará valores sensibles. El proyecto de desarrollo servirá para estas pruebas locales; un proyecto Supabase separado quedará como requisito futuro para CI o ejecución paralela.
 
 ### 10.3 TDD y excepciones
 
@@ -464,11 +481,12 @@ La entrega documentará:
 | Credencial incluida en Git o logs      | `.env.local` ignorado, schema server-only y revisión del diff antes de cada commit |
 | Runtime usa la conexión de migraciones | Variables separadas y módulos de configuración separados                           |
 | Alta Auth sin usuario local            | Upsert idempotente y operación explícita de reprovisión                            |
-| Tabla pública accesible por error      | Data API desactivada, sin grants y RLS habilitada                                  |
+| Query privada sin scope de usuario     | Servicios autorizan y métodos privados exigen `userId` en el filtro SQL            |
+| Tabla pública accesible por Data API   | Data API desactivada, sin grants y RLS habilitada                                  |
 | Cambio inesperado del payload TMDB     | Schemas privados Zod y error `INVALID_RESPONSE`                                    |
 | Ausencia de trailer                    | Contrato nullable y selección sin lanzar error                                     |
 | Cache corrupto o vencido               | Validar, eliminar y reconstruir desde TMDB                                         |
-| Tests dejan datos remotos              | IDs únicos, cleanup en `finally` y reporte explícito si falla                      |
+| Tests dejan datos remotos              | Secret key aislada, cleanup en `finally` y reporte explícito si falla              |
 
 ## 14. Criterios de aceptación
 
