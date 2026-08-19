@@ -3,11 +3,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { PAGE_SIZE } from "../../src/contracts/common";
 import {
+  ReviewRepository,
   UserMovieInteractionRepository,
   UserPreferencesRepository,
   UserRepository,
 } from "../../src/db/repositories";
 import {
+  reviews,
   userMovieInteractions,
   userPreferences,
   users,
@@ -19,7 +21,9 @@ let database: ReturnType<typeof createIntegrationDatabase> | undefined;
 let userRepository: UserRepository | undefined;
 let userPreferencesRepository: UserPreferencesRepository | undefined;
 let userMovieInteractionRepository: UserMovieInteractionRepository | undefined;
+let reviewRepository: ReviewRepository | undefined;
 const task6AuthUserIds: string[] = [];
+const task7AuthUserIds: string[] = [];
 
 beforeAll(() => {
   database = createIntegrationDatabase();
@@ -62,6 +66,14 @@ function getUserMovieInteractionRepository() {
   return userMovieInteractionRepository;
 }
 
+function getReviewRepository() {
+  if (!reviewRepository) {
+    throw new Error("Review repository was not created");
+  }
+
+  return reviewRepository;
+}
+
 function getTask6AuthUserId(index: number) {
   const userId = task6AuthUserIds[index];
 
@@ -72,9 +84,19 @@ function getTask6AuthUserId(index: number) {
   return userId;
 }
 
-async function expectCheckConstraintViolation(
+function getTask7AuthUserId(index: number) {
+  const userId = task7AuthUserIds[index];
+
+  if (!userId) {
+    throw new Error("Task 7 Auth user was not created");
+  }
+
+  return userId;
+}
+
+async function expectDatabaseViolation(
   operation: Promise<unknown>,
-  constraintName: string,
+  expected: { code: string; constraintName: string | undefined },
 ) {
   let databaseError: { code: unknown; constraintName: unknown } | undefined;
 
@@ -93,7 +115,17 @@ async function expectCheckConstraintViolation(
     }
   }
 
-  expect(databaseError).toEqual({ code: "23514", constraintName });
+  expect(databaseError).toEqual(expected);
+}
+
+async function expectCheckConstraintViolation(
+  operation: Promise<unknown>,
+  constraintName: string,
+) {
+  await expectDatabaseViolation(operation, {
+    code: "23514",
+    constraintName,
+  });
 }
 
 async function cleanupTask6AuthUsers() {
@@ -108,6 +140,24 @@ async function cleanupTask6AuthUsers() {
 
     if (result.status === "rejected" && userId) {
       task6AuthUserIds.push(userId);
+    }
+  });
+
+  return cleanupResults.every((result) => result.status === "fulfilled");
+}
+
+async function cleanupTask7AuthUsers() {
+  const userIds = [...task7AuthUserIds];
+  const cleanupResults = await Promise.allSettled(
+    userIds.map((userId) => deleteTestAuthUser(userId)),
+  );
+
+  task7AuthUserIds.length = 0;
+  cleanupResults.forEach((result, index) => {
+    const userId = userIds[index];
+
+    if (result.status === "rejected" && userId) {
+      task7AuthUserIds.push(userId);
     }
   });
 
@@ -601,5 +651,330 @@ describe("Task 6 repositories", () => {
         await repository.findByUserAndMovie(userId, invalidMovieId),
       ).toBeNull();
     }
+  });
+});
+
+describe("Task 7 repositories", () => {
+  beforeAll(async () => {
+    reviewRepository = new ReviewRepository(getDatabase());
+
+    try {
+      for (const displayName of ["Task 7 primary", "Task 7 secondary"]) {
+        const authUser = await createTestAuthUser();
+        task7AuthUserIds.push(authUser.id);
+        await getUserRepository().create({
+          id: authUser.id,
+          displayName,
+          avatarUrl: null,
+        });
+      }
+    } catch {
+      await cleanupTask7AuthUsers();
+      throw new Error("Could not set up Task 7 fixtures");
+    }
+  });
+
+  afterAll(async () => {
+    if (!(await cleanupTask7AuthUsers())) {
+      throw new Error("Could not clean up Task 7 Auth users");
+    }
+  });
+
+  beforeEach(async () => {
+    await getDatabase()
+      .delete(reviews)
+      .where(inArray(reviews.userId, task7AuthUserIds));
+  });
+
+  it("creates and finds one review per user and movie", async () => {
+    const userId = getTask7AuthUserId(0);
+    const otherUserId = getTask7AuthUserId(1);
+    const repository = getReviewRepository();
+    const movieId = 7_001;
+    const input = {
+      verdict: "RECOMMENDED" as const,
+      title: "Strong recommendation",
+      description: "A thoughtful community recommendation.",
+    };
+
+    const created = await repository.create(userId, movieId, input);
+    const otherUserReview = await repository.create(otherUserId, movieId, {
+      verdict: "NOT_WORTH_IT",
+      title: "Different opinion",
+      description: "The second viewer had a different experience.",
+    });
+    const sameUserOtherMovie = await repository.create(userId, movieId + 1, {
+      verdict: "RECOMMENDED",
+      title: "Another movie",
+      description: "The same viewer reviewed a different movie too.",
+    });
+
+    await expectDatabaseViolation(repository.create(userId, movieId, input), {
+      code: "23505",
+      constraintName: "reviews_user_id_movie_id_unique",
+    });
+
+    expect(created).toMatchObject({ userId, movieId, ...input });
+    expect(await repository.findById(created.id)).toEqual(created);
+    expect(await repository.findByUserAndMovie(userId, movieId)).toEqual(
+      created,
+    );
+    expect(await repository.findByUserAndMovie(otherUserId, movieId)).toEqual(
+      otherUserReview,
+    );
+    expect(await repository.findByUserAndMovie(userId, movieId + 1)).toEqual(
+      sameUserOtherMovie,
+    );
+  });
+
+  it("updates and deletes only when userId owns the review", async () => {
+    const userId = getTask7AuthUserId(0);
+    const otherUserId = getTask7AuthUserId(1);
+    const repository = getReviewRepository();
+    const previousUpdatedAt = new Date("2000-01-01T00:00:00.000Z");
+    const created = await repository.create(userId, 7_002, {
+      verdict: "RECOMMENDED",
+      title: "Original review",
+      description: "This is the original review description.",
+    });
+    const otherUserReview = await repository.create(otherUserId, 7_002, {
+      verdict: "RECOMMENDED",
+      title: "Other owner review",
+      description: "This review belongs to the other fixture user.",
+    });
+
+    await getDatabase()
+      .update(reviews)
+      .set({ updatedAt: previousUpdatedAt })
+      .where(eq(reviews.id, created.id));
+
+    const wrongOwnerUpdate = await repository.update(otherUserId, created.id, {
+      verdict: "NOT_WORTH_IT",
+      title: "Unauthorized change",
+      description: "This change must not be persisted by the repository.",
+    });
+    const unchanged = await repository.findById(created.id);
+    const updated = await repository.update(userId, created.id, {
+      verdict: "NOT_WORTH_IT",
+      title: "Updated review",
+      description: "The owner changed the community review content.",
+    });
+    const wrongOwnerDelete = await repository.delete(otherUserId, created.id);
+    const otherUserUnchanged = await repository.findById(otherUserReview.id);
+
+    expect(wrongOwnerUpdate).toBeNull();
+    expect(unchanged).toMatchObject({
+      userId,
+      verdict: "RECOMMENDED",
+      title: "Original review",
+      updatedAt: previousUpdatedAt,
+    });
+    expect(updated).toMatchObject({
+      id: created.id,
+      userId,
+      verdict: "NOT_WORTH_IT",
+      title: "Updated review",
+    });
+    expect(updated?.updatedAt.getTime()).toBeGreaterThan(
+      previousUpdatedAt.getTime(),
+    );
+    expect(wrongOwnerDelete).toBe(false);
+    expect(otherUserUnchanged).toEqual(otherUserReview);
+    expect(await repository.findById(created.id)).toEqual(updated);
+    expect(await repository.delete(userId, created.id)).toBe(true);
+    expect(await repository.findById(created.id)).toBeNull();
+    expect(await repository.delete(userId, created.id)).toBe(false);
+  });
+
+  it("upserts without creating a duplicate review", async () => {
+    const userId = getTask7AuthUserId(0);
+    const repository = getReviewRepository();
+    const movieId = 7_003;
+    const previousUpdatedAt = new Date("2000-01-01T00:00:00.000Z");
+    const created = await repository.upsert(userId, movieId, {
+      verdict: "RECOMMENDED",
+      title: "Initial review",
+      description: "This is the initial review description.",
+    });
+
+    await getDatabase()
+      .update(reviews)
+      .set({ updatedAt: previousUpdatedAt })
+      .where(eq(reviews.id, created.id));
+
+    const upserted = await repository.upsert(userId, movieId, {
+      verdict: "NOT_WORTH_IT",
+      title: "Replacement review",
+      description: "This content replaces the initial review cleanly.",
+    });
+    const storedReviews = await getDatabase()
+      .select()
+      .from(reviews)
+      .where(and(eq(reviews.userId, userId), eq(reviews.movieId, movieId)));
+
+    expect(upserted).toMatchObject({
+      id: created.id,
+      userId,
+      movieId,
+      verdict: "NOT_WORTH_IT",
+      title: "Replacement review",
+      description: "This content replaces the initial review cleanly.",
+      createdAt: created.createdAt,
+    });
+    expect(upserted.updatedAt.getTime()).toBeGreaterThan(
+      previousUpdatedAt.getTime(),
+    );
+    expect(storedReviews).toEqual([upserted]);
+  });
+
+  it("findByMovie returns community reviews with author data by page", async () => {
+    const userId = getTask7AuthUserId(0);
+    const otherUserId = getTask7AuthUserId(1);
+    const repository = getReviewRepository();
+    const movieId = 7_004;
+    const older = await repository.create(userId, movieId, {
+      verdict: "RECOMMENDED",
+      title: "Older review",
+      description: "This community review was created first.",
+    });
+    const newer = await repository.create(otherUserId, movieId, {
+      verdict: "NOT_WORTH_IT",
+      title: "Newer review",
+      description: "This community review was created more recently.",
+    });
+    const unrelatedMovie = await repository.create(userId, movieId + 1, {
+      verdict: "RECOMMENDED",
+      title: "Unrelated movie",
+      description: "This review must not appear for the selected movie.",
+    });
+
+    await getDatabase()
+      .update(reviews)
+      .set({ createdAt: new Date("2026-01-01T00:00:00.000Z") })
+      .where(eq(reviews.id, older.id));
+    await getDatabase()
+      .update(reviews)
+      .set({ createdAt: new Date("2026-01-02T00:00:00.000Z") })
+      .where(eq(reviews.id, newer.id));
+    await getDatabase()
+      .update(reviews)
+      .set({ createdAt: new Date("2026-01-03T00:00:00.000Z") })
+      .where(eq(reviews.id, unrelatedMovie.id));
+
+    const defaultPage = await repository.findByMovie(movieId);
+    const firstPage = await repository.findByMovie(movieId, 1);
+    const secondPage = await repository.findByMovie(movieId, 2);
+
+    expect(defaultPage).toEqual(firstPage);
+    expect(
+      firstPage.map(({ review, author }) => ({
+        reviewId: review.id,
+        author,
+      })),
+    ).toEqual([
+      {
+        reviewId: newer.id,
+        author: { displayName: "Task 7 secondary", avatarUrl: null },
+      },
+      {
+        reviewId: older.id,
+        author: { displayName: "Task 7 primary", avatarUrl: null },
+      },
+    ]);
+    expect(firstPage[0]?.review).toMatchObject({
+      movieId,
+      verdict: "NOT_WORTH_IT",
+      title: "Newer review",
+    });
+    expect(secondPage).toEqual([]);
+  });
+
+  it("countByVerdict aggregates both approved verdicts", async () => {
+    const userId = getTask7AuthUserId(0);
+    const otherUserId = getTask7AuthUserId(1);
+    const repository = getReviewRepository();
+    const movieId = 7_005;
+
+    await repository.create(userId, movieId, {
+      verdict: "RECOMMENDED",
+      title: "Recommended review",
+      description: "This viewer recommends the selected movie.",
+    });
+    await repository.create(otherUserId, movieId, {
+      verdict: "NOT_WORTH_IT",
+      title: "Critical review",
+      description: "This viewer does not recommend the selected movie.",
+    });
+
+    expect(await repository.countByVerdict(movieId)).toEqual({
+      recommended: 1,
+      notWorthIt: 1,
+    });
+    expect(await repository.countByVerdict(7_006)).toEqual({
+      recommended: 0,
+      notWorthIt: 0,
+    });
+  });
+
+  it("enforces title and description lengths in PostgreSQL", async () => {
+    const userId = getTask7AuthUserId(0);
+    const repository = getReviewRepository();
+    const validInput = {
+      verdict: "RECOMMENDED" as const,
+      title: "Valid review",
+      description: "This description has a valid database length.",
+    };
+    const invalidCases = [
+      {
+        movieId: 7_007,
+        input: { ...validInput, title: "ab" },
+        expected: {
+          code: "23514",
+          constraintName: "reviews_title_length_check",
+        },
+      },
+      {
+        movieId: 7_008,
+        input: { ...validInput, title: "t".repeat(31) },
+        expected: { code: "22001", constraintName: undefined },
+      },
+      {
+        movieId: 7_009,
+        input: { ...validInput, description: "d".repeat(9) },
+        expected: {
+          code: "23514",
+          constraintName: "reviews_description_length_check",
+        },
+      },
+      {
+        movieId: 7_010,
+        input: { ...validInput, description: "d".repeat(401) },
+        expected: { code: "22001", constraintName: undefined },
+      },
+    ];
+
+    for (const { movieId, input, expected } of invalidCases) {
+      await expectDatabaseViolation(
+        repository.create(userId, movieId, input),
+        expected,
+      );
+      expect(await repository.findByUserAndMovie(userId, movieId)).toBeNull();
+    }
+
+    const minimum = await repository.create(userId, 7_011, {
+      verdict: "RECOMMENDED",
+      title: "abc",
+      description: "d".repeat(10),
+    });
+    const maximum = await repository.create(userId, 7_012, {
+      verdict: "NOT_WORTH_IT",
+      title: "t".repeat(30),
+      description: "d".repeat(400),
+    });
+
+    expect(minimum.title).toHaveLength(3);
+    expect(minimum.description).toHaveLength(10);
+    expect(maximum.title).toHaveLength(30);
+    expect(maximum.description).toHaveLength(400);
   });
 });
