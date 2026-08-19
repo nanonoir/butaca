@@ -45,6 +45,8 @@ next-env.d.ts
 
 # local AI tooling
 /.atl/
+.codegraph
+.playwright-mcp
 
 # editor files
 .idea/
