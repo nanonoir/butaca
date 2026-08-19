@@ -2,14 +2,13 @@ import "server-only";
 
 import { and, desc, eq } from "drizzle-orm";
 
+import { PAGE_SIZE } from "../../contracts/common";
 import type { MovieReaction } from "../../contracts/interactions";
 import type { Database } from "../client";
 import {
   type UserMovieInteractionRecord,
   userMovieInteractions,
 } from "../schema/user-movie-interactions";
-
-const PAGE_SIZE = 20;
 
 export class UserMovieInteractionRepository {
   constructor(private readonly db: Database) {}
