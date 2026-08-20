@@ -5,6 +5,7 @@ import {
   GenreSchema,
   MovieDetailSchema,
   SearchMoviesResponseSchema,
+  type RecommendationFilters,
 } from "../../../contracts";
 import genresFixture from "../../../fixtures/tmdb/genres.json";
 import movieDetailFixture from "../../../fixtures/tmdb/movie-detail.json";
@@ -673,14 +674,16 @@ describe("TmdbAdapter.getMovieDetail", () => {
 });
 
 describe("TmdbAdapter.discoverMovies", () => {
-  it("derives a public options type with a required page and no similar movie filter", () => {
-    type PageField = Pick<TmdbDiscoverOptions, "page">;
-    type PageIsRequired = PageField extends Required<PageField> ? true : false;
-    type HasSimilarMovieId =
-      "similarToMovieId" extends keyof TmdbDiscoverOptions ? true : false;
+  it("derives the exact public options type without the similar movie filter", () => {
+    type ExpectedDiscoverOptions = Omit<
+      RecommendationFilters,
+      "similarToMovieId"
+    > & { page: number };
+    type Flatten<T> = { [Key in keyof T]: T[Key] };
 
-    expectTypeOf<PageIsRequired>().toEqualTypeOf<true>();
-    expectTypeOf<HasSimilarMovieId>().toEqualTypeOf<false>();
+    expectTypeOf<TmdbDiscoverOptions>().toEqualTypeOf<
+      Flatten<ExpectedDiscoverOptions>
+    >();
   });
 
   it("maps every filter exactly while preserving array order, duplicates and zeroes", async () => {
@@ -757,8 +760,10 @@ describe("TmdbAdapter.discoverMovies", () => {
       { minRuntime: 121, maxRuntime: 120, page: 1 },
     ],
     ["an invalid page", { page: 0 }],
+    ["a fractional page", { page: 1.5 }],
   ])("rejects %s before calling the client", async (_label, input) => {
     const client = createClientDouble();
+    client.discoverMovies.mockResolvedValue(cloneMovieList());
 
     await expectInputZodError(
       new TmdbAdapter(client.client).discoverMovies(
@@ -872,10 +877,13 @@ describe("TmdbAdapter.getSimilarMovies", () => {
   it.each([
     ["a zero movie ID", { movieId: 0 }],
     ["a string movie ID", { movieId: "8101" }],
+    ["a fractional movie ID", { movieId: 8101.5 }],
     ["a non-positive page", { movieId: 8101, page: 0 }],
+    ["a fractional page", { movieId: 8101, page: 1.5 }],
     ["an unknown key", { movieId: 8101, page: 1, language: "en" }],
   ])("rejects %s before calling the client", async (_label, input) => {
     const client = createClientDouble();
+    client.getSimilarMovies.mockResolvedValue(cloneMovieList());
 
     await expectInputZodError(
       new TmdbAdapter(client.client).getSimilarMovies(

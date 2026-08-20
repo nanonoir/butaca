@@ -21,6 +21,23 @@ import type {
   TmdbErrorCode,
 } from "../index";
 
+type TmdbPublicModule = typeof import("../index");
+
+// @ts-expect-error TmdbClient must remain private to the integration.
+type ForbiddenTmdbClient = TmdbPublicModule["TmdbClient"];
+// @ts-expect-error Provider request types must remain private.
+type ForbiddenDiscoverRequest = import("../index").TmdbDiscoverRequest;
+// @ts-expect-error TmdbConfig must remain private to the integration.
+type ForbiddenTmdbConfig = import("../index").TmdbConfig;
+// @ts-expect-error TMDB constants must remain private to the integration.
+type ForbiddenTmdbLanguage = TmdbPublicModule["TMDB_LANGUAGE"];
+// @ts-expect-error Raw provider schemas must remain private.
+type ForbiddenDetailSchema = TmdbPublicModule["TmdbMovieDetailResponseSchema"];
+// @ts-expect-error Raw provider types must remain private.
+type ForbiddenDetailResponse = import("../index").TmdbMovieDetailResponse;
+// @ts-expect-error The cache port must remain private to the adapter.
+type ForbiddenMovieCachePort = import("../index").MovieCachePort;
+
 type MovieCachePort = Pick<
   MovieCacheRepository,
   "get" | "set" | "delete" | "isExpired"
@@ -306,11 +323,15 @@ describe("TmdbAdapter movie detail cache", () => {
     expect(cache.set).not.toHaveBeenCalled();
   });
 
-  it("uses movie ID and the configured language for every cache key", async () => {
+  it("rebuilds corrupt alternate-language cache entries in order with the same key", async () => {
     const client = createClientDouble();
     const cache = createCacheDouble();
     const providerRaw = cloneMovieDetail();
-    cache.get.mockResolvedValue(null);
+    cache.get.mockResolvedValue(
+      createCacheEntry({ private: "corrupt payload" }, "pt-BR"),
+    );
+    cache.isExpired.mockReturnValue(false);
+    cache.delete.mockResolvedValue(true);
     cache.set.mockResolvedValue(createCacheEntry(providerRaw, "pt-BR"));
     client.getMovieDetail.mockResolvedValue(providerRaw);
 
@@ -319,7 +340,14 @@ describe("TmdbAdapter movie detail cache", () => {
     );
 
     expect(cache.get).toHaveBeenCalledWith(8101, "pt-BR");
+    expect(cache.delete).toHaveBeenCalledWith(8101, "pt-BR");
     expect(cache.set).toHaveBeenCalledWith(8101, "pt-BR", providerRaw);
+    expect(cache.delete.mock.invocationCallOrder[0]).toBeLessThan(
+      client.getMovieDetail.mock.invocationCallOrder[0]!,
+    );
+    expect(client.getMovieDetail.mock.invocationCallOrder[0]).toBeLessThan(
+      cache.set.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("never touches movie cache for genres, search, discover or similar", async () => {
@@ -428,6 +456,13 @@ describe("TMDB public wiring", () => {
       | "UNAVAILABLE"
       | "INVALID_RESPONSE"
     >();
+    expectTypeOf<ForbiddenTmdbClient>().toBeAny();
+    expectTypeOf<ForbiddenDiscoverRequest>().toBeAny();
+    expectTypeOf<ForbiddenTmdbConfig>().toBeAny();
+    expectTypeOf<ForbiddenTmdbLanguage>().toBeAny();
+    expectTypeOf<ForbiddenDetailSchema>().toBeAny();
+    expectTypeOf<ForbiddenDetailResponse>().toBeAny();
+    expectTypeOf<ForbiddenMovieCachePort>().toBeAny();
     expect(TmdbError).toBeTypeOf("function");
   });
 });
