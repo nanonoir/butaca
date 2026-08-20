@@ -1,0 +1,7 @@
+{
+  "genres": [
+    { "id": 7101, "name": "Drama" },
+    { "id": 7102, "name": "Misterio" },
+    { "id": 7103, "name": "Aventura" }
+  ]
+}
