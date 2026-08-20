@@ -3,12 +3,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { PAGE_SIZE } from "../../src/contracts/common";
 import {
+  MOVIE_CACHE_TTL_MS,
+  MovieCacheRepository,
   ReviewRepository,
   UserMovieInteractionRepository,
   UserPreferencesRepository,
   UserRepository,
 } from "../../src/db/repositories";
 import {
+  movieCache,
   reviews,
   userMovieInteractions,
   userPreferences,
@@ -22,8 +25,10 @@ let userRepository: UserRepository | undefined;
 let userPreferencesRepository: UserPreferencesRepository | undefined;
 let userMovieInteractionRepository: UserMovieInteractionRepository | undefined;
 let reviewRepository: ReviewRepository | undefined;
+let movieCacheRepository: MovieCacheRepository | undefined;
 const task6AuthUserIds: string[] = [];
 const task7AuthUserIds: string[] = [];
+const task13MovieCacheIds = [13_001, 13_002, 13_003, 13_004];
 
 beforeAll(() => {
   database = createIntegrationDatabase();
@@ -72,6 +77,38 @@ function getReviewRepository() {
   }
 
   return reviewRepository;
+}
+
+function getMovieCacheRepository() {
+  if (!movieCacheRepository) {
+    throw new Error("Movie cache repository was not created");
+  }
+
+  return movieCacheRepository;
+}
+
+async function countRowsOwnedBy(userId: string) {
+  const database = getDatabase();
+  const [ownedUsers, ownedPreferences, ownedInteractions, ownedReviews] =
+    await Promise.all([
+      database.select().from(users).where(eq(users.id, userId)),
+      database
+        .select()
+        .from(userPreferences)
+        .where(eq(userPreferences.userId, userId)),
+      database
+        .select()
+        .from(userMovieInteractions)
+        .where(eq(userMovieInteractions.userId, userId)),
+      database.select().from(reviews).where(eq(reviews.userId, userId)),
+    ]);
+
+  return {
+    users: ownedUsers.length,
+    userPreferences: ownedPreferences.length,
+    userMovieInteractions: ownedInteractions.length,
+    reviews: ownedReviews.length,
+  };
 }
 
 function getTask6AuthUserId(index: number) {
@@ -982,5 +1019,200 @@ describe("Task 7 repositories", () => {
     expect(minimum.description).toHaveLength(10);
     expect(maximum.title).toHaveLength(30);
     expect(maximum.description).toHaveLength(400);
+  });
+});
+
+describe("Task 13 movie cache repository", () => {
+  const cachePayload = { id: 13_001, title: "Cached provider payload" };
+
+  beforeAll(() => {
+    movieCacheRepository = new MovieCacheRepository(getDatabase());
+  });
+
+  beforeEach(async () => {
+    await getDatabase()
+      .delete(movieCache)
+      .where(inArray(movieCache.movieId, task13MovieCacheIds));
+  });
+
+  afterAll(async () => {
+    await getDatabase()
+      .delete(movieCache)
+      .where(inArray(movieCache.movieId, task13MovieCacheIds));
+  });
+
+  it("returns null for an entry that was never cached", async () => {
+    expect(await getMovieCacheRepository().get(13_001, "es-AR")).toBeNull();
+  });
+
+  it("creates, reads, upserts and deletes a single cache entry", async () => {
+    const repository = getMovieCacheRepository();
+    const firstFetchedAt = new Date("2026-08-18T10:00:00.000Z");
+    const secondFetchedAt = new Date("2026-08-19T10:00:00.000Z");
+
+    const created = await repository.set(
+      13_001,
+      "es-AR",
+      cachePayload,
+      firstFetchedAt,
+    );
+
+    expect(created).toMatchObject({
+      movieId: 13_001,
+      language: "es-AR",
+      payload: cachePayload,
+    });
+    expect(created.fetchedAt.getTime()).toBe(firstFetchedAt.getTime());
+    expect(await repository.get(13_001, "es-AR")).toEqual(created);
+
+    const refreshedPayload = { ...cachePayload, title: "Refreshed payload" };
+    const refreshed = await repository.set(
+      13_001,
+      "es-AR",
+      refreshedPayload,
+      secondFetchedAt,
+    );
+
+    expect(refreshed).toMatchObject({
+      movieId: 13_001,
+      language: "es-AR",
+      payload: refreshedPayload,
+    });
+    expect(refreshed.fetchedAt.getTime()).toBe(secondFetchedAt.getTime());
+
+    const storedRows = await getDatabase()
+      .select()
+      .from(movieCache)
+      .where(eq(movieCache.movieId, 13_001));
+
+    expect(storedRows).toHaveLength(1);
+    expect(await repository.delete(13_001, "es-AR")).toBe(true);
+    expect(await repository.get(13_001, "es-AR")).toBeNull();
+    expect(await repository.delete(13_001, "es-AR")).toBe(false);
+  });
+
+  it("keeps cache entries isolated by language", async () => {
+    const repository = getMovieCacheRepository();
+    const spanish = await repository.set(13_002, "es-AR", {
+      language: "es-AR",
+    });
+    const english = await repository.set(13_002, "en-US", {
+      language: "en-US",
+    });
+
+    expect(await repository.get(13_002, "es-AR")).toEqual(spanish);
+    expect(await repository.get(13_002, "en-US")).toEqual(english);
+    expect(await repository.delete(13_002, "es-AR")).toBe(true);
+    expect(await repository.get(13_002, "es-AR")).toBeNull();
+    expect(await repository.get(13_002, "en-US")).toEqual(english);
+  });
+
+  it("reports expiry from the stored fetchedAt using the shared TTL", async () => {
+    const repository = getMovieCacheRepository();
+    const fetchedAt = new Date("2026-08-18T10:00:00.000Z");
+    const stored = await repository.set(
+      13_003,
+      "es-AR",
+      cachePayload,
+      fetchedAt,
+    );
+
+    expect(
+      repository.isExpired(
+        stored,
+        MOVIE_CACHE_TTL_MS,
+        new Date(fetchedAt.getTime() + MOVIE_CACHE_TTL_MS - 1),
+      ),
+    ).toBe(false);
+    expect(
+      repository.isExpired(
+        stored,
+        MOVIE_CACHE_TTL_MS,
+        new Date(fetchedAt.getTime() + MOVIE_CACHE_TTL_MS),
+      ),
+    ).toBe(true);
+
+    const fresh = await repository.set(13_004, "es-AR", cachePayload);
+    const expired = await repository.set(
+      13_004,
+      "en-US",
+      cachePayload,
+      new Date(Date.now() - MOVIE_CACHE_TTL_MS - 1_000),
+    );
+
+    expect(repository.isExpired(fresh)).toBe(false);
+    expect(repository.isExpired(expired)).toBe(true);
+  });
+
+  it("rejects an invalid movie ID and language at the database boundary", async () => {
+    const repository = getMovieCacheRepository();
+
+    await expectCheckConstraintViolation(
+      repository.set(0, "es-AR", cachePayload),
+      "movie_cache_movie_id_positive_check",
+    );
+    await expectCheckConstraintViolation(
+      repository.set(13_001, "e", cachePayload),
+      "movie_cache_language_length_check",
+    );
+    await expectDatabaseViolation(
+      repository.set(13_001, "e".repeat(11), cachePayload),
+      { code: "22001", constraintName: undefined },
+    );
+
+    expect(await repository.get(13_001, "es-AR")).toBeNull();
+  });
+});
+
+describe("Task 13 cascade from auth.users", () => {
+  it("deleting the Auth user removes every row owned by that user", async () => {
+    const authUser = await createTestAuthUser();
+    const movieId = 13_101;
+    let authUserDeleted = false;
+
+    try {
+      await getUserRepository().create({
+        id: authUser.id,
+        displayName: "Cascade owner",
+        avatarUrl: null,
+      });
+      await new UserPreferencesRepository(getDatabase()).create(
+        authUser.id,
+        [18, 878],
+      );
+      await new UserMovieInteractionRepository(getDatabase()).upsertReaction(
+        authUser.id,
+        movieId,
+        "LIKE",
+      );
+      await new ReviewRepository(getDatabase()).create(authUser.id, movieId, {
+        verdict: "RECOMMENDED",
+        title: "Cascade review",
+        description: "This review must disappear with its Auth identity.",
+      });
+
+      const ownedRowsBefore = await countRowsOwnedBy(authUser.id);
+
+      expect(ownedRowsBefore).toEqual({
+        users: 1,
+        userPreferences: 1,
+        userMovieInteractions: 1,
+        reviews: 1,
+      });
+
+      await deleteTestAuthUser(authUser.id);
+      authUserDeleted = true;
+
+      expect(await countRowsOwnedBy(authUser.id)).toEqual({
+        users: 0,
+        userPreferences: 0,
+        userMovieInteractions: 0,
+        reviews: 0,
+      });
+    } finally {
+      if (!authUserDeleted) {
+        await deleteTestAuthUser(authUser.id);
+      }
+    }
   });
 });
