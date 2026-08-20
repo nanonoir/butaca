@@ -6,7 +6,10 @@ import type { MovieCacheRecord } from "../../../db/schema/movie-cache";
 import movieDetailFixture from "../../../fixtures/tmdb/movie-detail.json";
 import movieListFixture from "../../../fixtures/tmdb/movie-list.json";
 
-import { TmdbAdapter } from "../adapter";
+import {
+  TmdbAdapter,
+  type TmdbDiscoverOptions as AdapterTmdbDiscoverOptions,
+} from "../adapter";
 import type { TmdbClient } from "../client";
 import { TmdbError } from "../errors";
 import {
@@ -17,24 +20,40 @@ import {
 } from "../schemas";
 import type {
   PaginatedMovies,
-  TmdbDiscoverOptions,
+  TmdbDiscoverOptions as PublicTmdbDiscoverOptions,
   TmdbErrorCode,
 } from "../index";
 
 type TmdbPublicModule = typeof import("../index");
 
 // @ts-expect-error TmdbClient must remain private to the integration.
-type ForbiddenTmdbClient = TmdbPublicModule["TmdbClient"];
+type ForbiddenTmdbClient = import("../index").TmdbClient;
 // @ts-expect-error Provider request types must remain private.
 type ForbiddenDiscoverRequest = import("../index").TmdbDiscoverRequest;
 // @ts-expect-error TmdbConfig must remain private to the integration.
 type ForbiddenTmdbConfig = import("../index").TmdbConfig;
+// @ts-expect-error Raw provider types must remain private.
+type ForbiddenGenres = import("../index").TmdbGenresResponse;
+// @ts-expect-error Raw provider types must remain private.
+type ForbiddenGenre = import("../index").TmdbGenre;
+// @ts-expect-error Raw provider types must remain private.
+type ForbiddenMovieList = import("../index").TmdbMovieListResponse;
+// @ts-expect-error Raw provider types must remain private.
+type ForbiddenMovieSummary = import("../index").TmdbMovieSummary;
+// @ts-expect-error Raw provider types must remain private.
+type ForbiddenMovieDetail = import("../index").TmdbMovieDetailResponse;
+// @ts-expect-error Raw provider types must remain private.
+type ForbiddenCast = import("../index").TmdbCastMember;
+// @ts-expect-error Raw provider types must remain private.
+type ForbiddenCrew = import("../index").TmdbCrewMember;
+// @ts-expect-error Raw provider types must remain private.
+type ForbiddenKeyword = import("../index").TmdbKeyword;
+// @ts-expect-error Raw provider types must remain private.
+type ForbiddenVideo = import("../index").TmdbVideo;
 // @ts-expect-error TMDB constants must remain private to the integration.
 type ForbiddenTmdbLanguage = TmdbPublicModule["TMDB_LANGUAGE"];
 // @ts-expect-error Raw provider schemas must remain private.
 type ForbiddenDetailSchema = TmdbPublicModule["TmdbMovieDetailResponseSchema"];
-// @ts-expect-error Raw provider types must remain private.
-type ForbiddenDetailResponse = import("../index").TmdbMovieDetailResponse;
 // @ts-expect-error The cache port must remain private to the adapter.
 type ForbiddenMovieCachePort = import("../index").MovieCachePort;
 
@@ -447,7 +466,7 @@ describe("TMDB public wiring", () => {
     expectTypeOf<
       Awaited<ReturnType<TmdbAdapter["searchMovies"]>>
     >().toEqualTypeOf<PaginatedMovies>();
-    expectTypeOf<TmdbDiscoverOptions>().toMatchTypeOf<{ page: number }>();
+    expectTypeOf<PublicTmdbDiscoverOptions>().toEqualTypeOf<AdapterTmdbDiscoverOptions>();
     expectTypeOf<TmdbErrorCode>().toEqualTypeOf<
       | "UNAUTHORIZED"
       | "NOT_FOUND"
@@ -459,9 +478,17 @@ describe("TMDB public wiring", () => {
     expectTypeOf<ForbiddenTmdbClient>().toBeAny();
     expectTypeOf<ForbiddenDiscoverRequest>().toBeAny();
     expectTypeOf<ForbiddenTmdbConfig>().toBeAny();
+    expectTypeOf<ForbiddenGenres>().toBeAny();
+    expectTypeOf<ForbiddenGenre>().toBeAny();
+    expectTypeOf<ForbiddenMovieList>().toBeAny();
+    expectTypeOf<ForbiddenMovieSummary>().toBeAny();
+    expectTypeOf<ForbiddenMovieDetail>().toBeAny();
+    expectTypeOf<ForbiddenCast>().toBeAny();
+    expectTypeOf<ForbiddenCrew>().toBeAny();
+    expectTypeOf<ForbiddenKeyword>().toBeAny();
+    expectTypeOf<ForbiddenVideo>().toBeAny();
     expectTypeOf<ForbiddenTmdbLanguage>().toBeAny();
     expectTypeOf<ForbiddenDetailSchema>().toBeAny();
-    expectTypeOf<ForbiddenDetailResponse>().toBeAny();
     expectTypeOf<ForbiddenMovieCachePort>().toBeAny();
     expect(TmdbError).toBeTypeOf("function");
   });
