@@ -24,6 +24,9 @@ describe("ProfilePage", () => {
     expect(screen.getByText("10")).toBeTruthy();
     expect(screen.getByText("6")).toBeTruthy();
     expect(screen.getByText("1")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Cambiar avatar" }),
+    ).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "Editar gustos" })).toBeEnabled();
   });
 });

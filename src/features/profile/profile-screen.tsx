@@ -1,7 +1,7 @@
-import { AVATAR_SIZE, Avatar } from "@/components/ui/avatar";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
 import type { Genre } from "@/contracts/movies";
 
+import { ProfileAvatarEditor } from "./profile-avatar-editor";
 import { ProfilePreferencesSummary } from "./profile-preferences-summary";
 
 interface ProfileActivityItem {
@@ -61,21 +61,11 @@ function ActivityStat({
 export function ProfileScreen({ genreOptions, profile }: ProfileScreenProps) {
   return (
     <div className="mx-auto w-full max-w-4xl py-2 md:py-0">
-      <header className="flex min-w-0 items-center gap-5">
-        <Avatar
-          alt={profile.displayName}
-          initials={profile.initials}
-          size={AVATAR_SIZE.LG}
-        />
-        <div className="min-w-0">
-          <h1 className="font-display text-3xl font-semibold leading-tight tracking-[-0.025em] text-foreground">
-            {profile.displayName}
-          </h1>
-          <p className="mt-1 break-words text-base text-muted">
-            {profile.email}
-          </p>
-        </div>
-      </header>
+      <ProfileAvatarEditor
+        displayName={profile.displayName}
+        email={profile.email}
+        initials={profile.initials}
+      />
 
       <div className="mt-8 space-y-10">
         <ProfilePreferencesSummary

@@ -42,6 +42,10 @@ describe("ProfileScreen", () => {
     expect(
       screen.getByRole("img", { name: "Sofía Ramírez" }),
     ).toHaveTextContent("SR");
+    expect(
+      screen.getByRole("button", { name: "Cambiar avatar" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Cambiar" })).toBeEnabled();
     expect(screen.getByText("sofia.ramirez@correo.com")).toBeTruthy();
     expect(
       screen.getByRole("list", { name: "Géneros preferidos" }).children,

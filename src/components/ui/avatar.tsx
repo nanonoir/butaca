@@ -13,6 +13,7 @@ export interface AvatarProps {
   initials: string;
   alt: string;
   size?: AvatarSize;
+  className?: string;
 }
 
 const sizeClasses: Record<AvatarSize, string> = {
@@ -32,11 +33,15 @@ export function Avatar({
   initials,
   alt,
   size = AVATAR_SIZE.MD,
+  className,
 }: AvatarProps) {
   const classes = [
     "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary font-medium text-primary-foreground forced-colors-boundary",
     sizeClasses[size],
-  ].join(" ");
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   if (src) {
     const dimension = sizeDimensions[size];

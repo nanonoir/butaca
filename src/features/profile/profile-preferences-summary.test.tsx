@@ -56,6 +56,32 @@ describe("ProfilePreferencesSummary", () => {
     expect(pushMock).toHaveBeenCalledWith("/profile/preferences");
   });
 
+  it("keeps Editar gustos geometry while transitioning to a violet outline", () => {
+    render(
+      <ProfilePreferencesSummary
+        genreOptions={GENRES}
+        initialPreferredGenreIds={[878, 18, 53]}
+      />,
+    );
+
+    const editButton = screen.getByRole("button", { name: "Editar gustos" });
+
+    expect(editButton).toHaveClass(
+      "min-h-12",
+      "rounded-lg",
+      "px-5",
+      "ring-1",
+      "ring-inset",
+      "ring-transparent",
+      "hover:border-transparent!",
+      "hover:bg-transparent!",
+      "hover:text-primary!",
+      "hover:ring-primary",
+      "transition-[background-color,border-color,box-shadow,color,transform]!",
+    );
+    expect(editButton.className).not.toMatch(/hover:(?:scale|translate)/);
+  });
+
   it("hydrates a valid selection from the current browser session", async () => {
     window.sessionStorage.setItem(
       PROFILE_PREFERENCES_SESSION_KEY,

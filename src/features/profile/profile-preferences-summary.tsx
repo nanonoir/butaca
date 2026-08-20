@@ -37,7 +37,7 @@ export function ProfilePreferencesSummary({
           Mis gustos
         </h2>
         <Button
-          className="self-start"
+          className="self-start ring-1 ring-inset ring-transparent transition-[background-color,border-color,box-shadow,color,transform]! hover:border-transparent! hover:bg-transparent! hover:text-primary! hover:ring-primary"
           onClick={() => router.push("/profile/preferences")}
           size={CONTROL_SIZE.LG}
           variant={BUTTON_VARIANT.OUTLINE}
