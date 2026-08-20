@@ -203,6 +203,19 @@ function mapMovieDetail(movie: TmdbMovieDetailResponse): MovieDetail {
   };
 }
 
+function parseMovieDetail(
+  movie: TmdbMovieDetailResponse,
+  expectedMovieId: number,
+): MovieDetail {
+  const detail = parsePublicResult(MovieDetailSchema, mapMovieDetail(movie));
+
+  if (detail.id !== expectedMovieId) {
+    throw new TmdbError("INVALID_RESPONSE");
+  }
+
+  return detail;
+}
+
 export class TmdbAdapter {
   constructor(
     private readonly client: TmdbClient,
@@ -239,10 +252,7 @@ export class TmdbAdapter {
 
         if (parsedCached.success) {
           try {
-            return parsePublicResult(
-              MovieDetailSchema,
-              mapMovieDetail(parsedCached.data),
-            );
+            return parseMovieDetail(parsedCached.data, movieId);
           } catch (error) {
             if (
               !(error instanceof TmdbError) ||
@@ -258,10 +268,7 @@ export class TmdbAdapter {
     }
 
     const response = await this.client.getMovieDetail(movieId);
-    const detail = parsePublicResult(
-      MovieDetailSchema,
-      mapMovieDetail(response),
-    );
+    const detail = parseMovieDetail(response, movieId);
 
     await cache?.set(movieId, this.language, response).catch(() => undefined);
 

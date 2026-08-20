@@ -259,6 +259,37 @@ describe("TmdbAdapter movie detail cache", () => {
     expect(cache.set).toHaveBeenCalledWith(8101, "es-AR", providerRaw);
   });
 
+  it("treats a fresh cached detail for another movie as corrupt", async () => {
+    const client = createClientDouble();
+    const cache = createCacheDouble();
+    const cachedRaw = cloneMovieDetail();
+    cachedRaw.id = 8102;
+    const cachedEntry = createCacheEntry(cachedRaw);
+    const providerRaw = cloneMovieDetail();
+    cache.get.mockResolvedValue(cachedEntry);
+    cache.isExpired.mockReturnValue(false);
+    cache.delete.mockResolvedValue(true);
+    cache.set.mockResolvedValue(createCacheEntry(providerRaw));
+    client.getMovieDetail.mockResolvedValue(providerRaw);
+
+    const result = await new TmdbAdapter(
+      client.client,
+      cache.cache,
+    ).getMovieDetail(8101);
+
+    expect(result.id).toBe(8101);
+    expect(cache.isExpired).toHaveBeenCalledWith(cachedEntry);
+    expect(cache.delete).toHaveBeenCalledWith(8101, "es-AR");
+    expect(client.getMovieDetail).toHaveBeenCalledWith(8101);
+    expect(cache.set).toHaveBeenCalledWith(8101, "es-AR", providerRaw);
+    expect(cache.delete.mock.invocationCallOrder[0]).toBeLessThan(
+      client.getMovieDetail.mock.invocationCallOrder[0]!,
+    );
+    expect(client.getMovieDetail.mock.invocationCallOrder[0]).toBeLessThan(
+      cache.set.mock.invocationCallOrder[0]!,
+    );
+  });
+
   it("propagates cache read failures without calling TMDB", async () => {
     const client = createClientDouble();
     const cache = createCacheDouble();
@@ -339,6 +370,33 @@ describe("TmdbAdapter movie detail cache", () => {
       new TmdbAdapter(client.client, cache.cache).getMovieDetail(8101),
     ).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
     expect(cache.get).toHaveBeenCalledWith(8101, "es-AR");
+    expect(cache.set).not.toHaveBeenCalled();
+  });
+
+  it("rejects a provider detail for another movie before caching it", async () => {
+    const client = createClientDouble();
+    const cache = createCacheDouble();
+    const providerRaw = cloneMovieDetail();
+    providerRaw.id = 8102;
+    providerRaw.title = "PRIVATE_MISMATCHED_DETAIL";
+    cache.get.mockResolvedValue(null);
+    client.getMovieDetail.mockResolvedValue(providerRaw);
+    let thrown: unknown;
+
+    try {
+      await new TmdbAdapter(client.client, cache.cache).getMovieDetail(8101);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(TmdbError);
+    expect(thrown).toMatchObject({
+      code: "INVALID_RESPONSE",
+      message: "TMDB request failed: INVALID_RESPONSE",
+    });
+    expect((thrown as Error).cause).toBeUndefined();
+    expect(String(thrown)).not.toContain("PRIVATE_MISMATCHED_DETAIL");
+    expect(client.getMovieDetail).toHaveBeenCalledWith(8101);
     expect(cache.set).not.toHaveBeenCalled();
   });
 
