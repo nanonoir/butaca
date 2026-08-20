@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe("updateSession", () => {
-  it("refreshes claims and propagates every cookie on the same response", async () => {
+  it("awaits claim refresh and propagates every cookie on the returned response", async () => {
     const cookiesToSet: Parameters<
       NonNullable<CookieMethodsServer["setAll"]>
     >[0] = [
@@ -45,6 +45,10 @@ describe("updateSession", () => {
       Expires: "0",
       Pragma: "no-cache",
     };
+    let releaseClaims!: () => void;
+    const claimsPending = new Promise<void>((resolve) => {
+      releaseClaims = resolve;
+    });
 
     createServerClient.mockImplementation(
       (
@@ -53,6 +57,7 @@ describe("updateSession", () => {
         options: { cookies: CookieMethodsServer },
       ) => {
         getClaims.mockImplementation(async () => {
+          await claimsPending;
           await options.cookies.setAll?.(cookiesToSet, responseHeaders);
         });
 
@@ -62,9 +67,21 @@ describe("updateSession", () => {
 
     const request = new NextRequest("https://example.com/discover");
     const nextSpy = vi.spyOn(NextResponse, "next");
+    let settled = false;
 
-    const response = await updateSession(request);
+    const updatePromise = updateSession(request).then((response) => {
+      settled = true;
+      return response;
+    });
 
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    const settledBeforeClaims = settled;
+
+    releaseClaims();
+    const response = await updatePromise;
+    await getClaims.mock.results[0]?.value;
+
+    expect(settledBeforeClaims).toBe(false);
     expect(getClaims).toHaveBeenCalledTimes(1);
     expect(getSession).not.toHaveBeenCalled();
     expect(nextSpy).toHaveBeenCalledTimes(2);
