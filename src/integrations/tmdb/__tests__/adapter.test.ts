@@ -462,6 +462,34 @@ describe("TmdbAdapter.getMovieDetail", () => {
     expect(result.trailer?.key).toBe("unofficial-youtube");
   });
 
+  it("prefers official Vimeo over unofficial Vimeo", async () => {
+    const client = createClientDouble();
+    const raw = cloneMovieDetail();
+    raw.videos.results = [
+      {
+        name: "Vimeo no oficial en español",
+        site: "Vimeo",
+        type: "Trailer",
+        official: false,
+        iso_639_1: "es",
+        key: "unofficial-vimeo-es",
+      },
+      {
+        name: "Official Vimeo in English",
+        site: "Vimeo",
+        type: "Trailer",
+        official: true,
+        iso_639_1: "en",
+        key: "official-vimeo-en",
+      },
+    ];
+    client.getMovieDetail.mockResolvedValue(raw);
+
+    const result = await new TmdbAdapter(client.client).getMovieDetail(8101);
+
+    expect(result.trailer?.key).toBe("official-vimeo-en");
+  });
+
   it("prefers Spanish over English within the same trailer tier", async () => {
     const client = createClientDouble();
     const raw = cloneMovieDetail();
@@ -488,6 +516,42 @@ describe("TmdbAdapter.getMovieDetail", () => {
     const result = await new TmdbAdapter(client.client).getMovieDetail(8101);
 
     expect(result.trailer?.key).toBe("youtube-es");
+  });
+
+  it("prefers English over other or missing languages in the same tier", async () => {
+    const client = createClientDouble();
+    const raw = cloneMovieDetail();
+    raw.videos.results = [
+      {
+        name: "Bande-annonce française",
+        site: "Vimeo",
+        type: "Trailer",
+        official: false,
+        iso_639_1: "fr",
+        key: "vimeo-fr",
+      },
+      {
+        name: "Trailer without language",
+        site: "Vimeo",
+        type: "Trailer",
+        official: false,
+        iso_639_1: null,
+        key: "vimeo-no-language",
+      },
+      {
+        name: "English trailer",
+        site: "Vimeo",
+        type: "Trailer",
+        official: false,
+        iso_639_1: "en",
+        key: "vimeo-en",
+      },
+    ];
+    client.getMovieDetail.mockResolvedValue(raw);
+
+    const result = await new TmdbAdapter(client.client).getMovieDetail(8101);
+
+    expect(result.trailer?.key).toBe("vimeo-en");
   });
 
   it("uses original provider order as the final trailer tie-break", async () => {
