@@ -15,6 +15,7 @@ describe("MoviePosterCard", () => {
         year="2024"
         poster={<div data-testid="poster">Poster content</div>}
         presentationSlot={<button type="button">Preview</button>}
+        metadataSlot={<span data-testid="metadata-slot">More</span>}
       />,
     );
 
@@ -25,6 +26,11 @@ describe("MoviePosterCard", () => {
     ).toBeTruthy();
     expect(screen.getByText("2024")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy();
+    expect(screen.getByTestId("metadata-slot")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { level: 3, name: "A sample film" })
+        .classList,
+    ).toContain("line-clamp-2");
   });
 
   it("does not invent optional movie metadata or behavior", () => {
