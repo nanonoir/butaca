@@ -294,7 +294,7 @@ describe("AuthService", () => {
     });
   });
 
-  it("signIn uses a fixed non-empty display name when metadata and email are unusable", async () => {
+  it("signIn derives a display name from the input email when the provider email is unavailable", async () => {
     const auth = createAuthDouble();
     const users = createUsersDouble();
     const authUser = createAuthUser({
@@ -316,6 +316,33 @@ describe("AuthService", () => {
 
     expect(users.upsertFromAuthUser).toHaveBeenCalledWith({
       id: USER_ID,
+      displayName: "viewer",
+      avatarUrl: null,
+    });
+  });
+
+  it("signIn uses a fixed non-empty display name when both emails are unusable", async () => {
+    const auth = createAuthDouble();
+    const users = createUsersDouble();
+    const authUser = createAuthUser({
+      email: undefined,
+      user_metadata: { display_name: null },
+    });
+    auth.signInWithPassword.mockResolvedValue({
+      data: { user: authUser, session: createSession(authUser) },
+      error: null,
+    });
+    users.upsertFromAuthUser.mockImplementation(async (input) =>
+      createUserRecord(input),
+    );
+
+    await new AuthService(auth, users).signIn({
+      email: "@example.test",
+      password: "test-password",
+    });
+
+    expect(users.upsertFromAuthUser).toHaveBeenCalledWith({
+      id: USER_ID,
       displayName: "Film Match user",
       avatarUrl: null,
     });
@@ -331,6 +358,39 @@ describe("AuthService", () => {
         "invalid_credentials",
       ),
     });
+
+    const operation = new AuthService(auth, users).signIn({
+      email: "viewer@example.test",
+      password: "test-password",
+    });
+
+    let thrown: unknown;
+
+    try {
+      await operation;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(InvalidCredentialsError);
+    expect(thrown).toMatchObject({
+      name: "InvalidCredentialsError",
+      message: "Invalid email or password",
+    });
+    expect(thrown).not.toHaveProperty("cause");
+    expect(thrown).not.toHaveProperty("code");
+    expect(thrown).not.toHaveProperty("payload");
+    expect(thrown).not.toHaveProperty("status");
+    expect(String(thrown)).not.toContain("provider-private-message");
+    expect(users.upsertFromAuthUser).not.toHaveBeenCalled();
+  });
+
+  it("maps rejected invalid credentials to InvalidCredentialsError", async () => {
+    const auth = createAuthDouble();
+    const users = createUsersDouble();
+    auth.signInWithPassword.mockRejectedValue(
+      createProviderError("provider-private-message", "invalid_credentials"),
+    );
 
     const operation = new AuthService(auth, users).signIn({
       email: "viewer@example.test",

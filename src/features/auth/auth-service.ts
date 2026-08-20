@@ -1,6 +1,10 @@
 import "server-only";
 
-import type { AuthUser, SupabaseClient } from "@supabase/supabase-js";
+import {
+  isAuthError,
+  type AuthUser,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 
 import { UuidSchema } from "../../contracts/common";
 import type { UserRepository } from "../../db/repositories/user-repository";
@@ -34,7 +38,7 @@ function normalizeDisplayName(value: unknown): string | null {
   return displayName || null;
 }
 
-function deriveDisplayName(user: AuthUser): string {
+function deriveDisplayName(user: AuthUser, inputEmail: string): string {
   const metadataDisplayName = normalizeDisplayName(
     user.user_metadata.display_name,
   );
@@ -43,9 +47,14 @@ function deriveDisplayName(user: AuthUser): string {
     return metadataDisplayName;
   }
 
-  const emailLocalPart = user.email?.split("@", 1)[0];
+  const providerEmailLocalPart = user.email?.split("@", 1)[0];
+  const inputEmailLocalPart = inputEmail.split("@", 1)[0];
 
-  return normalizeDisplayName(emailLocalPart) ?? FALLBACK_DISPLAY_NAME;
+  return (
+    normalizeDisplayName(providerEmailLocalPart) ??
+    normalizeDisplayName(inputEmailLocalPart) ??
+    FALLBACK_DISPLAY_NAME
+  );
 }
 
 export class AuthService {
@@ -93,7 +102,11 @@ export class AuthService {
 
     try {
       response = await this.auth.signInWithPassword(input);
-    } catch {
+    } catch (error) {
+      if (isAuthError(error) && error.code === "invalid_credentials") {
+        throw new InvalidCredentialsError();
+      }
+
       throw new AuthProviderError();
     }
 
@@ -113,7 +126,7 @@ export class AuthService {
 
     return this.users.upsertFromAuthUser({
       id: authUser.id,
-      displayName: deriveDisplayName(authUser),
+      displayName: deriveDisplayName(authUser, input.email),
       avatarUrl: null,
     });
   }
