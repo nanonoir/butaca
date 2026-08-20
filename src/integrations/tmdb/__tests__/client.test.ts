@@ -251,9 +251,101 @@ describe("TmdbClient requests", () => {
       page: "2",
     });
   });
+
+  it("accepts list payloads with provider extras and an empty release date", async () => {
+    const fetchImpl = createFetchDouble();
+    fetchImpl.mockResolvedValue(
+      jsonResponse({
+        ...MOVIE_LIST_RESPONSE,
+        provider_extra: "ignored",
+        results: [
+          {
+            ...MOVIE_SUMMARY,
+            release_date: "",
+            provider_extra: "ignored",
+          },
+        ],
+      }),
+    );
+
+    const result = await createClient(fetchImpl).searchMovies({
+      query: "Forrest Gump",
+      page: 1,
+    });
+
+    expect(result.results[0]?.release_date).toBe("");
+  });
+
+  it("accepts raw detail values without applying adapter collection limits", async () => {
+    const fetchImpl = createFetchDouble();
+    const cast = Array.from({ length: 21 }, (_, index) => ({
+      ...MOVIE_DETAIL_RESPONSE.credits.cast[0],
+      id: index + 1,
+      order: index,
+      provider_extra: "ignored",
+    }));
+    const keywords = Array.from({ length: 51 }, (_, index) => ({
+      id: index + 1,
+      name: `Keyword ${index + 1}`,
+      provider_extra: "ignored",
+    }));
+    fetchImpl.mockResolvedValue(
+      jsonResponse({
+        ...MOVIE_DETAIL_RESPONSE,
+        release_date: "",
+        tagline: "",
+        runtime: 0,
+        provider_extra: "ignored",
+        credits: {
+          ...MOVIE_DETAIL_RESPONSE.credits,
+          cast,
+          provider_extra: "ignored",
+        },
+        keywords: {
+          keywords,
+          provider_extra: "ignored",
+        },
+      }),
+    );
+
+    const result = await createClient(fetchImpl).getMovieDetail(13);
+
+    expect(result).toMatchObject({
+      release_date: "",
+      tagline: "",
+      runtime: 0,
+    });
+    expect(result.credits.cast).toHaveLength(21);
+    expect(result.keywords.keywords).toHaveLength(51);
+  });
+
+  it("accepts a null runtime in raw movie detail", async () => {
+    const fetchImpl = createFetchDouble();
+    fetchImpl.mockResolvedValue(
+      jsonResponse({ ...MOVIE_DETAIL_RESPONSE, runtime: null }),
+    );
+
+    const result = await createClient(fetchImpl).getMovieDetail(13);
+
+    expect(result.runtime).toBeNull();
+  });
 });
 
 describe("TmdbClient errors", () => {
+  it("classifies a non-ok response without reading its body", async () => {
+    const fetchImpl = createFetchDouble();
+    const response = jsonResponse(GENRES_RESPONSE, 401);
+    const jsonSpy = vi.spyOn(response, "json");
+    fetchImpl.mockResolvedValue(response);
+
+    await expectTmdbError(
+      createClient(fetchImpl).getGenres(),
+      "UNAUTHORIZED",
+      401,
+    );
+    expect(jsonSpy).not.toHaveBeenCalled();
+  });
+
   it.each([
     { status: 401, code: "UNAUTHORIZED" as const },
     { status: 404, code: "NOT_FOUND" as const },

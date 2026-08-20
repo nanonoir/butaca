@@ -1,3 +1,5 @@
+import "server-only";
+
 import type { ZodType } from "zod";
 
 import type { TmdbConfig } from "./config";
