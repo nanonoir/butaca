@@ -7,7 +7,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "src/components/**/*.test.tsx"],
     exclude: ["tests/integration/**"],
     passWithNoTests: true,
   },
