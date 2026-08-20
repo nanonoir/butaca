@@ -8,20 +8,10 @@ import {
 
 export const MovieReactionSchema = z.enum(["LIKE", "DISLIKE"]);
 
-export const ViewerMovieStateSchema = z
-  .object({
-    reaction: MovieReactionSchema.nullable(),
-    watchedAt: IsoDateTimeSchema.nullable(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.reaction === null && value.watchedAt !== null) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["watchedAt"],
-        message: "watchedAt cannot exist without a reaction",
-      });
-    }
-  });
+export const ViewerMovieStateSchema = z.object({
+  reaction: MovieReactionSchema.nullable(),
+  watchedAt: IsoDateTimeSchema.nullable(),
+});
 
 export const SetMovieReactionRequestSchema = z.object({
   reaction: MovieReactionSchema,
@@ -29,7 +19,7 @@ export const SetMovieReactionRequestSchema = z.object({
 
 export const MovieInteractionStateSchema = z.object({
   movieId: TmdbMovieIdSchema,
-  reaction: MovieReactionSchema,
+  reaction: MovieReactionSchema.nullable(),
   watchedAt: IsoDateTimeSchema.nullable(),
 });
 
@@ -49,7 +39,7 @@ export const DeleteMovieReactionResponseSchema = apiDataResponseSchema(
   z.object({
     movieId: TmdbMovieIdSchema,
     reaction: z.null(),
-    watchedAt: z.null(),
+    watchedAt: IsoDateTimeSchema.nullable(),
   }),
 );
 

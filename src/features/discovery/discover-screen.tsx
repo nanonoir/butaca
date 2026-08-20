@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AnimatePresence,
   animate,
@@ -11,14 +11,13 @@ import {
   type PanInfo,
 } from "motion/react";
 
+import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import type { MovieReaction } from "@/contracts/interactions";
 import type { MovieSummary } from "@/contracts/movies";
-import {
-  getTmdbImageUrl,
-  TMDB_IMAGE_SIZE,
-} from "@/integrations/tmdb/image-url";
+import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
+import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
 
 import { resolveSwipeIntent, SWIPE_INTENT } from "./resolve-swipe-intent";
 
@@ -150,31 +149,6 @@ function getMovieGenres(movie: MovieSummary) {
     .slice(0, 2);
 }
 
-function getMovieImageUrl(movie: MovieSummary, backdrop = false) {
-  if (backdrop) {
-    return getTmdbImageUrl(
-      movie.backdropPath ?? movie.posterPath,
-      movie.backdropPath ? TMDB_IMAGE_SIZE.BACKDROP : TMDB_IMAGE_SIZE.POSTER,
-    );
-  }
-
-  return getTmdbImageUrl(
-    movie.posterPath ?? movie.backdropPath,
-    movie.posterPath ? TMDB_IMAGE_SIZE.POSTER : TMDB_IMAGE_SIZE.BACKDROP,
-  );
-}
-
-function getMovieBackground(movie: MovieSummary, backdrop = false) {
-  const imageUrl = getMovieImageUrl(movie, backdrop);
-
-  return imageUrl
-    ? { backgroundImage: `url("${imageUrl}")` }
-    : {
-        backgroundImage:
-          "repeating-linear-gradient(135deg, transparent 0, transparent 12px, var(--border) 12px, var(--border) 13px)",
-      };
-}
-
 function HowItWorks() {
   return (
     <aside className="hidden max-w-[13rem] self-center lg:block">
@@ -199,25 +173,6 @@ function HowItWorks() {
   );
 }
 
-function MovieMedia({
-  movie,
-  backdrop = false,
-  className = "",
-}: {
-  movie: MovieSummary;
-  backdrop?: boolean;
-  className?: string;
-}) {
-  return (
-    <div
-      aria-label={`${backdrop ? "Imagen de fondo" : "Póster"} de ${movie.title}`}
-      className={`bg-surface-muted bg-cover bg-center ${className}`}
-      role="img"
-      style={getMovieBackground(movie, backdrop)}
-    />
-  );
-}
-
 function NextMovieCard({ movie }: { movie: MovieSummary }) {
   return (
     <div
@@ -226,7 +181,7 @@ function NextMovieCard({ movie }: { movie: MovieSummary }) {
       data-motion-ambient
       data-testid="next-movie-card"
     >
-      <MovieMedia className="absolute inset-0" movie={movie} />
+      <MovieArtwork className="absolute inset-0" movie={movie} />
       <div className="absolute inset-0 bg-overlay/35" />
     </div>
   );
@@ -313,7 +268,7 @@ function DiscoverMovieCard({
         onDragEnd={handleDragEnd}
         style={{ rotate: rotation, x, y }}
       >
-        <MovieMedia className="absolute inset-0" movie={movie} />
+        <MovieArtwork className="absolute inset-0" movie={movie} />
         <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-background via-background/25 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-linear-to-t from-background via-background/65 to-transparent" />
 
@@ -419,104 +374,6 @@ function ReactionControls({
   );
 }
 
-function MovieDetailSheet({
-  movie,
-  onClose,
-}: {
-  movie: MovieSummary;
-  onClose: () => void;
-}) {
-  const shouldReduceMotion = useReducedMotion();
-  const genres = getMovieGenres(movie);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  return (
-    <motion.div
-      animate={{ opacity: 1 }}
-      className="fixed inset-0 z-50"
-      exit={{ opacity: 0 }}
-      initial={{ opacity: 0 }}
-      transition={{ duration: shouldReduceMotion ? 0.08 : 0.18 }}
-    >
-      <button
-        aria-label="Cerrar panel de detalle"
-        className="absolute inset-0 size-full bg-overlay backdrop-blur-sm"
-        onClick={onClose}
-        type="button"
-      />
-      <motion.section
-        aria-label={`Detalle de ${movie.title}`}
-        aria-modal="true"
-        animate={{ transform: "translate3d(0, 0, 0)" }}
-        className="absolute inset-x-2 bottom-2 mx-auto max-h-[calc(100dvh-1rem)] w-auto max-w-3xl overflow-y-auto rounded-xl border border-border bg-surface-elevated shadow-floating sm:inset-x-6 sm:bottom-6"
-        exit={
-          shouldReduceMotion
-            ? undefined
-            : { transform: "translate3d(0, 1.5rem, 0)" }
-        }
-        initial={
-          shouldReduceMotion
-            ? undefined
-            : { transform: "translate3d(0, 1.5rem, 0)" }
-        }
-        role="dialog"
-        transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
-      >
-        <div className="relative h-52 overflow-hidden rounded-t-xl sm:h-64">
-          <MovieMedia backdrop className="absolute inset-0" movie={movie} />
-          <div className="absolute inset-0 bg-linear-to-t from-surface-elevated to-transparent" />
-          <Button
-            aria-label="Cerrar detalle"
-            autoFocus
-            className="absolute right-4 top-4 rounded-full border border-border bg-background/80 text-foreground backdrop-blur-sm hover:bg-background"
-            onClick={onClose}
-            variant={BUTTON_VARIANT.ICON}
-          >
-            <CrossIcon className="size-5" />
-          </Button>
-        </div>
-        <div className="-mt-8 relative px-6 pb-7 sm:px-8 sm:pb-8">
-          <p className="font-mono text-xs uppercase tracking-[0.14em] text-primary">
-            Más información
-          </p>
-          <h2 className="mt-2 font-display text-3xl font-semibold tracking-[-0.025em] text-foreground">
-            {movie.title}
-          </h2>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted">
-            <span>{getMovieYear(movie)}</span>
-            {genres.map((genre) => (
-              <span
-                className="rounded-full border border-border bg-secondary px-3 py-1"
-                key={genre}
-              >
-                {genre}
-              </span>
-            ))}
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/12 px-2.5 py-1 font-mono text-xs text-primary">
-              <StarIcon className="size-3.5" />
-              {movie.tmdbRating.toFixed(1)} TMDB
-            </span>
-          </div>
-          <p className="mt-5 max-w-2xl text-base leading-7 text-muted">
-            {movie.overview}
-          </p>
-        </div>
-      </motion.section>
-    </motion.div>
-  );
-}
-
 function EndOfStack({ onRestart }: { onRestart: () => void }) {
   return (
     <div className="flex aspect-[2/3] h-[min(52svh,38rem)] max-h-[38rem] max-w-full flex-col items-center justify-center rounded-xl border border-border bg-surface-muted px-8 text-center">
@@ -543,6 +400,9 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   const [lastAction, setLastAction] = useState("");
   const currentMovie = movies[currentIndex];
   const nextMovie = movies[currentIndex + 1];
+  const detailExperience = detailMovie
+    ? getMovieDetailExperienceFixture(detailMovie)
+    : null;
 
   function handleReaction(reaction: MovieReaction) {
     if (!currentMovie) {
@@ -564,83 +424,90 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-7 py-2 md:gap-8 md:py-4">
-      <PageHeader
-        action={
-          <span className="inline-flex min-h-9 items-center gap-2 rounded-full bg-primary/10 px-3.5 font-mono text-[0.6875rem] font-semibold text-primary">
-            <SparkIcon className="size-3.5" />
-            Afinado hoy
-          </span>
-        }
-        eyebrow="Para vos"
-        title="Descubrir"
-      />
-
-      <p aria-live="polite" className="sr-only" role="status">
-        {lastAction}
-      </p>
-
-      <section
-        aria-labelledby="discover-stack-title"
-        className="grid min-h-0 flex-1 items-center gap-8 lg:grid-cols-[13rem_minmax(0,34rem)_13rem] lg:gap-10"
+      <div
+        aria-hidden={detailExperience ? true : undefined}
+        className="contents"
+        inert={detailExperience ? true : undefined}
       >
-        <h2 className="sr-only" id="discover-stack-title">
-          Recomendaciones de películas
-        </h2>
-        <HowItWorks />
+        <PageHeader
+          action={
+            <span className="inline-flex min-h-9 items-center gap-2 rounded-full bg-primary/10 px-3.5 font-mono text-[0.6875rem] font-semibold text-primary">
+              <SparkIcon className="size-3.5" />
+              Afinado hoy
+            </span>
+          }
+          eyebrow="Para vos"
+          title="Descubrir"
+        />
 
-        <div className="mx-auto flex w-full max-w-[34rem] flex-col gap-3 lg:col-start-2">
-          {currentMovie ? (
-            <>
-              <div className="relative mx-auto aspect-[2/3] h-[min(52svh,38rem)] max-h-[38rem] max-w-full">
-                {nextMovie ? <NextMovieCard movie={nextMovie} /> : null}
-                <AnimatePresence custom={exitReaction} initial={false}>
-                  <DiscoverMovieCard
-                    key={currentMovie.id}
-                    exitReaction={exitReaction}
-                    movie={currentMovie}
-                    onOpenDetail={() => setDetailMovie(currentMovie)}
-                    onReact={handleReaction}
-                  />
-                </AnimatePresence>
-              </div>
+        <p aria-live="polite" className="sr-only" role="status">
+          {lastAction}
+        </p>
 
-              <p className="text-center font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground lg:hidden">
-                Deslizá la card o usá los controles
-              </p>
-              <div className="hidden justify-center lg:flex">
-                <p className="rounded-full border border-border bg-background/35 px-4 py-2 font-mono text-[0.625rem] tracking-[0.08em] text-muted">
-                  ← paso&nbsp;&nbsp; | &nbsp;&nbsp;↑ detalle&nbsp;&nbsp; |
-                  &nbsp;&nbsp;me gusta →
-                </p>
-              </div>
-
-              <ReactionControls
-                movie={currentMovie}
-                onOpenDetail={() => setDetailMovie(currentMovie)}
-                onReact={handleReaction}
-              />
-            </>
-          ) : (
-            <EndOfStack onRestart={restartStack} />
-          )}
-        </div>
-
-        <div
-          aria-hidden="true"
-          className="hidden text-right font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground lg:block"
+        <section
+          aria-labelledby="discover-stack-title"
+          className="grid min-h-0 flex-1 items-center gap-8 lg:grid-cols-[13rem_minmax(0,34rem)_13rem] lg:gap-10"
         >
-          {currentMovie
-            ? `${currentIndex + 1} / ${movies.length}`
-            : `${movies.length} / ${movies.length}`}
-        </div>
-      </section>
+          <h2 className="sr-only" id="discover-stack-title">
+            Recomendaciones de películas
+          </h2>
+          <HowItWorks />
+
+          <div className="mx-auto flex w-full max-w-[34rem] flex-col gap-3 lg:col-start-2">
+            {currentMovie ? (
+              <>
+                <div className="relative mx-auto aspect-[2/3] h-[min(52svh,38rem)] max-h-[38rem] max-w-full">
+                  {nextMovie ? <NextMovieCard movie={nextMovie} /> : null}
+                  <AnimatePresence custom={exitReaction} initial={false}>
+                    <DiscoverMovieCard
+                      key={currentMovie.id}
+                      exitReaction={exitReaction}
+                      movie={currentMovie}
+                      onOpenDetail={() => setDetailMovie(currentMovie)}
+                      onReact={handleReaction}
+                    />
+                  </AnimatePresence>
+                </div>
+
+                <p className="text-center font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground lg:hidden">
+                  Deslizá la card o usá los controles
+                </p>
+                <div className="hidden justify-center lg:flex">
+                  <p className="rounded-full border border-border bg-background/35 px-4 py-2 font-mono text-[0.625rem] tracking-[0.08em] text-muted">
+                    ← paso&nbsp;&nbsp; | &nbsp;&nbsp;↑ detalle&nbsp;&nbsp; |
+                    &nbsp;&nbsp;me gusta →
+                  </p>
+                </div>
+
+                <ReactionControls
+                  movie={currentMovie}
+                  onOpenDetail={() => setDetailMovie(currentMovie)}
+                  onReact={handleReaction}
+                />
+              </>
+            ) : (
+              <EndOfStack onRestart={restartStack} />
+            )}
+          </div>
+
+          <div
+            aria-hidden="true"
+            className="hidden text-right font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground lg:block"
+          >
+            {currentMovie
+              ? `${currentIndex + 1} / ${movies.length}`
+              : `${movies.length} / ${movies.length}`}
+          </div>
+        </section>
+      </div>
 
       <AnimatePresence>
-        {detailMovie ? (
-          <MovieDetailSheet
-            key={detailMovie.id}
-            movie={detailMovie}
+        {detailExperience ? (
+          <MovieDetailScreen
+            key={detailExperience.pageData.movie.id}
             onClose={() => setDetailMovie(null)}
+            pageData={detailExperience.pageData}
+            publicReviews={detailExperience.publicReviews}
           />
         ) : null}
       </AnimatePresence>

@@ -9,8 +9,8 @@ Movie discovery and recommendation MVP built with Next.js, TypeScript, Supabase,
 - Movies only; no TV shows in the MVP.
 - TMDB is the canonical movie catalog and its movie IDs are used directly.
 - `LIKE` and `DISLIKE` are the only persisted movie reactions.
-- `watchedAt` may exist with either `LIKE` or `DISLIKE` and must be preserved when switching reactions.
-- Removing a reaction also removes `watchedAt`.
+- `watchedAt` is independent from the reaction: it may exist with `LIKE`, `DISLIKE`, or no reaction.
+- Switching or removing a reaction must preserve `watchedAt`.
 - The user's "Liked Movies" list is derived from `reaction = LIKE`.
 - No watchlist.
 - Reviews contain:
