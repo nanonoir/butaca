@@ -87,6 +87,19 @@ pnpm test:run     # Suite de tests con Vitest
 pnpm build        # Build de producción
 ```
 
+### Base de datos e integración
+
+Estos comandos necesitan credenciales reales de Supabase y TMDB. La [guía de la Foundation Backend](./docs/foundation-backend.md) explica de dónde sale cada variable.
+
+```bash
+pnpm db:generate      # Genera migraciones desde el schema de Drizzle
+pnpm db:migrate       # Aplica las migraciones pendientes
+pnpm db:check         # Valida la secuencia de migraciones
+pnpm test:integration # Suite contra Supabase/PostgreSQL y TMDB reales
+```
+
+> La suite de integración crea y borra usuarios reales de Auth. No la apuntes a un proyecto con datos valiosos.
+
 ## Principios del producto
 
 - Las películas se identifican directamente por su ID de TMDB.
@@ -102,6 +115,10 @@ El desarrollo se organiza con Spec-Driven Development:
 
 - [`openspec/specs/`](./openspec/specs/) — comportamiento y contratos aprobados.
 - [`openspec/changes/archive/`](./openspec/changes/archive/) — cambios implementados y verificados.
+
+Guías operativas:
+
+- [Foundation Backend](./docs/foundation-backend.md) — environment, conexiones, Auth, migraciones, pruebas de integración y errores de TMDB.
 
 ## Calidad antes de integrar
 
