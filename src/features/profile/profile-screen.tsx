@@ -1,5 +1,8 @@
 import { AVATAR_SIZE, Avatar } from "@/components/ui/avatar";
-import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
+import { BUTTON_VARIANT, Button } from "@/components/ui/button";
+import type { Genre } from "@/contracts/movies";
+
+import { ProfilePreferencesSummary } from "./profile-preferences-summary";
 
 interface ProfileActivityItem {
   label: string;
@@ -8,11 +11,12 @@ interface ProfileActivityItem {
 }
 
 export interface ProfileScreenProps {
+  genreOptions: readonly Genre[];
   profile: {
     displayName: string;
     email: string;
     initials: string;
-    preferredGenres: readonly string[];
+    preferredGenreIds: readonly number[];
     activity: readonly ProfileActivityItem[];
   };
 }
@@ -54,7 +58,7 @@ function ActivityStat({
   );
 }
 
-export function ProfileScreen({ profile }: ProfileScreenProps) {
+export function ProfileScreen({ genreOptions, profile }: ProfileScreenProps) {
   return (
     <div className="mx-auto w-full max-w-4xl py-2 md:py-0">
       <header className="flex min-w-0 items-center gap-5">
@@ -74,34 +78,10 @@ export function ProfileScreen({ profile }: ProfileScreenProps) {
       </header>
 
       <div className="mt-8 space-y-10">
-        <section aria-labelledby="profile-tastes-title">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <SectionHeading id="profile-tastes-title">
-              Mis gustos
-            </SectionHeading>
-            <Button
-              className="self-start disabled:opacity-100"
-              disabled
-              size={CONTROL_SIZE.LG}
-              variant={BUTTON_VARIANT.OUTLINE}
-            >
-              Editar gustos
-            </Button>
-          </div>
-          <ul
-            aria-label="Géneros preferidos"
-            className="mt-5 flex flex-wrap gap-3"
-          >
-            {profile.preferredGenres.map((genre) => (
-              <li
-                key={genre}
-                className="rounded-full bg-secondary px-5 py-2.5 text-base font-medium text-foreground"
-              >
-                {genre}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <ProfilePreferencesSummary
+          genreOptions={genreOptions}
+          initialPreferredGenreIds={profile.preferredGenreIds}
+        />
 
         <section aria-labelledby="profile-activity-title">
           <SectionHeading id="profile-activity-title">

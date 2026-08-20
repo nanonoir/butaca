@@ -2,17 +2,22 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProfileScreen } from "./profile-screen";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
+beforeEach(() => window.sessionStorage.clear());
 afterEach(cleanup);
 
 const PROFILE = {
   displayName: "Sofía Ramírez",
   email: "sofia.ramirez@correo.com",
   initials: "SR",
-  preferredGenres: ["Ciencia ficción", "Drama", "Thriller"],
+  preferredGenreIds: [878, 18, 53],
   activity: [
     { label: "Me gusta", value: 10, tone: "primary" as const },
     { label: "Vistas", value: 6, tone: "default" as const },
@@ -20,9 +25,16 @@ const PROFILE = {
   ],
 };
 
+const GENRE_OPTIONS = [
+  { id: 878, name: "Ciencia ficción" },
+  { id: 18, name: "Drama" },
+  { id: 53, name: "Thriller" },
+  { id: 27, name: "Terror" },
+];
+
 describe("ProfileScreen", () => {
   it("renders the profile identity and preferred genres", () => {
-    render(<ProfileScreen profile={PROFILE} />);
+    render(<ProfileScreen genreOptions={GENRE_OPTIONS} profile={PROFILE} />);
 
     expect(
       screen.getByRole("heading", { level: 1, name: "Sofía Ramírez" }),
@@ -37,7 +49,7 @@ describe("ProfileScreen", () => {
   });
 
   it("renders the complete activity summary", () => {
-    render(<ProfileScreen profile={PROFILE} />);
+    render(<ProfileScreen genreOptions={GENRE_OPTIONS} profile={PROFILE} />);
 
     expect(
       screen.getByRole("heading", { level: 2, name: "Mi actividad" }),
@@ -50,20 +62,19 @@ describe("ProfileScreen", () => {
     expect(screen.getByText("Reseñas")).toBeTruthy();
   });
 
-  it("keeps unavailable account actions disabled without fading them", () => {
-    render(<ProfileScreen profile={PROFILE} />);
+  it("enables preference editing while keeping logout unavailable", () => {
+    render(<ProfileScreen genreOptions={GENRE_OPTIONS} profile={PROFILE} />);
 
     const editButton = screen.getByRole("button", { name: "Editar gustos" });
     const logoutButton = screen.getByRole("button", { name: "Cerrar sesión" });
 
-    expect(editButton).toBeDisabled();
+    expect(editButton).toBeEnabled();
     expect(logoutButton).toBeDisabled();
-    expect(editButton.className).toContain("disabled:opacity-100");
     expect(logoutButton.className).toContain("disabled:opacity-100");
   });
 
   it("uses the compact vertical rhythm from the profile reference", () => {
-    render(<ProfileScreen profile={PROFILE} />);
+    render(<ProfileScreen genreOptions={GENRE_OPTIONS} profile={PROFILE} />);
 
     const tastesSection = screen
       .getByRole("heading", { level: 2, name: "Mis gustos" })
