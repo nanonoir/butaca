@@ -900,6 +900,12 @@ describe("Task 7 repositories", () => {
       title: "Recommended review",
       description: "This viewer recommends the selected movie.",
     });
+
+    expect(await repository.countByVerdict(movieId)).toEqual({
+      recommended: 1,
+      notWorthIt: 0,
+    });
+
     await repository.create(otherUserId, movieId, {
       verdict: "NOT_WORTH_IT",
       title: "Critical review",
