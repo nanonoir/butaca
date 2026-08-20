@@ -7,7 +7,10 @@ import {
   MovieDetailSchema,
   MovieSummarySchema,
   PAGE_SIZE,
+  PageQuerySchema,
+  RecommendationFiltersSchema,
   SearchMoviesResponseSchema,
+  TmdbMovieIdSchema,
   paginatedResponseSchema,
   type Genre,
   type MovieDetail,
@@ -15,17 +18,53 @@ import {
   type SearchMoviesQuery,
   type Trailer,
 } from "../../contracts";
+import type { MovieCacheRepository } from "../../db/repositories";
 
 import type { TmdbClient } from "./client";
+import { TMDB_LANGUAGE } from "./config";
 import { TmdbError } from "./errors";
 import type {
   TmdbMovieDetailResponse,
+  TmdbMovieListResponse,
   TmdbMovieSummary,
   TmdbVideo,
 } from "./schemas";
+import { TmdbMovieDetailResponseSchema } from "./schemas";
 
 const PaginatedMoviesSchema = paginatedResponseSchema(MovieSummarySchema);
-type PaginatedMovies = z.infer<typeof PaginatedMoviesSchema>;
+export type PaginatedMovies = z.infer<typeof PaginatedMoviesSchema>;
+
+const { similarToMovieId: _similarToMovieId, ...tmdbDiscoverFilterShape } =
+  RecommendationFiltersSchema.shape;
+void _similarToMovieId;
+
+const TmdbDiscoverOptionsSchema = z
+  .object({
+    ...tmdbDiscoverFilterShape,
+    page: PageQuerySchema.shape.page,
+  })
+  .strict()
+  .transform(({ page, ...filters }) => {
+    const { similarToMovieId: _parsedSimilarToMovieId, ...parsedFilters } =
+      RecommendationFiltersSchema.parse(filters);
+    void _parsedSimilarToMovieId;
+
+    return { ...parsedFilters, page };
+  });
+
+export type TmdbDiscoverOptions = z.infer<typeof TmdbDiscoverOptionsSchema>;
+
+const SimilarMoviesOptionsSchema = z
+  .object({
+    movieId: TmdbMovieIdSchema,
+    page: PageQuerySchema.shape.page,
+  })
+  .strict();
+
+type MovieCachePort = Pick<
+  MovieCacheRepository,
+  "get" | "set" | "delete" | "isExpired"
+>;
 
 const GenresSchema = z.array(GenreSchema);
 
@@ -54,6 +93,19 @@ function mapMovieSummary(movie: TmdbMovieSummary): MovieSummary {
     originalLanguage: movie.original_language,
     tmdbRating: movie.vote_average,
     tmdbVoteCount: movie.vote_count,
+  };
+}
+
+function mapMovieList(response: TmdbMovieListResponse) {
+  return {
+    data: response.results.map(mapMovieSummary),
+    meta: {
+      page: response.page,
+      pageSize: PAGE_SIZE,
+      totalPages: response.total_pages,
+      totalResults: response.total_results,
+      hasNextPage: response.page < response.total_pages,
+    },
   };
 }
 
@@ -152,7 +204,11 @@ function mapMovieDetail(movie: TmdbMovieDetailResponse): MovieDetail {
 }
 
 export class TmdbAdapter {
-  constructor(private readonly client: TmdbClient) {}
+  constructor(
+    private readonly client: TmdbClient,
+    private readonly cache?: MovieCachePort,
+    private readonly language = TMDB_LANGUAGE,
+  ) {}
 
   async getGenres(): Promise<Genre[]> {
     const response = await this.client.getGenres();
@@ -163,26 +219,83 @@ export class TmdbAdapter {
 
   async searchMovies(input: SearchMoviesQuery): Promise<PaginatedMovies> {
     const response = await this.client.searchMovies(input);
-    const movies = {
-      data: response.results.map(mapMovieSummary),
-      meta: {
-        page: response.page,
-        pageSize: PAGE_SIZE,
-        totalPages: response.total_pages,
-        totalResults: response.total_results,
-        hasNextPage: response.page < response.total_pages,
-      },
-    };
 
     return parsePublicResult(
       SearchMoviesResponseSchema.and(PaginatedMoviesSchema),
-      movies,
+      mapMovieList(response),
     );
   }
 
   async getMovieDetail(movieId: number): Promise<MovieDetail> {
-    const response = await this.client.getMovieDetail(movieId);
+    const cache = this.cache;
 
-    return parsePublicResult(MovieDetailSchema, mapMovieDetail(response));
+    if (cache) {
+      const cached = await cache.get(movieId, this.language);
+
+      if (cached && !cache.isExpired(cached)) {
+        const parsedCached = TmdbMovieDetailResponseSchema.safeParse(
+          cached.payload,
+        );
+
+        if (parsedCached.success) {
+          try {
+            return parsePublicResult(
+              MovieDetailSchema,
+              mapMovieDetail(parsedCached.data),
+            );
+          } catch (error) {
+            if (
+              !(error instanceof TmdbError) ||
+              error.code !== "INVALID_RESPONSE"
+            ) {
+              throw error;
+            }
+          }
+        }
+
+        await cache.delete(movieId, this.language).catch(() => false);
+      }
+    }
+
+    const response = await this.client.getMovieDetail(movieId);
+    const detail = parsePublicResult(
+      MovieDetailSchema,
+      mapMovieDetail(response),
+    );
+
+    await cache?.set(movieId, this.language, response).catch(() => undefined);
+
+    return detail;
+  }
+
+  async discoverMovies(input: TmdbDiscoverOptions): Promise<PaginatedMovies> {
+    const options = TmdbDiscoverOptionsSchema.parse(input);
+    const joinIds = (ids: number[] | undefined) =>
+      ids && ids.length > 0 ? ids.join(",") : undefined;
+    const response = await this.client.discoverMovies({
+      page: options.page,
+      withGenres: joinIds(options.genreIds),
+      withoutGenres: joinIds(options.excludedGenreIds),
+      withKeywords: joinIds(options.keywordIds),
+      withCast: joinIds(options.castIds),
+      withCrew: joinIds(options.crewIds),
+      withOriginalLanguage: options.originalLanguage,
+      minRuntime: options.minRuntime,
+      maxRuntime: options.maxRuntime,
+      minVoteAverage: options.minTmdbRating,
+      minVoteCount: options.minTmdbVoteCount,
+    });
+
+    return parsePublicResult(PaginatedMoviesSchema, mapMovieList(response));
+  }
+
+  async getSimilarMovies(input: {
+    movieId: number;
+    page?: number;
+  }): Promise<PaginatedMovies> {
+    const options = SimilarMoviesOptionsSchema.parse(input);
+    const response = await this.client.getSimilarMovies(options);
+
+    return parsePublicResult(PaginatedMoviesSchema, mapMovieList(response));
   }
 }

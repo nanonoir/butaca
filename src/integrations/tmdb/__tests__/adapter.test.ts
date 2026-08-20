@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
+import { z } from "zod";
 
 import {
   GenreSchema,
@@ -9,7 +10,7 @@ import genresFixture from "../../../fixtures/tmdb/genres.json";
 import movieDetailFixture from "../../../fixtures/tmdb/movie-detail.json";
 import movieListFixture from "../../../fixtures/tmdb/movie-list.json";
 
-import { TmdbAdapter } from "../adapter";
+import { TmdbAdapter, type TmdbDiscoverOptions } from "../adapter";
 import type { TmdbClient } from "../client";
 import { TmdbError } from "../errors";
 import {
@@ -26,22 +27,30 @@ type ClientDouble = {
   getGenres: ReturnType<typeof vi.fn<TmdbClient["getGenres"]>>;
   searchMovies: ReturnType<typeof vi.fn<TmdbClient["searchMovies"]>>;
   getMovieDetail: ReturnType<typeof vi.fn<TmdbClient["getMovieDetail"]>>;
+  discoverMovies: ReturnType<typeof vi.fn<TmdbClient["discoverMovies"]>>;
+  getSimilarMovies: ReturnType<typeof vi.fn<TmdbClient["getSimilarMovies"]>>;
 };
 
 function createClientDouble(): ClientDouble {
   const getGenres = vi.fn<TmdbClient["getGenres"]>();
   const searchMovies = vi.fn<TmdbClient["searchMovies"]>();
   const getMovieDetail = vi.fn<TmdbClient["getMovieDetail"]>();
+  const discoverMovies = vi.fn<TmdbClient["discoverMovies"]>();
+  const getSimilarMovies = vi.fn<TmdbClient["getSimilarMovies"]>();
 
   return {
     client: {
       getGenres,
       searchMovies,
       getMovieDetail,
+      discoverMovies,
+      getSimilarMovies,
     } as unknown as TmdbClient,
     getGenres,
     searchMovies,
     getMovieDetail,
+    discoverMovies,
+    getSimilarMovies,
   };
 }
 
@@ -78,6 +87,19 @@ async function expectSanitizedInvalidResponse(
   });
   expect((thrown as Error).cause).toBeUndefined();
   expect(String(thrown)).not.toContain(forbiddenText);
+}
+
+async function expectInputZodError(operation: Promise<unknown>) {
+  let thrown: unknown;
+
+  try {
+    await operation;
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown).toBeInstanceOf(z.ZodError);
+  expect(thrown).not.toBeInstanceOf(TmdbError);
 }
 
 describe("TMDB fixtures", () => {
@@ -646,6 +668,243 @@ describe("TmdbAdapter.getMovieDetail", () => {
 
     await expect(
       new TmdbAdapter(client.client).getMovieDetail(8101),
+    ).rejects.toBe(clientError);
+  });
+});
+
+describe("TmdbAdapter.discoverMovies", () => {
+  it("derives a public options type with a required page and no similar movie filter", () => {
+    type PageField = Pick<TmdbDiscoverOptions, "page">;
+    type PageIsRequired = PageField extends Required<PageField> ? true : false;
+    type HasSimilarMovieId =
+      "similarToMovieId" extends keyof TmdbDiscoverOptions ? true : false;
+
+    expectTypeOf<PageIsRequired>().toEqualTypeOf<true>();
+    expectTypeOf<HasSimilarMovieId>().toEqualTypeOf<false>();
+  });
+
+  it("maps every filter exactly while preserving array order, duplicates and zeroes", async () => {
+    const client = createClientDouble();
+    client.discoverMovies.mockResolvedValue(cloneMovieList());
+
+    await new TmdbAdapter(client.client).discoverMovies({
+      genreIds: [7101, 7102, 7101],
+      excludedGenreIds: [7103, 7103],
+      keywordIds: [8003, 8001, 8003],
+      castIds: [9102, 9101, 9102],
+      crewIds: [9202, 9201, 9202],
+      originalLanguage: "es",
+      minRuntime: 80,
+      maxRuntime: 180,
+      minTmdbRating: 0,
+      minTmdbVoteCount: 0,
+      page: 3,
+    });
+
+    expect(client.discoverMovies).toHaveBeenCalledWith({
+      page: 3,
+      withGenres: "7101,7102,7101",
+      withoutGenres: "7103,7103",
+      withKeywords: "8003,8001,8003",
+      withCast: "9102,9101,9102",
+      withCrew: "9202,9201,9202",
+      withOriginalLanguage: "es",
+      minRuntime: 80,
+      maxRuntime: 180,
+      minVoteAverage: 0,
+      minVoteCount: 0,
+    });
+  });
+
+  it("maps empty filter arrays to undefined and defensively defaults a missing page", async () => {
+    const client = createClientDouble();
+    client.discoverMovies.mockResolvedValue(cloneMovieList());
+    const runtimeInput = {
+      genreIds: [],
+      excludedGenreIds: [],
+      keywordIds: [],
+      castIds: [],
+      crewIds: [],
+    } as unknown as TmdbDiscoverOptions;
+
+    await new TmdbAdapter(client.client).discoverMovies(runtimeInput);
+
+    expect(client.discoverMovies).toHaveBeenCalledWith({
+      page: 1,
+      withGenres: undefined,
+      withoutGenres: undefined,
+      withKeywords: undefined,
+      withCast: undefined,
+      withCrew: undefined,
+      withOriginalLanguage: undefined,
+      minRuntime: undefined,
+      maxRuntime: undefined,
+      minVoteAverage: undefined,
+      minVoteCount: undefined,
+    });
+  });
+
+  it.each([
+    ["similar movie filters", { similarToMovieId: 8101, page: 1 }],
+    ["unknown provider keys", { withGenres: "7101", page: 1 }],
+    ["invalid genre IDs", { genreIds: [0], page: 1 }],
+    ["invalid keyword IDs", { keywordIds: [-1], page: 1 }],
+    ["invalid cast IDs", { castIds: [1.5], page: 1 }],
+    ["invalid crew IDs", { crewIds: [0], page: 1 }],
+    ["ratings above ten", { minTmdbRating: 10.1, page: 1 }],
+    [
+      "an inverted runtime range",
+      { minRuntime: 121, maxRuntime: 120, page: 1 },
+    ],
+    ["an invalid page", { page: 0 }],
+  ])("rejects %s before calling the client", async (_label, input) => {
+    const client = createClientDouble();
+
+    await expectInputZodError(
+      new TmdbAdapter(client.client).discoverMovies(
+        input as TmdbDiscoverOptions,
+      ),
+    );
+
+    expect(client.discoverMovies).not.toHaveBeenCalled();
+  });
+
+  it("reuses summary and pagination mapping without adding ranking fields", async () => {
+    const client = createClientDouble();
+    const raw = cloneMovieList();
+    raw.page = 4;
+    raw.results[0]!.release_date = "";
+    client.discoverMovies.mockResolvedValue(raw);
+
+    const result = await new TmdbAdapter(client.client).discoverMovies({
+      page: 4,
+    });
+
+    expect(result.meta).toEqual({
+      page: 4,
+      pageSize: 20,
+      totalPages: 4,
+      totalResults: 62,
+      hasNextPage: false,
+    });
+    expect(result.data[0]).toEqual({
+      id: 8101,
+      title: "La ciudad de vidrio",
+      originalTitle: "The Glass City",
+      overview: "Una archivista descubre un mapa imposible bajo la ciudad.",
+      posterPath: "/glass-city-poster.jpg",
+      backdropPath: "/glass-city-backdrop.jpg",
+      genreIds: [7101, 7102],
+      releaseDate: null,
+      originalLanguage: "es",
+      tmdbRating: 7.4,
+      tmdbVoteCount: 1842,
+    });
+    expect(result.data[0]).not.toHaveProperty("score");
+    expect(result.data[0]).not.toHaveProperty("ranking");
+  });
+
+  it("sanitizes a raw-valid response that violates the public movie contract", async () => {
+    const client = createClientDouble();
+    const raw = cloneMovieList();
+    raw.results[0]!.title = "PRIVATE_DISCOVER_TITLE";
+    raw.results[0]!.vote_average = 11;
+    client.discoverMovies.mockResolvedValue(raw);
+
+    await expectSanitizedInvalidResponse(
+      new TmdbAdapter(client.client).discoverMovies({ page: 1 }),
+      "PRIVATE_DISCOVER_TITLE",
+    );
+  });
+
+  it("preserves client errors unchanged", async () => {
+    const client = createClientDouble();
+    const clientError = new TmdbError("RATE_LIMITED", 429);
+    client.discoverMovies.mockRejectedValue(clientError);
+
+    await expect(
+      new TmdbAdapter(client.client).discoverMovies({ page: 1 }),
+    ).rejects.toBe(clientError);
+  });
+});
+
+describe("TmdbAdapter.getSimilarMovies", () => {
+  it("defaults page to one and reuses the public list mapping", async () => {
+    const client = createClientDouble();
+    const raw = cloneMovieList();
+    raw.page = 1;
+    raw.total_pages = 1;
+    client.getSimilarMovies.mockResolvedValue(raw);
+
+    const result = await new TmdbAdapter(client.client).getSimilarMovies({
+      movieId: 8101,
+    });
+
+    expect(client.getSimilarMovies).toHaveBeenCalledWith({
+      movieId: 8101,
+      page: 1,
+    });
+    expect(result.data[1]?.releaseDate).toBeNull();
+    expect(result.meta).toEqual({
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
+      totalResults: 62,
+      hasNextPage: false,
+    });
+  });
+
+  it("passes an explicit page through to the client", async () => {
+    const client = createClientDouble();
+    client.getSimilarMovies.mockResolvedValue(cloneMovieList());
+
+    await new TmdbAdapter(client.client).getSimilarMovies({
+      movieId: 8102,
+      page: 2,
+    });
+
+    expect(client.getSimilarMovies).toHaveBeenCalledWith({
+      movieId: 8102,
+      page: 2,
+    });
+  });
+
+  it.each([
+    ["a zero movie ID", { movieId: 0 }],
+    ["a string movie ID", { movieId: "8101" }],
+    ["a non-positive page", { movieId: 8101, page: 0 }],
+    ["an unknown key", { movieId: 8101, page: 1, language: "en" }],
+  ])("rejects %s before calling the client", async (_label, input) => {
+    const client = createClientDouble();
+
+    await expectInputZodError(
+      new TmdbAdapter(client.client).getSimilarMovies(
+        input as Parameters<TmdbAdapter["getSimilarMovies"]>[0],
+      ),
+    );
+
+    expect(client.getSimilarMovies).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes a raw-valid response that violates the public movie contract", async () => {
+    const client = createClientDouble();
+    const raw = cloneMovieList();
+    raw.results[0]!.original_language = "x";
+    client.getSimilarMovies.mockResolvedValue(raw);
+
+    await expectSanitizedInvalidResponse(
+      new TmdbAdapter(client.client).getSimilarMovies({ movieId: 8101 }),
+      "original_language",
+    );
+  });
+
+  it("preserves client errors unchanged", async () => {
+    const client = createClientDouble();
+    const clientError = new TmdbError("UNAVAILABLE", 503);
+    client.getSimilarMovies.mockRejectedValue(clientError);
+
+    await expect(
+      new TmdbAdapter(client.client).getSimilarMovies({ movieId: 8101 }),
     ).rejects.toBe(clientError);
   });
 });
