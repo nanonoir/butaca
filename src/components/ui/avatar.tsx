@@ -3,6 +3,7 @@ import Image from "next/image";
 export const AVATAR_SIZE = {
   SM: "sm",
   MD: "md",
+  LG: "lg",
 } as const;
 
 export type AvatarSize = (typeof AVATAR_SIZE)[keyof typeof AVATAR_SIZE];
@@ -17,6 +18,13 @@ export interface AvatarProps {
 const sizeClasses: Record<AvatarSize, string> = {
   sm: "size-8 text-xs",
   md: "size-11 text-sm",
+  lg: "size-[5.5rem] text-2xl",
+};
+
+const sizeDimensions: Record<AvatarSize, number> = {
+  sm: 32,
+  md: 44,
+  lg: 88,
 };
 
 export function Avatar({
@@ -31,7 +39,7 @@ export function Avatar({
   ].join(" ");
 
   if (src) {
-    const dimension = size === AVATAR_SIZE.SM ? 32 : 44;
+    const dimension = sizeDimensions[size];
 
     return (
       <Image

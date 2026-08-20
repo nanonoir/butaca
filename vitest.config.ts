@@ -14,6 +14,7 @@ export default defineConfig({
       "src/components/**/*.test.tsx",
       "src/features/**/*.test.tsx",
       "src/app/liked/**/*.test.tsx",
+      "src/app/profile/**/*.test.tsx",
     ],
     passWithNoTests: true,
   },

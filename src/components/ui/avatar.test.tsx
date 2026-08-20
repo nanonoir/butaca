@@ -25,4 +25,12 @@ describe("Avatar", () => {
       "/avatars/nadia.png",
     );
   });
+
+  it("renders the approved large profile size", () => {
+    render(<Avatar initials="SR" alt="Sofía Ramírez" size="lg" />);
+
+    const avatar = screen.getByRole("img", { name: "Sofía Ramírez" });
+    expect(avatar).toHaveTextContent("SR");
+    expect(avatar.className).toContain("size-[5.5rem]");
+  });
 });
