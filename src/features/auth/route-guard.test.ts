@@ -12,6 +12,7 @@ describe("resolveRouteGuard for a guest", () => {
       "/liked",
       "/ai",
       "/profile",
+      "/about",
       "/profile/preferences",
     ]) {
       expect(resolveRouteGuard(pathname, GUEST)).toEqual({
@@ -42,7 +43,7 @@ describe("resolveRouteGuard for a guest", () => {
 
 describe("resolveRouteGuard for an authenticated user", () => {
   it("keeps every product route reachable", () => {
-    for (const pathname of ["/", "/liked", "/ai", "/profile"]) {
+    for (const pathname of ["/", "/liked", "/ai", "/profile", "/about"]) {
       expect(resolveRouteGuard(pathname, AUTHENTICATED)).toEqual({
         type: "continue",
       });

@@ -8,6 +8,7 @@ const NAVIGATION_ITEMS = [
   { href: "/liked", label: "Me gusta", icon: HeartIcon },
   { href: "/ai", label: "IA", icon: SparkIcon },
   { href: "/profile", label: "Perfil", icon: ProfileIcon },
+  { href: "/about", label: "Acerca", icon: InfoIcon },
 ] as const;
 
 interface NavigationIconProps {
@@ -90,6 +91,26 @@ function ProfileIcon({ className }: NavigationIconProps) {
         strokeWidth="1.8"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+function InfoIcon({ className }: NavigationIconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M12 10.5V17"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
+      <circle cx="12" cy="7.5" fill="currentColor" r="1" />
     </svg>
   );
 }

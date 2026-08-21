@@ -1,12 +1,16 @@
 /** @vitest-environment jsdom */
 
+import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FloatingNavigation } from "./floating-navigation";
 
 afterEach(cleanup);
+beforeEach(() => {
+  usePathname.mockReturnValue("/");
+});
 
 const { usePathname } = vi.hoisted(() => ({
   usePathname: vi.fn(() => "/"),
@@ -29,16 +33,17 @@ vi.mock("next/link", () => ({
 }));
 
 describe("FloatingNavigation", () => {
-  it("exposes exactly the four destinations with the approved routes", () => {
+  it("exposes exactly the five destinations with the approved routes", () => {
     render(<FloatingNavigation />);
 
-    expect(screen.getAllByRole("link")).toHaveLength(8);
+    expect(screen.getAllByRole("link")).toHaveLength(10);
 
     for (const [label, href] of [
       ["Descubrir", "/"],
       ["Me gusta", "/liked"],
       ["IA", "/ai"],
       ["Perfil", "/profile"],
+      ["Acerca", "/about"],
     ]) {
       const matchingLinks = screen
         .getAllByRole("link")
@@ -46,6 +51,21 @@ describe("FloatingNavigation", () => {
       expect(matchingLinks).toHaveLength(2);
       expect(matchingLinks[0].textContent).toContain(label);
       expect(matchingLinks[0].querySelectorAll(".sr-only")).toHaveLength(0);
+    }
+  });
+
+  it("marks About as active in desktop and mobile navigation", () => {
+    usePathname.mockReturnValue("/about");
+    render(<FloatingNavigation />);
+
+    const aboutLinks = screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("href") === "/about");
+
+    expect(aboutLinks).toHaveLength(2);
+    for (const link of aboutLinks) {
+      expect(link).toHaveAttribute("aria-current", "page");
+      expect(link).toHaveAttribute("data-active", "true");
     }
   });
 
@@ -104,7 +124,7 @@ describe("FloatingNavigation", () => {
     const mobileBar = screen.getByRole("navigation").lastElementChild;
     expect(mobileBar?.classList).toContain("fixed");
     expect(mobileBar?.classList).toContain("md:hidden");
-    expect(mobileBar?.textContent).toContain("DescubrirMe gustaIAPerfil");
+    expect(mobileBar?.textContent).toContain("DescubrirMe gustaIAPerfilAcerca");
 
     for (const link of screen.getAllByRole("link")) {
       expect(link.classList).toContain("focus-visible:ring-2");
