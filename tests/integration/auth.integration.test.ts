@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 
 import { UuidSchema } from "../../src/contracts/common";
 import { UserRepository } from "../../src/db/repositories/user-repository";
-import { AuthService } from "../../src/features/auth/auth-service";
+import { ServerAuthService } from "../../src/features/auth/server-auth-service";
 import { createIntegrationDatabase } from "./support/database";
 import { getIntegrationEnv } from "./support/env";
 import { deleteTestAuthUserByEmail } from "./support/supabase";
@@ -30,7 +30,7 @@ it("completes the public Auth flow and cleans up the Auth identity", async () =>
       publicClientOptions,
     );
     const users = new UserRepository(database.db);
-    const authService = new AuthService(client.auth, users);
+    const authService = new ServerAuthService(client.auth, users);
     let createdUserId: string | undefined;
 
     try {
