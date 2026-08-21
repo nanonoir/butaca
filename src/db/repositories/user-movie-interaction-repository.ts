@@ -3,6 +3,7 @@ import "server-only";
 import { and, count, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { PAGE_SIZE } from "../../contracts/common";
+import type { LikesWatchedFilter } from "../../contracts/likes";
 import type { MovieReaction } from "../../contracts/interactions";
 import type { Database } from "../client";
 import {
@@ -44,19 +45,44 @@ export class UserMovieInteractionRepository {
       .offset((page - 1) * PAGE_SIZE);
   }
 
+  /** The watched filter is part of the same WHERE as the ownership scope, so a
+   * filtered list can never widen past the owner's rows. */
+  private likedWhere(userId: string, watched: LikesWatchedFilter) {
+    const watchedCondition =
+      watched === "watched"
+        ? isNotNull(userMovieInteractions.watchedAt)
+        : watched === "unwatched"
+          ? isNull(userMovieInteractions.watchedAt)
+          : undefined;
+
+    return and(
+      eq(userMovieInteractions.userId, userId),
+      eq(userMovieInteractions.reaction, "LIKE"),
+      watchedCondition,
+    );
+  }
+
+  async countLikesByUser(
+    userId: string,
+    watched: LikesWatchedFilter = "all",
+  ): Promise<number> {
+    const [total] = await this.db
+      .select({ total: count() })
+      .from(userMovieInteractions)
+      .where(this.likedWhere(userId, watched));
+
+    return total?.total ?? 0;
+  }
+
   async findLikesByUser(
     userId: string,
     page = 1,
+    watched: LikesWatchedFilter = "all",
   ): Promise<UserMovieInteractionRecord[]> {
     return this.db
       .select()
       .from(userMovieInteractions)
-      .where(
-        and(
-          eq(userMovieInteractions.userId, userId),
-          eq(userMovieInteractions.reaction, "LIKE"),
-        ),
-      )
+      .where(this.likedWhere(userId, watched))
       .orderBy(desc(userMovieInteractions.updatedAt))
       .limit(PAGE_SIZE)
       .offset((page - 1) * PAGE_SIZE);

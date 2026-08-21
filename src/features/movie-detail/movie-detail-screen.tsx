@@ -12,10 +12,21 @@ import type { Review, UpsertReviewRequest } from "@/contracts/reviews";
 
 import { MovieReviews, type ReviewEditorMode } from "./movie-reviews";
 
+/** Optional so the screen can still be rendered against fixtures. When it is
+ * provided the optimistic update is rolled back if the write fails. */
+export interface MovieDetailPersistence {
+  setReaction: (reaction: MovieReaction) => Promise<unknown>;
+  clearReaction: () => Promise<unknown>;
+  setWatched: (watched: boolean) => Promise<unknown>;
+  saveReview: (draft: UpsertReviewRequest) => Promise<Review>;
+  deleteReview: () => Promise<unknown>;
+}
+
 interface MovieDetailScreenProps {
   pageData: MovieDetailPageData;
   publicReviews: Review[];
   onClose: (viewerState: ViewerMovieState) => void;
+  persistence?: MovieDetailPersistence;
 }
 
 function BackIcon({ className }: { className?: string }) {
@@ -329,6 +340,7 @@ export function MovieDetailScreen({
   pageData,
   publicReviews,
   onClose,
+  persistence,
 }: MovieDetailScreenProps) {
   const shouldReduceMotion = useReducedMotion();
   const { movie, reviewSummary } = pageData;
@@ -374,7 +386,28 @@ export function MovieDetailScreen({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [editorMode, onClose, trailerOpen, viewerState]);
 
+  /** Rolls the optimistic state back and reports it, so a rejected write never
+   * leaves the screen showing something the database does not hold. */
+  function persistViewerState(
+    write: (() => Promise<unknown>) | null,
+    previousState: ViewerMovieState,
+    failureMessage: string,
+  ) {
+    if (!write) {
+      return;
+    }
+
+    // Wrapped so a callback that throws synchronously cannot escape into the
+    // click handler and take the screen down with it.
+    void (async () => write())().catch(() => {
+      setViewerState(previousState);
+      setStatusMessage(failureMessage);
+    });
+  }
+
   function handleReactionChange(nextReaction: MovieReaction) {
+    const previousState = viewerState;
+
     setViewerState((currentState) => ({
       ...currentState,
       reaction: nextReaction,
@@ -382,17 +415,31 @@ export function MovieDetailScreen({
     setStatusMessage(
       nextReaction === "LIKE" ? "Marcaste Me gusta" : "Marcaste No me gusta",
     );
+    persistViewerState(
+      persistence ? () => persistence.setReaction(nextReaction) : null,
+      previousState,
+      "No pudimos guardar tu reacción.",
+    );
   }
 
   function handleClearReaction() {
+    const previousState = viewerState;
+
     setViewerState((currentState) => ({
       ...currentState,
       reaction: null,
     }));
     setStatusMessage("Eliminaste tu reacción. El estado Vista no cambió.");
+    persistViewerState(
+      persistence ? () => persistence.clearReaction() : null,
+      previousState,
+      "No pudimos eliminar tu reacción.",
+    );
   }
 
   function handleWatchedChange(nextWatched: boolean) {
+    const previousState = viewerState;
+
     setViewerState((currentState) => ({
       ...currentState,
       watchedAt: nextWatched
@@ -404,16 +451,42 @@ export function MovieDetailScreen({
         ? "Marcaste la película como Vista"
         : "Marcaste la película como No vista",
     );
+    persistViewerState(
+      persistence ? () => persistence.setWatched(nextWatched) : null,
+      previousState,
+      "No pudimos guardar el estado Vista.",
+    );
   }
 
   function handleSaveReview(draft: UpsertReviewRequest) {
+    const savedMessage =
+      editorMode === "edit" ? "Reseña actualizada" : "Reseña publicada";
+
+    setEditorMode(null);
+
+    // With persistence the stored review is awaited instead of guessed: the
+    // author and identifiers belong to the server, not to this screen.
+    if (persistence) {
+      void (async () => persistence.saveReview(draft))().then(
+        (savedReview) => {
+          setMyReview(savedReview);
+          setStatusMessage(savedMessage);
+        },
+        () => {
+          setStatusMessage("No pudimos guardar tu reseña.");
+        },
+      );
+
+      return;
+    }
+
     const timestamp = new Date().toISOString();
 
     setMyReview((currentReview) => ({
       id: currentReview?.id ?? "20000000-0000-4000-8000-000000000001",
       movieId: movie.id,
-      author: {
-        displayName: "Sofía Ramírez",
+      author: currentReview?.author ?? {
+        displayName: pageData.myReview?.author.displayName ?? "Tú",
         avatarUrl: null,
       },
       ...draft,
@@ -421,15 +494,23 @@ export function MovieDetailScreen({
       createdAt: currentReview?.createdAt ?? timestamp,
       updatedAt: timestamp,
     }));
-    setEditorMode(null);
-    setStatusMessage(
-      editorMode === "edit" ? "Reseña actualizada" : "Reseña publicada",
-    );
+    setStatusMessage(savedMessage);
   }
 
   function handleDeleteReview() {
+    const previousReview = myReview;
+
     setMyReview(null);
     setStatusMessage("Reseña eliminada");
+
+    if (!persistence) {
+      return;
+    }
+
+    void (async () => persistence.deleteReview())().catch(() => {
+      setMyReview(previousReview);
+      setStatusMessage("No pudimos eliminar tu reseña.");
+    });
   }
 
   return (
