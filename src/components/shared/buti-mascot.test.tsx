@@ -9,6 +9,43 @@ import { BUTI_ACTIVITY, BUTI_MATCH, ButiMascot } from "./buti-mascot";
 afterEach(cleanup);
 
 describe("ButiMascot", () => {
+  it("renders on a transparent canvas with volumetric lighting", () => {
+    render(<ButiMascot match={BUTI_MATCH.HIGH} />);
+
+    const buti = screen.getByRole("img", {
+      name: "Buti feliz, match alto",
+    });
+
+    expect(buti).not.toHaveClass("bg-primary");
+    expect(screen.getByTestId("buti-body")).toHaveAttribute(
+      "fill",
+      expect.stringContaining("url("),
+    );
+    expect(screen.getByTestId("buti-body")).toHaveAttribute(
+      "filter",
+      expect.stringContaining("url("),
+    );
+    expect(screen.getByTestId("buti-body-light")).toBeInTheDocument();
+  });
+
+  it("isolates its SVG lighting definitions between mascot instances", () => {
+    const { container } = render(
+      <>
+        <ButiMascot match={BUTI_MATCH.HIGH} />
+        <ButiMascot match={BUTI_MATCH.MEDIUM} />
+      </>,
+    );
+
+    const definitionIds = Array.from(
+      container.querySelectorAll(
+        "linearGradient, radialGradient, clipPath, filter",
+      ),
+      (definition) => definition.id,
+    );
+
+    expect(new Set(definitionIds).size).toBe(definitionIds.length);
+  });
+
   it("shows the high-match face and celebratory jump particles", () => {
     render(
       <ButiMascot activity={BUTI_ACTIVITY.JUMPING} match={BUTI_MATCH.HIGH} />,
