@@ -52,7 +52,7 @@ The following requirements override the corresponding prototype behavior:
 
 | Area | Prototype | Approved foundation behavior |
 |---|---|---|
-| Desktop navigation | Attached left sidebar with persistent labels | Detached rounded vertical floating navigation; four icon controls; each label reveals on hover and keyboard focus |
+| Desktop navigation | Attached left sidebar with persistent labels | Detached rounded vertical floating navigation; five icon controls; each label reveals on hover and keyboard focus |
 | Application background | Flat viewport composition | Rounded main content surface separated from the viewport background using semantic tokens |
 
 All other visual decisions should remain faithful to the prototype unless this PRD states otherwise.
@@ -78,7 +78,7 @@ All other visual decisions should remain faithful to the prototype unless this P
 - Semantic color, typography, radius, border, shadow, focus, and motion tokens.
 - Dark theme implementation.
 - Responsive shell behavior.
-- Floating desktop navigation with four primary destinations.
+- Floating desktop navigation with five primary destinations.
 - Mobile bottom navigation with the same destinations.
 - Rounded main application surface.
 - `Button`, `Avatar`, and `Input` primitives.
@@ -116,6 +116,7 @@ The foundation must still provide accessible primitives that future feature-leve
 | Liked Movies | “Me gusta” navigation item | Yes | Yes | Filter pills, poster grid, watched badge |
 | AI Assistant | “IA” navigation item | Yes | Yes | Prompt chips, chat input, disabled send button |
 | Profile | “Perfil” navigation item | Yes | Yes | Avatar, genre tags, stats, logout |
+| About | `Acerca` navigation item | Yes | Yes | Product summary and TMDB attribution |
 | Movie Detail | “Más información” from Discover | Yes | No | Desktop overlay/sheet inspected |
 | Initial loading | Artifact startup | Yes | Yes | Plain loading text before hydration |
 
@@ -279,7 +280,7 @@ Use Tailwind's `md` breakpoint (`48rem` / `768px`) as the single shell transitio
 ### Mobile (below `md`)
 
 - Floating vertical navigation is hidden.
-- A bottom navigation presents the four icons with visible text labels because touch has no hover.
+- A bottom navigation presents the five icons with visible text labels because touch has no hover.
 - Main surface uses the same subtle `0.5rem` outer inset and a reduced practical radius if viewport width requires it, while preserving the rounded-background concept.
 - The mobile navigation remains visually inside the MainSurface boundary and aligned to its inner edge.
 - Content includes safe bottom padding so the mobile navigation never obscures interactive controls.
@@ -296,6 +297,7 @@ Use Tailwind's `md` breakpoint (`48rem` / `768px`) as the single shell transitio
 | Liked Movies | `Me gusta` | Heart / liked collection |
 | AI Assistant | `IA` | Assistant / sparkle |
 | Profile | `Perfil` | User profile |
+| About | `Acerca` | Product information |
 
 Final icons must come from one existing or approved icon source and use consistent stroke weight and optical size.
 
@@ -313,7 +315,7 @@ Final icons must come from one existing or approved icon source and use consiste
 
 ### Mobile behavior
 
-- Four evenly distributed destinations.
+- Five evenly distributed destinations.
 - Icon and visible label for every item.
 - Active destination uses `primary` and `aria-current="page"`.
 - Respect safe-area insets.
@@ -505,7 +507,7 @@ The route must not require Storybook and must not contain product business logic
 - [ ] Desktop navigation is detached from the left viewport edge.
 - [ ] Desktop navigation is structurally and visually contained inside `MainSurface`.
 - [ ] Desktop navigation is vertical, rounded, and visually floating.
-- [ ] It contains exactly the four primary destinations defined in this PRD.
+- [ ] It contains exactly the five primary destinations defined in this PRD.
 - [ ] Each label reveals on pointer hover and keyboard focus.
 - [ ] Inactive desktop hover and keyboard focus use the selected primary treatment, with the icon remaining visible above the expanded label.
 - [ ] Label reveal does not reflow or move application content.
