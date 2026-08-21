@@ -12,12 +12,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const clientMocks = vi.hoisted(() => ({
   fetchSearchMovies: vi.fn(),
+  fetchSimilarMovies: vi.fn(),
   fetchMovieDetail: vi.fn(),
   fetchMovieReviews: vi.fn(),
 }));
 
 vi.mock("@/features/movies/movie-catalog-client", () => ({
   fetchSearchMovies: clientMocks.fetchSearchMovies,
+  fetchSimilarMovies: clientMocks.fetchSimilarMovies,
 }));
 vi.mock("@/features/movie-detail/movie-detail-client", () => ({
   fetchMovieDetail: clientMocks.fetchMovieDetail,
@@ -63,8 +65,19 @@ afterEach(cleanup);
 
 beforeEach(() => {
   clientMocks.fetchSearchMovies.mockReset();
+  clientMocks.fetchSimilarMovies.mockReset();
   clientMocks.fetchMovieDetail.mockReset();
   clientMocks.fetchMovieReviews.mockReset();
+  clientMocks.fetchSimilarMovies.mockResolvedValue({
+    data: [],
+    meta: {
+      page: 1,
+      pageSize: 20,
+      totalPages: 0,
+      totalResults: 0,
+      hasNextPage: false,
+    },
+  });
 });
 
 describe("DiscoverScreen search", () => {
