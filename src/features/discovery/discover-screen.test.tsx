@@ -65,11 +65,16 @@ describe("DiscoverScreen", () => {
         name: "Preguntale a Buti sobre Dune",
       }),
     ).toBeInTheDocument();
-    expect(
-      within(buti).getByRole("button", {
-        name: "Abrir asistente de Buti sobre Dune",
-      }),
-    ).toBeInTheDocument();
+    const mascotButton = within(buti).getByRole("button", {
+      name: "Abrir asistente de Buti sobre Dune",
+    });
+
+    expect(mascotButton).toBeInTheDocument();
+    expect(mascotButton.className).not.toMatch(/hover:ring/);
+    expect(mascotButton).toHaveClass(
+      "focus-visible:ring-2",
+      "focus-visible:ring-ring",
+    );
     expect(
       within(buti).queryByRole("link", {
         name: "Preguntale a Buti sobre Dune",

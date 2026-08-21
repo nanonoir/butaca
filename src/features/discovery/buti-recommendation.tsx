@@ -127,7 +127,7 @@ export function ButiRecommendation({
           />
           <button
             aria-label={`Abrir asistente de Buti sobre ${movie.title}`}
-            className="absolute inset-0 rounded-[1.35rem] transition-[box-shadow] duration-fast ease-ui hover:ring-2 hover:ring-primary/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="absolute inset-0 rounded-[1.35rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             onClick={(event) => onOpenAssistant(event.currentTarget)}
             type="button"
           />
