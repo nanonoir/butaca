@@ -1,6 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -87,6 +93,46 @@ describe("LikedMoviesScreen", () => {
     expect(screen.getByRole("button", { name: "No vistas" })).toHaveAttribute(
       "aria-pressed",
       "true",
+    );
+  });
+
+  it("opens the movie detail when selecting a liked movie", async () => {
+    render(<LikedMoviesScreen items={ITEMS} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver detalle de Interstellar" }),
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Detalle de Interstellar" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar detalle" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "Detalle de Interstellar" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("keeps the hover treatment inside the poster boundary", () => {
+    render(<LikedMoviesScreen items={ITEMS} />);
+
+    const action = screen.getByRole("button", {
+      name: "Ver detalle de Interstellar",
+    });
+    const article = action.closest("article");
+    const hoverLayer = article?.querySelector("[data-liked-poster-hover]");
+    const posterFrame = screen
+      .getByRole("img", { name: "Póster de Interstellar" })
+      .closest("figure");
+
+    expect(hoverLayer).not.toBeNull();
+    expect(hoverLayer?.closest("figure")).toBe(posterFrame);
+    expect(posterFrame).toHaveClass("overflow-hidden");
+    expect(action.closest("li")).toHaveClass(
+      "[&>article>button:hover]:bg-transparent!",
     );
   });
 });

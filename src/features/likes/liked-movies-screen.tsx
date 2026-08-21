@@ -1,11 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { AnimatePresence } from "motion/react";
 
 import type { LikedMovieItem, LikesWatchedFilter } from "@/contracts/likes";
+import type { MovieSummary } from "@/contracts/movies";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
+import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
+import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
 
 const FILTER_OPTIONS: readonly {
   value: LikesWatchedFilter;
@@ -77,6 +81,11 @@ function PosterPlaceholder({ title, watched }: PosterPlaceholderProps) {
             "repeating-linear-gradient(135deg, transparent 0, transparent 12px, var(--border) 12px, var(--border) 13px)",
         }}
       />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-transparent transition-colors duration-fast ease-ui group-hover:bg-primary/5"
+        data-liked-poster-hover
+      />
       {watched ? (
         <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-border bg-background/90 px-2.5 py-1.5 font-mono text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-primary shadow-floating backdrop-blur-sm">
           <EyeIcon />
@@ -106,7 +115,11 @@ function getMovieCountLabel(count: number) {
 
 export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
   const [activeFilter, setActiveFilter] = useState<LikesWatchedFilter>("all");
+  const [selectedMovie, setSelectedMovie] = useState<MovieSummary | null>(null);
   const visibleItems = getVisibleItems(items, activeFilter);
+  const detailExperience = selectedMovie
+    ? getMovieDetailExperienceFixture(selectedMovie)
+    : null;
 
   return (
     <div className="mx-auto flex w-full max-w-[90rem] flex-col gap-8 py-4 md:py-8">
@@ -157,8 +170,13 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
             const year = item.movie.releaseDate?.slice(0, 4);
 
             return (
-              <li key={item.movie.id} className="min-w-0">
+              <li
+                key={item.movie.id}
+                className="min-w-0 [&>article>button:hover]:bg-transparent!"
+              >
                 <MoviePosterCard
+                  actionLabel={`Ver detalle de ${item.movie.title}`}
+                  onSelect={() => setSelectedMovie(item.movie)}
                   title={item.movie.title}
                   year={year}
                   poster={
@@ -174,6 +192,17 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
           })}
         </ul>
       </section>
+
+      <AnimatePresence>
+        {detailExperience ? (
+          <MovieDetailScreen
+            key={detailExperience.pageData.movie.id}
+            onClose={() => setSelectedMovie(null)}
+            pageData={detailExperience.pageData}
+            publicReviews={detailExperience.publicReviews}
+          />
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
