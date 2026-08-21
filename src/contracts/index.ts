@@ -1,4 +1,6 @@
 export * from "./common";
+export * from "./auth";
+export * from "./password-policy";
 export * from "./discover";
 export * from "./errors";
 export * from "./interactions";

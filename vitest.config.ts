@@ -6,17 +6,12 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "server-only": "next/dist/compiled/server-only/empty",
     },
   },
   test: {
-    include: [
-      "src/contracts/**/*.test.ts",
-      "src/components/**/*.test.tsx",
-      "src/features/**/*.test.tsx",
-      "src/app/ai/**/*.test.tsx",
-      "src/app/liked/**/*.test.tsx",
-      "src/app/profile/**/*.test.tsx",
-    ],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    exclude: ["tests/integration/**"],
     passWithNoTests: true,
   },
 });

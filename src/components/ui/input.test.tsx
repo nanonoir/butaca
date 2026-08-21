@@ -36,4 +36,11 @@ describe("Input", () => {
       "Enter a valid email address.",
     );
   });
+
+  it("uses cn so caller spacing overrides the default input padding", () => {
+    render(<Input label="Email address" className="px-8" />);
+
+    expect(screen.getByLabelText("Email address")).toHaveClass("px-8");
+    expect(screen.getByLabelText("Email address")).not.toHaveClass("px-4");
+  });
 });

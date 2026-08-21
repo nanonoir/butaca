@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import {
   Bricolage_Grotesque,
   Instrument_Sans,
   Space_Mono,
 } from "next/font/google";
-import "./globals.css";
 
-import { AppShell } from "@/components/shared/app-shell";
+import "./globals.css";
 
 const bricolage = Bricolage_Grotesque({
   variable: "--font-bricolage",
@@ -29,14 +29,14 @@ export const metadata: Metadata = {
   description: "Descubrimiento de películas y recomendaciones personales.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="es"
       className={`${bricolage.variable} ${instrument.variable} ${spaceMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-background font-sans">
-        <AppShell>{children}</AppShell>
+        {children}
       </body>
     </html>
   );
