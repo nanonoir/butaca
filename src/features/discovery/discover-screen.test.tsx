@@ -493,6 +493,28 @@ describe("DiscoverScreen", () => {
     });
   });
 
+  it("removes a reacted movie from Discover after closing its detail", async () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Más información sobre Dune" }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
+        "button",
+        { name: "Me gusta" },
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar detalle" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { level: 2, name: "La llegada" }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Dune: Me gusta");
+  });
+
   it("keeps watched state independent from the personal reaction", () => {
     render(<DiscoverScreen movies={MOVIES} />);
 

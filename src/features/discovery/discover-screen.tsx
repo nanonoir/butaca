@@ -14,7 +14,10 @@ import {
 import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
-import type { MovieReaction } from "@/contracts/interactions";
+import type {
+  MovieReaction,
+  ViewerMovieState,
+} from "@/contracts/interactions";
 import type { MovieSummary } from "@/contracts/movies";
 import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
@@ -434,6 +437,17 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
     setCurrentIndex((index) => index + 1);
   }
 
+  function handleDetailClose(viewerState: ViewerMovieState) {
+    setDetailMovie(null);
+
+    if (
+      viewerState.reaction !== null &&
+      detailMovie?.id === currentMovie?.id
+    ) {
+      handleReaction(viewerState.reaction);
+    }
+  }
+
   function restartStack() {
     setCurrentIndex(0);
     setExitReaction(null);
@@ -552,7 +566,7 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
         {detailExperience ? (
           <MovieDetailScreen
             key={detailExperience.pageData.movie.id}
-            onClose={() => setDetailMovie(null)}
+            onClose={handleDetailClose}
             pageData={detailExperience.pageData}
             publicReviews={detailExperience.publicReviews}
           />
