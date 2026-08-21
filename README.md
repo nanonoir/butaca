@@ -105,7 +105,7 @@ pnpm test:integration # Suite contra Supabase/PostgreSQL y TMDB reales
 - Las películas se identifican directamente por su ID de TMDB.
 - Un `LIKE` o `DISLIKE` excluye la película de Discover.
 - Cambiar entre `LIKE` y `DISLIKE` conserva `watchedAt`.
-- Quitar una reacción también quita `watchedAt`.
+- Quitar una reacción conserva `watchedAt`; ambos estados son independientes.
 - Las reviews no modifican las recomendaciones en V1.
 - Los contratos Zod son la fuente única de verdad para frontend y backend.
 

@@ -478,13 +478,12 @@ describe("Task 6 repositories", () => {
     );
   });
 
-  it("setWatched updates an existing row and never creates one", async () => {
+  it("setWatched creates watched state without an implicit reaction", async () => {
     const userId = getTask6AuthUserId(0);
     const otherUserId = getTask6AuthUserId(1);
     const repository = getUserMovieInteractionRepository();
     const watchedAt = new Date("2026-02-20T18:30:00.000Z");
 
-    await repository.upsertReaction(userId, 103, "LIKE");
     await repository.upsertReaction(otherUserId, 103, "DISLIKE");
 
     const watched = await repository.setWatched(userId, 103, watchedAt);
@@ -492,28 +491,36 @@ describe("Task 6 repositories", () => {
       otherUserId,
       103,
     );
-    const unwatched = await repository.setWatched(userId, 103, null);
-
-    await repository.upsertReaction(otherUserId, 104, "LIKE");
-    const missing = await repository.setWatched(userId, 104, watchedAt);
-    const otherUserStillUnchanged = await repository.findByUserAndMovie(
-      otherUserId,
-      104,
-    );
-
-    expect(watched).toMatchObject({ userId, movieId: 103, watchedAt });
+    expect(watched).toMatchObject({
+      userId,
+      movieId: 103,
+      reaction: null,
+      watchedAt,
+    });
     expect(otherUserUnchanged).toMatchObject({
       userId: otherUserId,
       movieId: 103,
       reaction: "DISLIKE",
       watchedAt: null,
     });
-    expect(unwatched).toMatchObject({ userId, movieId: 103, watchedAt: null });
-    expect(missing).toBeNull();
+  });
+
+  it("setWatched removes a watched-only row instead of leaving it empty", async () => {
+    const userId = getTask6AuthUserId(0);
+    const repository = getUserMovieInteractionRepository();
+    const watchedAt = new Date("2026-02-21T18:30:00.000Z");
+
+    await repository.setWatched(userId, 104, watchedAt);
+
+    expect(await repository.setWatched(userId, 104, null)).toBeNull();
     expect(await repository.findByUserAndMovie(userId, 104)).toBeNull();
-    expect(otherUserStillUnchanged).toMatchObject({
-      userId: otherUserId,
-      movieId: 104,
+
+    await repository.upsertReaction(userId, 105, "LIKE");
+    await repository.setWatched(userId, 105, watchedAt);
+
+    expect(await repository.setWatched(userId, 105, null)).toMatchObject({
+      userId,
+      movieId: 105,
       reaction: "LIKE",
       watchedAt: null,
     });
@@ -650,7 +657,7 @@ describe("Task 6 repositories", () => {
     ).toBe(true);
   });
 
-  it("deleting an interaction removes reaction and watchedAt together", async () => {
+  it("removing a reaction preserves watched state and deletes an empty row", async () => {
     const userId = getTask6AuthUserId(0);
     const otherUserId = getTask6AuthUserId(1);
     const repository = getUserMovieInteractionRepository();
@@ -663,7 +670,12 @@ describe("Task 6 repositories", () => {
     await repository.setWatched(otherUserId, 109, otherUserWatchedAt);
 
     expect(await repository.delete(userId, 109)).toBe(true);
-    expect(await repository.findByUserAndMovie(userId, 109)).toBeNull();
+    expect(await repository.findByUserAndMovie(userId, 109)).toMatchObject({
+      userId,
+      movieId: 109,
+      reaction: null,
+      watchedAt,
+    });
     expect(await repository.findByUserAndMovie(otherUserId, 109)).toMatchObject(
       {
         userId: otherUserId,
@@ -673,6 +685,25 @@ describe("Task 6 repositories", () => {
       },
     );
     expect(await repository.delete(userId, 109)).toBe(false);
+
+    await repository.upsertReaction(userId, 110, "LIKE");
+
+    expect(await repository.delete(userId, 110)).toBe(true);
+    expect(await repository.findByUserAndMovie(userId, 110)).toBeNull();
+  });
+
+  it("rejects an interaction without reaction or watched state", async () => {
+    const userId = getTask6AuthUserId(0);
+
+    await expectCheckConstraintViolation(
+      getDatabase()
+        .insert(userMovieInteractions)
+        .values({ userId, movieId: 111, reaction: null, watchedAt: null }),
+      "user_movie_interactions_meaningful_state_check",
+    );
+    expect(
+      await getUserMovieInteractionRepository().findByUserAndMovie(userId, 111),
+    ).toBeNull();
   });
 
   it("rejects a non-positive TMDB movie ID", async () => {

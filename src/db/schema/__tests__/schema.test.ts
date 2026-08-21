@@ -222,6 +222,10 @@ describe("foundation database schema", () => {
           name: "user_movie_interactions_movie_id_positive_check",
           sql: '"user_movie_interactions"."movie_id" > 0',
         },
+        {
+          name: "user_movie_interactions_meaningful_state_check",
+          sql: '"user_movie_interactions"."reaction" is not null or "user_movie_interactions"."watched_at" is not null',
+        },
       ],
       reviews: [
         {
@@ -363,6 +367,7 @@ describe("foundation database schema", () => {
       userId: users.id.hasDefault,
       interactionId: userMovieInteractions.id.hasDefault,
       reviewId: reviews.id.hasDefault,
+      reactionNotNull: userMovieInteractions.reaction.notNull,
       onboardingCompletedAt: users.onboardingCompletedAt.hasDefault,
       watchedAt: userMovieInteractions.watchedAt.hasDefault,
       fetchedAt: movieCache.fetchedAt.hasDefault,
@@ -380,6 +385,7 @@ describe("foundation database schema", () => {
       userId: false,
       interactionId: true,
       reviewId: true,
+      reactionNotNull: false,
       onboardingCompletedAt: false,
       watchedAt: false,
       fetchedAt: false,

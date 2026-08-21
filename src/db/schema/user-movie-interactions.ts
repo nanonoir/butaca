@@ -20,7 +20,7 @@ export const userMovieInteractions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     movieId: integer("movie_id").notNull(),
-    reaction: movieReactionEnum("reaction").notNull(),
+    reaction: movieReactionEnum("reaction"),
     watchedAt: timestamp("watched_at", {
       withTimezone: true,
       mode: "date",
@@ -46,6 +46,10 @@ export const userMovieInteractions = pgTable(
     check(
       "user_movie_interactions_movie_id_positive_check",
       sql`${table.movieId} > 0`,
+    ),
+    check(
+      "user_movie_interactions_meaningful_state_check",
+      sql`${table.reaction} is not null or ${table.watchedAt} is not null`,
     ),
     index("user_movie_interactions_user_updated_at_idx").on(
       table.userId,

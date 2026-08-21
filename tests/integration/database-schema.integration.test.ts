@@ -188,6 +188,12 @@ it("verifies the approved public database schema", async () => {
       ["reviews", "reviews_user_id_users_id_fk", "f", "CASCADE"],
       [
         "user_movie_interactions",
+        "user_movie_interactions_meaningful_state_check",
+        "c",
+        null,
+      ],
+      [
+        "user_movie_interactions",
         "user_movie_interactions_movie_id_positive_check",
         "c",
         null,

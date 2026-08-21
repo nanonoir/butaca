@@ -1,0 +1,2 @@
+ALTER TABLE "user_movie_interactions" ALTER COLUMN "reaction" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "user_movie_interactions" ADD CONSTRAINT "user_movie_interactions_meaningful_state_check" CHECK ("user_movie_interactions"."reaction" is not null or "user_movie_interactions"."watched_at" is not null);
