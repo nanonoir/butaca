@@ -95,6 +95,138 @@ body {
   font-family: var(--font-instrument), system-ui, sans-serif;
 }
 
+.buti-character {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.buti-eyes {
+  animation: buti-blink 4.2s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.buti-mascot[data-activity="jumping"] .buti-character {
+  animation: buti-jump 680ms var(--ease-ui) both;
+}
+
+.buti-mascot[data-activity="talking"] .buti-character {
+  animation: buti-talk 420ms ease-in-out infinite alternate;
+}
+
+.buti-mouth-talking {
+  animation: buti-mouth-talk 220ms ease-in-out infinite alternate;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.buti-grain {
+  --buti-grain-x: 0rem;
+  --buti-grain-y: 0rem;
+  position: absolute;
+  top: 48%;
+  left: 50%;
+  width: 0.45rem;
+  height: 0.65rem;
+  border-radius: 60% 40% 55% 45%;
+  background: #f6edcf;
+  opacity: 0;
+}
+
+.buti-grain-one {
+  --buti-grain-x: -2.7rem;
+  --buti-grain-y: -2.1rem;
+}
+
+.buti-grain-two {
+  --buti-grain-x: 0.25rem;
+  --buti-grain-y: -3rem;
+}
+
+.buti-grain-three {
+  --buti-grain-x: 2.8rem;
+  --buti-grain-y: -1.65rem;
+}
+
+.buti-mascot[data-activity="jumping"] .buti-grain {
+  animation: buti-grain-burst 560ms var(--ease-ui) 120ms both;
+}
+
+@keyframes buti-blink {
+  0%,
+  44%,
+  48%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  46% {
+    transform: scaleY(0.08);
+  }
+}
+
+@keyframes buti-jump {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+
+  18% {
+    transform: translateY(0.15rem) scaleX(1.12) scaleY(0.82);
+  }
+
+  48% {
+    transform: translateY(-0.8rem) scaleX(0.92) scaleY(1.12);
+  }
+
+  72% {
+    transform: translateY(0.08rem) scaleX(1.08) scaleY(0.9);
+  }
+
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes buti-grain-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.45) rotate(0deg);
+  }
+
+  30% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(
+        calc(-50% + var(--buti-grain-x)),
+        calc(-50% + var(--buti-grain-y))
+      )
+      scale(1) rotate(160deg);
+  }
+}
+
+@keyframes buti-talk {
+  from {
+    transform: rotate(-2.5deg) translateY(0);
+  }
+
+  to {
+    transform: rotate(2.5deg) translateY(-0.12rem);
+  }
+}
+
+@keyframes buti-mouth-talk {
+  from {
+    transform: scaleY(0.55);
+  }
+
+  to {
+    transform: scaleY(1.15);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -115,6 +247,17 @@ body {
   .desktop-navigation-label {
     transition-property: opacity, background-color, color;
     transform: none;
+  }
+
+  .buti-character,
+  .buti-eyes,
+  .buti-mouth-talking {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .buti-grain {
+    display: none;
   }
 }
 

@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { vi } from "vitest";
 
 import { MoviePosterCard } from "./movie-poster-card";
 
@@ -46,5 +47,25 @@ describe("MoviePosterCard", () => {
     expect(
       screen.getByRole("article").querySelector("[data-reaction]"),
     ).toBeNull();
+  });
+
+  it("can expose the complete card as an accessible movie action", () => {
+    const onSelect = vi.fn();
+
+    render(
+      <MoviePosterCard
+        actionLabel="Ver detalle de La llegada"
+        onSelect={onSelect}
+        poster={<div>Póster</div>}
+        title="La llegada"
+        year="2016"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver detalle de La llegada" }),
+    );
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 });

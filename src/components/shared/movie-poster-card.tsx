@@ -6,6 +6,9 @@ export interface MoviePosterCardProps {
   poster: ReactNode;
   presentationSlot?: ReactNode;
   metadataSlot?: ReactNode;
+  articleLabel?: string;
+  actionLabel?: string;
+  onSelect?: () => void;
 }
 
 export function MoviePosterCard({
@@ -14,9 +17,15 @@ export function MoviePosterCard({
   poster,
   presentationSlot,
   metadataSlot,
+  articleLabel,
+  actionLabel,
+  onSelect,
 }: MoviePosterCardProps) {
   return (
-    <article className="group flex min-w-0 flex-col gap-3">
+    <article
+      aria-label={articleLabel}
+      className="group relative flex min-w-0 flex-col gap-3"
+    >
       <figure className="relative aspect-[2/3] overflow-hidden rounded-lg border border-border bg-surface-muted">
         {poster}
         {presentationSlot ? (
@@ -34,6 +43,14 @@ export function MoviePosterCard({
         </div>
         {metadataSlot ? <div className="shrink-0">{metadataSlot}</div> : null}
       </div>
+      {onSelect ? (
+        <button
+          aria-label={actionLabel ?? `Ver detalle de ${title}`}
+          className="absolute inset-0 z-10 cursor-pointer rounded-lg bg-transparent transition-[background-color,box-shadow] duration-fast ease-ui hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-primary/10"
+          onClick={onSelect}
+          type="button"
+        />
+      ) : null}
     </article>
   );
 }
