@@ -183,4 +183,99 @@ describe("MovieAssistantScreen", () => {
       screen.getByRole("dialog", { name: "Detalle de La llegada" }),
     ).toBeInTheDocument();
   });
+
+  it("keeps the beginning of the latest Buti response in view", () => {
+    vi.useFakeTimers();
+    render(
+      <MovieAssistantScreen
+        recommendations={DISCOVER_MOVIES_FIXTURE.data.movies.slice(1, 4)}
+      />,
+    );
+
+    const conversation = screen.getByTestId(
+      "movie-assistant-conversation-scroll",
+    );
+    let scrollTop = 80;
+    let latestButiOffset = 520;
+    const scrollTo = vi.fn(({ top }: ScrollToOptions) => {
+      scrollTop = Number(top);
+    });
+
+    const rectAt = (top: number) =>
+      ({
+        bottom: top,
+        height: 0,
+        left: 0,
+        right: 0,
+        toJSON: () => ({}),
+        top,
+        width: 0,
+        x: 0,
+        y: top,
+      }) as DOMRect;
+
+    Object.defineProperties(conversation, {
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+      },
+      scrollTo: {
+        configurable: true,
+        value: scrollTo,
+      },
+    });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        if (this === conversation) {
+          return rectAt(100);
+        }
+
+        if (this.dataset.testid === "latest-buti-message") {
+          return rectAt(100 + latestButiOffset - scrollTop);
+        }
+
+        return rectAt(0);
+      },
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Algo parecido a Dune" }),
+    );
+
+    expect(scrollTo).toHaveBeenLastCalledWith({
+      behavior: "smooth",
+      top: 496,
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+
+    expect(scrollTo).toHaveBeenLastCalledWith({
+      behavior: "smooth",
+      top: 496,
+    });
+
+    const input = screen.getByRole("textbox", {
+      name: "Pedime una película",
+    });
+    latestButiOffset = 1180;
+    fireEvent.change(input, { target: { value: "Algo más corto" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar consulta" }));
+
+    expect(scrollTo).toHaveBeenLastCalledWith({
+      behavior: "smooth",
+      top: 1156,
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+
+    expect(scrollTo).toHaveBeenLastCalledWith({
+      behavior: "smooth",
+      top: 1156,
+    });
+    expect(scrollTo).toHaveBeenCalledTimes(4);
+  });
 });

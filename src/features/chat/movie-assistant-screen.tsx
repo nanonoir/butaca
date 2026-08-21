@@ -28,6 +28,7 @@ const SUGGESTED_PROMPTS = [
 
 const ASSISTANT_REPLY =
   "Tomé tu pedido y lo crucé con tus gustos y tu biblioteca. Estas opciones tienen una identidad fuerte y son un buen punto de partida:";
+const MESSAGE_SCROLL_MARGIN = 24;
 
 interface MovieAssistantScreenProps {
   recommendations: MovieSummary[];
@@ -77,7 +78,7 @@ function StarIcon({ className }: IconProps) {
 
 function AssistantHeader() {
   return (
-    <header className="border-b border-border px-5 py-4 sm:px-8">
+    <header className="shrink-0 border-b border-border px-5 py-4 sm:px-8">
       <div className="mx-auto flex w-full max-w-5xl items-center gap-3">
         <ButiMascot className="size-11" match={BUTI_MATCH.MEDIUM} />
         <div className="min-w-0">
@@ -175,7 +176,7 @@ function Conversation({
   return (
     <section aria-label="Conversación" className="w-full">
       <ol className="space-y-12">
-        {turns.map((turn) => (
+        {turns.map((turn, index) => (
           <li className="space-y-7" key={turn.id}>
             <div className="ml-auto max-w-2xl rounded-xl rounded-br-sm bg-primary px-5 py-4 text-primary-foreground sm:px-6">
               <p className="font-mono text-[0.625rem] uppercase tracking-[0.12em] opacity-70">
@@ -184,7 +185,12 @@ function Conversation({
               <p className="mt-2 text-base leading-7">{turn.user.content}</p>
             </div>
 
-            <div className="flex items-start gap-3 sm:gap-4">
+            <div
+              className="flex items-start gap-3 sm:gap-4"
+              data-testid={
+                index === turns.length - 1 ? "latest-buti-message" : undefined
+              }
+            >
               <ButiMascot
                 activity={
                   turn.assistant ? BUTI_ACTIVITY.JUMPING : BUTI_ACTIVITY.TALKING
@@ -245,7 +251,7 @@ function AssistantComposer({
   }
 
   return (
-    <div className="sticky bottom-0 z-10 border-t border-border bg-surface/95 px-5 pb-[5.75rem] pt-4 backdrop-blur-md sm:px-8 md:pb-4">
+    <div className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-surface/95 px-5 pb-[5.75rem] pt-4 backdrop-blur-md sm:px-8 md:pb-4">
       <form
         aria-label="Consultar al asistente"
         className="mx-auto flex w-full max-w-5xl items-center gap-3"
@@ -283,6 +289,11 @@ export function MovieAssistantScreen({
   const [selectedMovie, setSelectedMovie] = useState<MovieSummary | null>(null);
   const turnSequence = useRef(0);
   const pendingReplies = useRef<Set<number>>(new Set());
+  const conversationScrollRef = useRef<HTMLDivElement | null>(null);
+  const messageCount = turns.reduce(
+    (count, turn) => count + 1 + (turn.assistant ? 1 : 0),
+    0,
+  );
   const detailExperience = selectedMovie
     ? getMovieDetailExperienceFixture(selectedMovie)
     : null;
@@ -295,6 +306,40 @@ export function MovieAssistantScreen({
       replyTimers.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (messageCount === 0) {
+      return;
+    }
+
+    const conversation = conversationScrollRef.current;
+    const latestButiMessage = conversation?.querySelector<HTMLElement>(
+      '[data-testid="latest-buti-message"]',
+    );
+
+    if (
+      !conversation ||
+      !latestButiMessage ||
+      typeof conversation.scrollTo !== "function"
+    ) {
+      return;
+    }
+
+    const conversationTop = conversation.getBoundingClientRect().top;
+    const messageTop = latestButiMessage.getBoundingClientRect().top;
+    const targetTop = Math.max(
+      0,
+      conversation.scrollTop +
+        messageTop -
+        conversationTop -
+        MESSAGE_SCROLL_MARGIN,
+    );
+
+    conversation.scrollTo({
+      behavior: "smooth",
+      top: targetTop,
+    });
+  }, [messageCount]);
 
   function submitPrompt(prompt: string) {
     const content = prompt.trim();
@@ -345,12 +390,16 @@ export function MovieAssistantScreen({
     <div className="-mx-4 -mb-24 -mt-5 flex min-h-[calc(100dvh-1rem)] flex-col md:-mx-8 md:-my-8">
       <div
         aria-hidden={detailExperience ? true : undefined}
-        className="flex min-h-[calc(100dvh-1rem)] flex-col"
+        className="flex h-[calc(100dvh-1rem)] min-h-0 flex-col overflow-hidden"
         inert={detailExperience ? true : undefined}
       >
         <AssistantHeader />
 
-        <div className="flex flex-1 flex-col px-5 py-8 sm:px-8 md:py-12">
+        <div
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-8 sm:px-8 md:py-12"
+          data-testid="movie-assistant-conversation-scroll"
+          ref={conversationScrollRef}
+        >
           <div className="mx-auto w-full max-w-5xl">
             {turns.length === 0 ? (
               <InitialPromptState onPromptSelect={submitPrompt} />
