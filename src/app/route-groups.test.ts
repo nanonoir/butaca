@@ -7,6 +7,7 @@ const appDirectory = fileURLToPath(new URL(".", import.meta.url));
 
 const productRoutes = [
   "ai",
+  "about",
   "liked",
   "profile",
   "profile/preferences",
