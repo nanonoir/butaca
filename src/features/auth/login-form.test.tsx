@@ -151,7 +151,7 @@ describe("LoginForm", () => {
 
     submitLoginForm();
 
-    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/discover"));
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/"));
     expect(routerPush).toHaveBeenCalledTimes(1);
     expect(
       screen.getByRole("button", { name: "Iniciando sesión…" }),
@@ -290,7 +290,7 @@ describe("LoginForm", () => {
         screen.getByRole("button", { name: "Iniciando sesión…" }),
       ).toBeDisabled(),
     );
-    expect(routerPush).toHaveBeenCalledWith("/discover");
+    expect(routerPush).toHaveBeenCalledWith("/");
   });
 
   it("lets a caller override the default form spacing", () => {

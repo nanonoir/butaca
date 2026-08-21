@@ -27,7 +27,7 @@ import {
   withAuthTimeout,
   type AuthService,
 } from "./auth-service";
-import { authServiceStub } from "./auth-service.stub";
+import { httpAuthService } from "./http-auth-service";
 import {
   isUnexpectedAuthError,
   reportUnexpectedAuthError,
@@ -56,7 +56,7 @@ export interface ResetPasswordFormProps {
 }
 
 export function ResetPasswordForm({
-  service = authServiceStub,
+  service = httpAuthService,
   linkStatus = RESET_LINK_STATUS.VALID,
   onSuccess,
   className,

@@ -33,7 +33,7 @@ import {
   withAuthTimeout,
   type AuthService,
 } from "./auth-service";
-import { authServiceStub } from "./auth-service.stub";
+import { httpAuthService } from "./http-auth-service";
 import {
   isUnexpectedAuthError,
   reportUnexpectedAuthError,
@@ -61,7 +61,7 @@ export interface LoginFormProps {
 }
 
 export function LoginForm({
-  service = authServiceStub,
+  service = httpAuthService,
   onSuccess,
   resetSuccess = false,
   className,
@@ -207,7 +207,7 @@ export function LoginForm({
           setFormError(getAuthFallbackMessage(AUTH_SERVICE_OPERATION.LOGIN));
         }
       } else {
-        router.push("/discover");
+        router.push("/");
         keepSubmitting = true;
       }
     } finally {

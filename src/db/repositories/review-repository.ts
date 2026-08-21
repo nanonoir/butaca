@@ -145,4 +145,14 @@ export class ReviewRepository {
 
     return totals;
   }
+
+  /** Review total for the profile screen, scoped to the owner. */
+  async countByUser(userId: string): Promise<number> {
+    const [total] = await this.db
+      .select({ total: count() })
+      .from(reviews)
+      .where(eq(reviews.userId, userId));
+
+    return total?.total ?? 0;
+  }
 }

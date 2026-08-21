@@ -3,7 +3,14 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { getPublicEnv } from "@/lib/env/public";
 
-export async function updateSession(request: NextRequest) {
+export type SessionUpdate = {
+  response: NextResponse;
+  isAuthenticated: boolean;
+};
+
+export async function updateSession(
+  request: NextRequest,
+): Promise<SessionUpdate> {
   const env = getPublicEnv();
   let response = NextResponse.next({ request });
   const supabase = createServerClient(
@@ -30,7 +37,13 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  await supabase.auth.getClaims();
+  const claims = await supabase.auth.getClaims();
 
-  return response;
+  return {
+    response,
+    // Defensive optional access: the only contract this function relies on is
+    // that the call settles, so a provider shape change degrades to "guest"
+    // instead of throwing inside the proxy.
+    isAuthenticated: Boolean(claims?.data) && !claims?.error,
+  };
 }

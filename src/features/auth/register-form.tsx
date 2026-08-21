@@ -30,7 +30,7 @@ import {
   withAuthTimeout,
   type AuthService,
 } from "./auth-service";
-import { authServiceStub } from "./auth-service.stub";
+import { httpAuthService } from "./http-auth-service";
 import {
   isUnexpectedAuthError,
   reportUnexpectedAuthError,
@@ -51,7 +51,7 @@ export interface RegisterFormProps {
 }
 
 export function RegisterForm({
-  service = authServiceStub,
+  service = httpAuthService,
   onSuccess,
   className,
 }: RegisterFormProps) {
@@ -201,7 +201,7 @@ export function RegisterForm({
           );
         }
       } else {
-        router.push("/onboarding");
+        router.push("/");
         keepSubmitting = true;
       }
     } finally {

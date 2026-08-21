@@ -69,19 +69,20 @@ describe("updateSession", () => {
     const nextSpy = vi.spyOn(NextResponse, "next");
     let settled = false;
 
-    const updatePromise = updateSession(request).then((response) => {
+    const updatePromise = updateSession(request).then((update) => {
       settled = true;
-      return response;
+      return update;
     });
 
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     const settledBeforeClaims = settled;
 
     releaseClaims();
-    const response = await updatePromise;
+    const { response, isAuthenticated } = await updatePromise;
     await getClaims.mock.results[0]?.value;
 
     expect(settledBeforeClaims).toBe(false);
+    expect(isAuthenticated).toBe(false);
     expect(getClaims).toHaveBeenCalledTimes(1);
     expect(getSession).not.toHaveBeenCalled();
     expect(nextSpy).toHaveBeenCalledTimes(2);
