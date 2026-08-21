@@ -8,7 +8,11 @@ import { Avatar } from "@/components/ui/avatar";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import type { MovieDetailPageData } from "@/contracts/movie-detail";
 import type { MovieReaction, ViewerMovieState } from "@/contracts/interactions";
+import type { MovieSummary } from "@/contracts/movies";
 import type { Review, UpsertReviewRequest } from "@/contracts/reviews";
+import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
+import { SimilarMoviesSection } from "@/features/movies/components/similar-movies-section";
+import { fetchMovieReviews } from "@/features/reviews/review-client";
 
 import { MovieReviews, type ReviewEditorMode } from "./movie-reviews";
 
@@ -27,6 +31,11 @@ interface MovieDetailScreenProps {
   publicReviews: Review[];
   onClose: (viewerState: ViewerMovieState) => void;
   persistence?: MovieDetailPersistence;
+}
+
+interface ActiveDetail {
+  pageData: MovieDetailPageData;
+  publicReviews: Review[];
 }
 
 function BackIcon({ className }: { className?: string }) {
@@ -343,11 +352,20 @@ export function MovieDetailScreen({
   persistence,
 }: MovieDetailScreenProps) {
   const shouldReduceMotion = useReducedMotion();
-  const { movie, reviewSummary } = pageData;
+  const [activeDetail, setActiveDetail] = useState<ActiveDetail>({
+    pageData,
+    publicReviews,
+  });
+  const [originalMovieId] = useState(pageData.movie.id);
+  const [originalViewerState, setOriginalViewerState] =
+    useState<ViewerMovieState>(pageData.viewerState);
+  const { movie, reviewSummary } = activeDetail.pageData;
   const [viewerState, setViewerState] = useState<ViewerMovieState>(
     pageData.viewerState,
   );
-  const [myReview, setMyReview] = useState<Review | null>(pageData.myReview);
+  const [myReview, setMyReview] = useState<Review | null>(
+    activeDetail.pageData.myReview,
+  );
   const [editorMode, setEditorMode] = useState<ReviewEditorMode>(null);
   const [trailerOpen, setTrailerOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -356,6 +374,15 @@ export function MovieDetailScreen({
   const showOriginalTitle = movie.originalTitle !== movie.title;
   const reaction = viewerState.reaction;
   const watched = viewerState.watchedAt !== null;
+  const isOriginalMovie = movie.id === originalMovieId;
+  const activePersistence = isOriginalMovie ? persistence : undefined;
+
+  useEffect(() => {
+    document
+      .getElementById("movie-detail-dialog")
+      ?.querySelector<HTMLButtonElement>('[aria-label="Cerrar detalle"]')
+      ?.focus();
+  }, [movie.id]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -377,14 +404,14 @@ export function MovieDetailScreen({
       } else if (editorMode) {
         setEditorMode(null);
       } else {
-        onClose(viewerState);
+        onClose(originalViewerState);
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [editorMode, onClose, trailerOpen, viewerState]);
+  }, [editorMode, onClose, originalViewerState, trailerOpen]);
 
   /** Rolls the optimistic state back and reports it, so a rejected write never
    * leaves the screen showing something the database does not hold. */
@@ -407,16 +434,19 @@ export function MovieDetailScreen({
 
   function handleReactionChange(nextReaction: MovieReaction) {
     const previousState = viewerState;
+    const nextState = { ...viewerState, reaction: nextReaction };
 
-    setViewerState((currentState) => ({
-      ...currentState,
-      reaction: nextReaction,
-    }));
+    setViewerState(nextState);
+    if (isOriginalMovie) {
+      setOriginalViewerState(nextState);
+    }
     setStatusMessage(
       nextReaction === "LIKE" ? "Marcaste Me gusta" : "Marcaste No me gusta",
     );
     persistViewerState(
-      persistence ? () => persistence.setReaction(nextReaction) : null,
+      activePersistence
+        ? () => activePersistence.setReaction(nextReaction)
+        : null,
       previousState,
       "No pudimos guardar tu reacción.",
     );
@@ -424,14 +454,15 @@ export function MovieDetailScreen({
 
   function handleClearReaction() {
     const previousState = viewerState;
+    const nextState = { ...viewerState, reaction: null };
 
-    setViewerState((currentState) => ({
-      ...currentState,
-      reaction: null,
-    }));
+    setViewerState(nextState);
+    if (isOriginalMovie) {
+      setOriginalViewerState(nextState);
+    }
     setStatusMessage("Eliminaste tu reacción. El estado Vista no cambió.");
     persistViewerState(
-      persistence ? () => persistence.clearReaction() : null,
+      activePersistence ? () => activePersistence.clearReaction() : null,
       previousState,
       "No pudimos eliminar tu reacción.",
     );
@@ -439,20 +470,26 @@ export function MovieDetailScreen({
 
   function handleWatchedChange(nextWatched: boolean) {
     const previousState = viewerState;
-
-    setViewerState((currentState) => ({
-      ...currentState,
+    const nextState = {
+      ...viewerState,
       watchedAt: nextWatched
-        ? (currentState.watchedAt ?? new Date().toISOString())
+        ? (viewerState.watchedAt ?? new Date().toISOString())
         : null,
-    }));
+    };
+
+    setViewerState(nextState);
+    if (isOriginalMovie) {
+      setOriginalViewerState(nextState);
+    }
     setStatusMessage(
       nextWatched
         ? "Marcaste la película como Vista"
         : "Marcaste la película como No vista",
     );
     persistViewerState(
-      persistence ? () => persistence.setWatched(nextWatched) : null,
+      activePersistence
+        ? () => activePersistence.setWatched(nextWatched)
+        : null,
       previousState,
       "No pudimos guardar el estado Vista.",
     );
@@ -466,8 +503,8 @@ export function MovieDetailScreen({
 
     // With persistence the stored review is awaited instead of guessed: the
     // author and identifiers belong to the server, not to this screen.
-    if (persistence) {
-      void (async () => persistence.saveReview(draft))().then(
+    if (activePersistence) {
+      void (async () => activePersistence.saveReview(draft))().then(
         (savedReview) => {
           setMyReview(savedReview);
           setStatusMessage(savedMessage);
@@ -486,7 +523,7 @@ export function MovieDetailScreen({
       id: currentReview?.id ?? "20000000-0000-4000-8000-000000000001",
       movieId: movie.id,
       author: currentReview?.author ?? {
-        displayName: pageData.myReview?.author.displayName ?? "Tú",
+        displayName: activeDetail.pageData.myReview?.author.displayName ?? "Tú",
         avatarUrl: null,
       },
       ...draft,
@@ -503,14 +540,28 @@ export function MovieDetailScreen({
     setMyReview(null);
     setStatusMessage("Reseña eliminada");
 
-    if (!persistence) {
+    if (!activePersistence) {
       return;
     }
 
-    void (async () => persistence.deleteReview())().catch(() => {
+    void (async () => activePersistence.deleteReview())().catch(() => {
       setMyReview(previousReview);
       setStatusMessage("No pudimos eliminar tu reseña.");
     });
+  }
+
+  async function handleSelectSimilarMovie(movieToOpen: MovieSummary) {
+    const [nextPageData, reviews] = await Promise.all([
+      fetchMovieDetail(movieToOpen.id),
+      fetchMovieReviews(movieToOpen.id),
+    ]);
+
+    setActiveDetail({ pageData: nextPageData, publicReviews: reviews.data });
+    setViewerState(nextPageData.viewerState);
+    setMyReview(nextPageData.myReview);
+    setEditorMode(null);
+    setTrailerOpen(false);
+    setStatusMessage(`Abriste ${nextPageData.movie.title}`);
   }
 
   return (
@@ -521,6 +572,7 @@ export function MovieDetailScreen({
       className="fixed inset-0 z-50 overflow-y-auto bg-background"
       exit={{ opacity: 0 }}
       initial={{ opacity: 0 }}
+      id="movie-detail-dialog"
       role="dialog"
       transition={{ duration: shouldReduceMotion ? 0.08 : 0.2 }}
     >
@@ -541,7 +593,7 @@ export function MovieDetailScreen({
           aria-label="Cerrar detalle"
           autoFocus
           className="absolute left-4 top-4 z-10 rounded-full border border-border bg-background/80 text-foreground backdrop-blur-sm hover:border-primary hover:bg-background/80 hover:text-primary sm:left-6 sm:top-6"
-          onClick={() => onClose(viewerState)}
+          onClick={() => onClose(originalViewerState)}
           variant={BUTTON_VARIANT.ICON}
         >
           <BackIcon className="size-5" />
@@ -660,6 +712,12 @@ export function MovieDetailScreen({
               reaction={reaction}
               watched={watched}
             />
+
+            <SimilarMoviesSection
+              key={movie.id}
+              movieId={movie.id}
+              onSelectMovie={handleSelectSimilarMovie}
+            />
           </div>
 
           <MovieReviews
@@ -670,7 +728,7 @@ export function MovieDetailScreen({
             onOpenCreate={() => setEditorMode("create")}
             onOpenEdit={() => setEditorMode("edit")}
             onSaveReview={handleSaveReview}
-            publicReviews={publicReviews}
+            publicReviews={activeDetail.publicReviews}
             summary={reviewSummary}
           />
         </div>

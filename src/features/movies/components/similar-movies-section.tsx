@@ -1,0 +1,199 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+import type { MovieSummary, PaginationMeta } from "@/contracts";
+import { MovieArtwork } from "@/components/shared/movie-artwork";
+import { MoviePosterCard } from "@/components/shared/movie-poster-card";
+import { BUTTON_VARIANT, Button } from "@/components/ui/button";
+import { fetchSimilarMovies } from "@/features/movies/movie-catalog-client";
+
+import { Pagination } from "./pagination";
+
+interface SimilarMovieResults {
+  data: MovieSummary[];
+  meta: PaginationMeta;
+}
+
+interface SimilarMoviesSectionProps {
+  movieId: number;
+  onSelectMovie: (movie: MovieSummary) => Promise<void>;
+}
+
+function getMovieYear(movie: MovieSummary) {
+  return movie.releaseDate?.slice(0, 4);
+}
+
+function SimilarMoviesSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
+      {Array.from({ length: 3 }, (_, index) => (
+        <div className="animate-pulse" key={index}>
+          <div className="aspect-[2/3] rounded-lg bg-surface-muted" />
+          <div className="mt-3 h-5 w-4/5 rounded bg-surface-muted" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function SimilarMoviesSection({
+  movieId,
+  onSelectMovie,
+}: SimilarMoviesSectionProps) {
+  const [results, setResults] = useState<SimilarMovieResults | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const requestId = useRef(0);
+
+  function loadSimilarMovies(page: number) {
+    const currentRequestId = ++requestId.current;
+    setIsLoading(true);
+    setHasError(false);
+
+    void fetchSimilarMovies(movieId, page)
+      .then(
+        (response) => {
+          if (currentRequestId !== requestId.current) {
+            return;
+          }
+
+          setResults({
+            ...response,
+            data: response.data.filter((movie) => movie.id !== movieId),
+          });
+        },
+        () => {
+          if (currentRequestId === requestId.current) {
+            setHasError(true);
+          }
+        },
+      )
+      .finally(() => {
+        if (currentRequestId === requestId.current) {
+          setIsLoading(false);
+        }
+      });
+  }
+
+  useEffect(() => {
+    const currentRequestId = ++requestId.current;
+
+    void fetchSimilarMovies(movieId, 1)
+      .then(
+        (response) => {
+          if (currentRequestId !== requestId.current) {
+            return;
+          }
+
+          setResults({
+            ...response,
+            data: response.data.filter((movie) => movie.id !== movieId),
+          });
+        },
+        () => {
+          if (currentRequestId === requestId.current) {
+            setHasError(true);
+          }
+        },
+      )
+      .finally(() => {
+        if (currentRequestId === requestId.current) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      requestId.current += 1;
+    };
+  }, [movieId]);
+
+  async function handleSelectMovie(movie: MovieSummary) {
+    setIsNavigating(true);
+
+    try {
+      await onSelectMovie(movie);
+    } catch {
+      setHasError(true);
+    } finally {
+      setIsNavigating(false);
+    }
+  }
+
+  const visibleMovies = results?.data ?? [];
+
+  return (
+    <section aria-labelledby="similar-movies-heading" className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2
+            className="font-mono text-xs uppercase tracking-[0.14em] text-muted"
+            id="similar-movies-heading"
+          >
+            Películas similares
+          </h2>
+          {results ? (
+            <p className="mt-2 text-sm text-muted">
+              Página {results.meta.page} de {results.meta.totalPages || 1}
+            </p>
+          ) : null}
+        </div>
+        {(isLoading || isNavigating) && results ? (
+          <p aria-live="polite" className="text-sm text-muted" role="status">
+            {isNavigating ? "Abriendo película…" : "Actualizando resultados…"}
+          </p>
+        ) : null}
+      </div>
+
+      {hasError ? (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-surface-muted p-4">
+          <p className="text-sm text-foreground" role="alert">
+            No pudimos cargar películas similares. Intentá de nuevo.
+          </p>
+          <Button
+            disabled={isLoading || isNavigating}
+            onClick={() => loadSimilarMovies(results?.meta.page ?? 1)}
+            variant={BUTTON_VARIANT.OUTLINE}
+          >
+            Reintentar
+          </Button>
+        </div>
+      ) : null}
+
+      {!results && isLoading ? <SimilarMoviesSkeleton /> : null}
+
+      {results && visibleMovies.length === 0 ? (
+        <p className="rounded-lg border border-border bg-surface-muted p-5 text-sm leading-6 text-muted">
+          No encontramos películas similares por ahora.
+        </p>
+      ) : null}
+
+      {visibleMovies.length > 0 ? (
+        <ul className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
+          {visibleMovies.map((movie) => (
+            <li key={movie.id}>
+              <MoviePosterCard
+                actionLabel={`Ver detalle de ${movie.title}`}
+                onSelect={() => void handleSelectMovie(movie)}
+                poster={<MovieArtwork className="size-full" movie={movie} />}
+                title={movie.title}
+                year={getMovieYear(movie)}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {results ? (
+        <Pagination
+          disabled={isLoading || isNavigating}
+          hasNextPage={results.meta.hasNextPage}
+          onPageChange={loadSimilarMovies}
+          page={results.meta.page}
+          totalPages={results.meta.totalPages}
+        />
+      ) : null}
+    </section>
+  );
+}

@@ -14,13 +14,16 @@ import {
 import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
-import type {
-  MovieReaction,
-  ViewerMovieState,
-} from "@/contracts/interactions";
+import { Input } from "@/components/ui/input";
+import type { MovieReaction, ViewerMovieState } from "@/contracts/interactions";
+import type { PaginationMeta } from "@/contracts/common";
 import type { MovieSummary } from "@/contracts/movies";
 import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
+import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
+import { SearchGrid } from "@/features/movies/components/search-grid";
+import { fetchSearchMovies } from "@/features/movies/movie-catalog-client";
+import { fetchMovieReviews } from "@/features/reviews/review-client";
 
 import { ButiAssistantDrawer } from "./buti-assistant-drawer";
 import {
@@ -38,6 +41,16 @@ interface DiscoverMovieCardProps {
   exitReaction: MovieReaction | null;
   onOpenDetail: () => void;
   onReact: (reaction: MovieReaction) => void;
+}
+
+interface SearchResults {
+  data: MovieSummary[];
+  meta: PaginationMeta;
+}
+
+interface SearchDetailExperience {
+  pageData: Awaited<ReturnType<typeof fetchMovieDetail>>;
+  publicReviews: Awaited<ReturnType<typeof fetchMovieReviews>>["data"];
 }
 
 const GENRE_NAMES: Readonly<Record<number, string>> = {
@@ -405,14 +418,54 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [detailMovie, setDetailMovie] = useState<MovieSummary | null>(null);
+  const [searchDraft, setSearchDraft] = useState("");
+  const [submittedSearch, setSubmittedSearch] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<SearchResults | null>(
+    null,
+  );
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const [searchDetail, setSearchDetail] =
+    useState<SearchDetailExperience | null>(null);
   const [exitReaction, setExitReaction] = useState<MovieReaction | null>(null);
   const [lastAction, setLastAction] = useState("");
   const assistantTrigger = useRef<HTMLButtonElement | null>(null);
+  const searchDetailTrigger = useRef<HTMLElement | null>(null);
+  const searchRequestId = useRef(0);
   const currentMovie = movies[currentIndex];
   const nextMovie = movies[currentIndex + 1];
   const detailExperience = detailMovie
     ? getMovieDetailExperienceFixture(detailMovie)
     : null;
+
+  function loadSearch(query: string, page: number) {
+    const requestId = ++searchRequestId.current;
+    setSearchLoading(true);
+    setSearchError(false);
+
+    void fetchSearchMovies(query, page)
+      .then(
+        (results) => {
+          if (requestId !== searchRequestId.current) {
+            return;
+          }
+
+          setSearchResults(results);
+        },
+        () => {
+          if (requestId !== searchRequestId.current) {
+            return;
+          }
+
+          setSearchError(true);
+        },
+      )
+      .finally(() => {
+        if (requestId === searchRequestId.current) {
+          setSearchLoading(false);
+        }
+      });
+  }
 
   useEffect(() => {
     if (!assistantOpen) {
@@ -437,13 +490,72 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
     setCurrentIndex((index) => index + 1);
   }
 
+  function handleSearchSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = searchDraft.trim();
+
+    if (!query) {
+      return;
+    }
+
+    setSubmittedSearch(query);
+    setSearchResults(null);
+    loadSearch(query, 1);
+  }
+
+  function handleSearchPageChange(page: number) {
+    if (!submittedSearch) {
+      return;
+    }
+
+    loadSearch(submittedSearch, page);
+  }
+
+  function clearSearch() {
+    searchRequestId.current += 1;
+    setSearchDraft("");
+    setSubmittedSearch(null);
+    setSearchResults(null);
+    setSearchLoading(false);
+    setSearchError(false);
+  }
+
+  function retrySearch() {
+    if (!submittedSearch) {
+      return;
+    }
+
+    loadSearch(submittedSearch, searchResults?.meta.page ?? 1);
+  }
+
+  function openSearchDetail(movie: MovieSummary) {
+    searchDetailTrigger.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    void Promise.all([
+      fetchMovieDetail(movie.id),
+      fetchMovieReviews(movie.id),
+    ]).then(
+      ([pageData, reviews]) => {
+        setSearchDetail({ pageData, publicReviews: reviews.data });
+      },
+      () => {
+        setSearchError(true);
+      },
+    );
+  }
+
+  function handleSearchDetailClose() {
+    setSearchDetail(null);
+    queueMicrotask(() => searchDetailTrigger.current?.focus());
+  }
+
   function handleDetailClose(viewerState: ViewerMovieState) {
     setDetailMovie(null);
 
-    if (
-      viewerState.reaction !== null &&
-      detailMovie?.id === currentMovie?.id
-    ) {
+    if (viewerState.reaction !== null && detailMovie?.id === currentMovie?.id) {
       handleReaction(viewerState.reaction);
     }
   }
@@ -457,9 +569,13 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-7 py-2 md:gap-8 md:py-4">
       <div
-        aria-hidden={detailExperience || assistantOpen ? true : undefined}
+        aria-hidden={
+          detailExperience || searchDetail || assistantOpen ? true : undefined
+        }
         className="contents"
-        inert={detailExperience || assistantOpen ? true : undefined}
+        inert={
+          detailExperience || searchDetail || assistantOpen ? true : undefined
+        }
       >
         <PageHeader
           action={
@@ -472,81 +588,126 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
           title="Descubrir"
         />
 
+        <form
+          aria-label="Búsqueda de películas"
+          className="flex flex-col gap-3 sm:flex-row sm:items-end"
+          onSubmit={handleSearchSubmit}
+          role="search"
+        >
+          <div className="min-w-0 flex-1">
+            <Input
+              aria-describedby="discover-search-helper"
+              label="Buscar películas"
+              onChange={(event) => setSearchDraft(event.target.value)}
+              value={searchDraft}
+            />
+            <p className="mt-2 text-sm text-muted" id="discover-search-helper">
+              Buscá por título y presioná Enter para ver resultados.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button disabled={searchLoading} type="submit">
+              Buscar
+            </Button>
+            {submittedSearch ? (
+              <Button
+                onClick={clearSearch}
+                type="button"
+                variant={BUTTON_VARIANT.OUTLINE}
+              >
+                Limpiar búsqueda
+              </Button>
+            ) : null}
+          </div>
+        </form>
+
         <p aria-live="polite" className="sr-only" role="status">
           {lastAction}
         </p>
 
-        <section
-          aria-labelledby="discover-stack-title"
-          className="grid min-h-0 flex-1 items-center gap-8 min-[980px]:grid-cols-[minmax(26rem,34rem)_minmax(15rem,17rem)] min-[1180px]:grid-cols-[13rem_minmax(26rem,34rem)_minmax(15rem,17rem)] min-[1180px]:gap-10"
-        >
-          <h2 className="sr-only" id="discover-stack-title">
-            Recomendaciones de películas
-          </h2>
-          <HowItWorks />
-
-          <div
-            className="mx-auto flex w-full max-w-[34rem] flex-col gap-3 min-[980px]:col-start-1 min-[980px]:row-start-1 min-[1180px]:col-start-2"
-            data-testid="movie-stack-column"
+        {submittedSearch ? (
+          <SearchGrid
+            error={searchError}
+            isLoading={searchLoading}
+            onPageChange={handleSearchPageChange}
+            onRetry={retrySearch}
+            onSelectMovie={openSearchDetail}
+            query={submittedSearch}
+            results={searchResults}
+          />
+        ) : (
+          <section
+            aria-labelledby="discover-stack-title"
+            className="grid min-h-0 flex-1 items-center gap-8 min-[980px]:grid-cols-[minmax(26rem,34rem)_minmax(15rem,17rem)] min-[1180px]:grid-cols-[13rem_minmax(26rem,34rem)_minmax(15rem,17rem)] min-[1180px]:gap-10"
           >
-            {currentMovie ? (
-              <>
-                <div
-                  className="relative mx-auto aspect-[2/3] h-[min(52svh,38rem)] max-h-[38rem] max-w-full min-[980px]:h-[min(66svh,42rem)] min-[980px]:max-h-[42rem]"
-                  data-testid="discover-poster-frame"
-                >
-                  {nextMovie ? <NextMovieCard movie={nextMovie} /> : null}
-                  <AnimatePresence custom={exitReaction} initial={false}>
-                    <DiscoverMovieCard
-                      key={currentMovie.id}
-                      exitReaction={exitReaction}
-                      movie={currentMovie}
-                      onOpenDetail={() => setDetailMovie(currentMovie)}
-                      onReact={handleReaction}
-                    />
-                  </AnimatePresence>
-                </div>
+            <h2 className="sr-only" id="discover-stack-title">
+              Recomendaciones de películas
+            </h2>
+            <HowItWorks />
 
-                <ButiMobileRecommendation
-                  movie={currentMovie}
-                  onOpenAssistant={openAssistant}
-                />
-
-                <p className="text-center font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground lg:hidden">
-                  Deslizá la card o usá los controles
-                </p>
-                <div className="hidden justify-center lg:flex">
-                  <p className="rounded-full border border-border bg-background/35 px-4 py-2 font-mono text-[0.625rem] tracking-[0.08em] text-muted">
-                    ← paso&nbsp;&nbsp; | &nbsp;&nbsp;↑ detalle&nbsp;&nbsp; |
-                    &nbsp;&nbsp;me gusta →
-                  </p>
-                </div>
-
-                <ReactionControls
-                  movie={currentMovie}
-                  onOpenDetail={() => setDetailMovie(currentMovie)}
-                  onReact={handleReaction}
-                />
-              </>
-            ) : (
-              <EndOfStack onRestart={restartStack} />
-            )}
-          </div>
-
-          {currentMovie ? (
-            <ButiRecommendation
-              movie={currentMovie}
-              onOpenAssistant={openAssistant}
-            />
-          ) : (
             <div
-              aria-hidden="true"
-              className="hidden text-right font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground min-[980px]:col-start-2 min-[980px]:row-start-1 min-[980px]:block min-[1180px]:col-start-3"
+              className="mx-auto flex w-full max-w-[34rem] flex-col gap-3 min-[980px]:col-start-1 min-[980px]:row-start-1 min-[1180px]:col-start-2"
+              data-testid="movie-stack-column"
             >
-              {movies.length} / {movies.length}
+              {currentMovie ? (
+                <>
+                  <div
+                    className="relative mx-auto aspect-[2/3] h-[min(52svh,38rem)] max-h-[38rem] max-w-full min-[980px]:h-[min(66svh,42rem)] min-[980px]:max-h-[42rem]"
+                    data-testid="discover-poster-frame"
+                  >
+                    {nextMovie ? <NextMovieCard movie={nextMovie} /> : null}
+                    <AnimatePresence custom={exitReaction} initial={false}>
+                      <DiscoverMovieCard
+                        key={currentMovie.id}
+                        exitReaction={exitReaction}
+                        movie={currentMovie}
+                        onOpenDetail={() => setDetailMovie(currentMovie)}
+                        onReact={handleReaction}
+                      />
+                    </AnimatePresence>
+                  </div>
+
+                  <ButiMobileRecommendation
+                    movie={currentMovie}
+                    onOpenAssistant={openAssistant}
+                  />
+
+                  <p className="text-center font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground lg:hidden">
+                    Deslizá la card o usá los controles
+                  </p>
+                  <div className="hidden justify-center lg:flex">
+                    <p className="rounded-full border border-border bg-background/35 px-4 py-2 font-mono text-[0.625rem] tracking-[0.08em] text-muted">
+                      ← paso&nbsp;&nbsp; | &nbsp;&nbsp;↑ detalle&nbsp;&nbsp; |
+                      &nbsp;&nbsp;me gusta →
+                    </p>
+                  </div>
+
+                  <ReactionControls
+                    movie={currentMovie}
+                    onOpenDetail={() => setDetailMovie(currentMovie)}
+                    onReact={handleReaction}
+                  />
+                </>
+              ) : (
+                <EndOfStack onRestart={restartStack} />
+              )}
             </div>
-          )}
-        </section>
+
+            {currentMovie ? (
+              <ButiRecommendation
+                movie={currentMovie}
+                onOpenAssistant={openAssistant}
+              />
+            ) : (
+              <div
+                aria-hidden="true"
+                className="hidden text-right font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground min-[980px]:col-start-2 min-[980px]:row-start-1 min-[980px]:block min-[1180px]:col-start-3"
+              >
+                {movies.length} / {movies.length}
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
       <AnimatePresence>
@@ -569,6 +730,17 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
             onClose={handleDetailClose}
             pageData={detailExperience.pageData}
             publicReviews={detailExperience.publicReviews}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {searchDetail ? (
+          <MovieDetailScreen
+            key={searchDetail.pageData.movie.id}
+            onClose={handleSearchDetailClose}
+            pageData={searchDetail.pageData}
+            publicReviews={searchDetail.publicReviews}
           />
         ) : null}
       </AnimatePresence>
