@@ -205,12 +205,12 @@ La aplicación validará también que los IDs no se repitan mediante el contrato
 | `id`         | UUID             | PK, default aleatorio                      |
 | `user_id`    | UUID             | not null, FK `users(id)` on delete cascade |
 | `movie_id`   | integer          | not null, positivo                         |
-| `reaction`   | `movie_reaction` | not null                                   |
+| `reaction`   | `movie_reaction` | nullable                                   |
 | `watched_at` | timestamptz      | nullable                                   |
 | `created_at` | timestamptz      | not null, default now                      |
 | `updated_at` | timestamptz      | not null, default now                      |
 
-La tabla tendrá unique `(user_id, movie_id)`. Una película neutral no tiene fila. `upsertReaction` actualizará `reaction` y `updated_at` sin tocar `watched_at`. Eliminar la fila elimina también el estado de vista.
+La tabla tendrá unique `(user_id, movie_id)` y exigirá que `reaction` o `watched_at` tenga valor. Una película sin reacción ni estado de vista no tiene fila; una película vista puede tener `reaction = null`. `upsertReaction` actualizará `reaction` y `updated_at` sin tocar `watched_at`. Quitar una reacción preservará `watched_at` y sólo eliminará la fila si no queda ningún estado.
 
 Los índices cubrirán consultas por usuario, reacción y fecha.
 
@@ -274,7 +274,7 @@ Los métodos sobre preferencias e interacciones recibirán `userId` como argumen
 - `setWatched`
 - `delete`
 
-`setWatched` sólo modificará una interacción existente. No creará una reacción implícita.
+`setWatched` podrá crear una fila con `reaction = null` y nunca creará una reacción implícita. Al quitar el estado de vista, eliminará la fila si tampoco existe una reacción.
 
 ### `ReviewRepository`
 

@@ -679,9 +679,11 @@ it("rejects non-positive preferred genre IDs at the database boundary");
 ```ts
 it("creates a LIKE with watchedAt null");
 it("switches LIKE to DISLIKE without changing watchedAt");
-it("setWatched updates an existing row and never creates one");
+it("setWatched creates watched state without an implicit reaction");
+it("setWatched removes a watched-only row instead of leaving it empty");
 it("findLikesByUser and findDislikesByUser cannot return another user data");
-it("deleting an interaction removes reaction and watchedAt together");
+it("removing a reaction preserves watched state and deletes an empty row");
+it("rejects an interaction without reaction or watched state");
 it("rejects a non-positive TMDB movie ID");
 ```
 

@@ -25,4 +25,30 @@ describe("Avatar", () => {
       "/avatars/nadia.png",
     );
   });
+
+  it("renders the approved large profile size", () => {
+    render(<Avatar initials="SR" alt="Sofía Ramírez" size="lg" />);
+
+    const avatar = screen.getByRole("img", { name: "Sofía Ramírez" });
+    expect(avatar).toHaveTextContent("SR");
+    expect(avatar.className).toContain("size-[5.5rem]");
+  });
+
+  it("accepts feature styling without replacing its base classes", () => {
+    render(
+      <Avatar
+        initials="SR"
+        alt="Sofía Ramírez"
+        size="lg"
+        className="bg-surface-elevated!"
+      />,
+    );
+
+    const avatar = screen.getByRole("img", { name: "Sofía Ramírez" });
+    expect(avatar).toHaveClass(
+      "rounded-full",
+      "size-[5.5rem]",
+      "bg-surface-elevated!",
+    );
+  });
 });

@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { UserRepository } from "@/db/repositories/user-repository";
 import type { UserRecord } from "@/db/schema/users";
 
-import { AuthService } from "../auth-service";
+import { ServerAuthService } from "../server-auth-service";
 import {
   AuthProviderError,
   InvalidCredentialsError,
@@ -132,7 +132,7 @@ async function expectSafeProviderFailure(operation: Promise<unknown>) {
   expect(String(thrown)).not.toContain("provider-private-message");
 }
 
-describe("AuthService", () => {
+describe("ServerAuthService", () => {
   it("signUp provisions public.users with the Auth UUID", async () => {
     const auth = createAuthDouble();
     const users = createUsersDouble();
@@ -144,7 +144,7 @@ describe("AuthService", () => {
     });
     users.upsertFromAuthUser.mockResolvedValue(profile);
 
-    const result = await new AuthService(auth, users).signUp({
+    const result = await new ServerAuthService(auth, users).signUp({
       email: "viewer@example.test",
       password: "test-password",
       displayName: "Gonzalo",
@@ -171,7 +171,7 @@ describe("AuthService", () => {
       error: null,
     });
 
-    const operation = new AuthService(auth, users).signUp({
+    const operation = new ServerAuthService(auth, users).signUp({
       email: "viewer@example.test",
       password: "test-password",
       displayName: "Gonzalo",
@@ -189,7 +189,7 @@ describe("AuthService", () => {
       error: createProviderError("provider-private-message"),
     });
 
-    const operation = new AuthService(auth, users).signUp({
+    const operation = new ServerAuthService(auth, users).signUp({
       email: "viewer@example.test",
       password: "test-password",
       displayName: "Gonzalo",
@@ -209,7 +209,7 @@ describe("AuthService", () => {
     });
     users.upsertFromAuthUser.mockRejectedValue(repositoryError);
 
-    const operation = new AuthService(auth, users).signUp({
+    const operation = new ServerAuthService(auth, users).signUp({
       email: "viewer@example.test",
       password: "test-password",
       displayName: "Gonzalo",
@@ -233,7 +233,7 @@ describe("AuthService", () => {
       storedProfile ??= createUserRecord(input);
       return storedProfile;
     });
-    const service = new AuthService(auth, users);
+    const service = new ServerAuthService(auth, users);
 
     const repaired = await service.signIn({
       email: "viewer@example.test",
@@ -282,7 +282,7 @@ describe("AuthService", () => {
       createUserRecord(input),
     );
 
-    await new AuthService(auth, users).signIn({
+    await new ServerAuthService(auth, users).signIn({
       email: "viewer@example.test",
       password: "test-password",
     });
@@ -309,7 +309,7 @@ describe("AuthService", () => {
       createUserRecord(input),
     );
 
-    await new AuthService(auth, users).signIn({
+    await new ServerAuthService(auth, users).signIn({
       email: "viewer@example.test",
       password: "test-password",
     });
@@ -336,7 +336,7 @@ describe("AuthService", () => {
       createUserRecord(input),
     );
 
-    await new AuthService(auth, users).signIn({
+    await new ServerAuthService(auth, users).signIn({
       email: "@example.test",
       password: "test-password",
     });
@@ -359,7 +359,7 @@ describe("AuthService", () => {
       ),
     });
 
-    const operation = new AuthService(auth, users).signIn({
+    const operation = new ServerAuthService(auth, users).signIn({
       email: "viewer@example.test",
       password: "test-password",
     });
@@ -392,7 +392,7 @@ describe("AuthService", () => {
       createProviderError("provider-private-message", "invalid_credentials"),
     );
 
-    const operation = new AuthService(auth, users).signIn({
+    const operation = new ServerAuthService(auth, users).signIn({
       email: "viewer@example.test",
       password: "test-password",
     });
@@ -429,7 +429,7 @@ describe("AuthService", () => {
       ),
     });
 
-    const operation = new AuthService(auth, users).signIn({
+    const operation = new ServerAuthService(auth, users).signIn({
       email: "viewer@example.test",
       password: "test-password",
     });
@@ -442,7 +442,7 @@ describe("AuthService", () => {
     const users = createUsersDouble();
     auth.getClaims.mockResolvedValue({ data: null, error: null });
 
-    const result = await new AuthService(auth, users).getCurrentUser();
+    const result = await new ServerAuthService(auth, users).getCurrentUser();
 
     expect(result).toBeNull();
     expect(users.findById).not.toHaveBeenCalled();
@@ -456,7 +456,7 @@ describe("AuthService", () => {
       error: createProviderError("provider-private-message"),
     });
 
-    const operation = new AuthService(auth, users).getCurrentUser();
+    const operation = new ServerAuthService(auth, users).getCurrentUser();
 
     await expectSafeProviderFailure(operation);
     expect(users.findById).not.toHaveBeenCalled();
@@ -470,7 +470,7 @@ describe("AuthService", () => {
       .mockResolvedValueOnce(createClaimsResult("not-a-uuid"))
       .mockResolvedValueOnce(createClaimsResult(USER_ID));
     users.findById.mockResolvedValue(profile);
-    const service = new AuthService(auth, users);
+    const service = new ServerAuthService(auth, users);
 
     const malformedOperation = service.getCurrentUser();
     await expectSafeProviderFailure(malformedOperation);
@@ -487,7 +487,7 @@ describe("AuthService", () => {
     auth.getClaims.mockResolvedValue(createClaimsResult(USER_ID));
     users.findById.mockResolvedValue(null);
 
-    const operation = new AuthService(auth, users).getCurrentUser();
+    const operation = new ServerAuthService(auth, users).getCurrentUser();
 
     await expect(operation).rejects.toBeInstanceOf(
       UserProfileNotProvisionedError,
@@ -503,7 +503,7 @@ describe("AuthService", () => {
     const users = createUsersDouble();
     auth.getClaims.mockResolvedValue({ data: null, error: null });
 
-    const operation = new AuthService(auth, users).requireCurrentUser();
+    const operation = new ServerAuthService(auth, users).requireCurrentUser();
 
     await expect(operation).rejects.toBeInstanceOf(UnauthenticatedError);
     await expect(operation).rejects.toMatchObject({
@@ -519,7 +519,7 @@ describe("AuthService", () => {
       error: createProviderError("provider-private-message"),
     });
 
-    const operation = new AuthService(auth, users).signOut();
+    const operation = new ServerAuthService(auth, users).signOut();
 
     await expectSafeProviderFailure(operation);
     expect(auth.signOut).toHaveBeenCalledOnce();
@@ -532,7 +532,7 @@ describe("AuthService", () => {
       createProviderError("provider-private-message"),
     );
 
-    const operation = new AuthService(auth, users).signOut();
+    const operation = new ServerAuthService(auth, users).signOut();
 
     await expectSafeProviderFailure(operation);
     expect(auth.signOut).toHaveBeenCalledOnce();
