@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -8,8 +7,9 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/**/*.test.ts", "src/components/**/*.test.tsx"],
-    exclude: ["tests/integration/**"],
-    passWithNoTests: true,
+    include: ["tests/integration/**/*.integration.test.ts"],
+    setupFiles: ["./tests/integration/setup-env.ts"],
+    fileParallelism: false,
+    maxWorkers: 1,
   },
 });
