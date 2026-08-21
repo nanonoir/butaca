@@ -8,7 +8,19 @@ import type { ViewerMovieState } from "@/contracts/interactions";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
-import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
+import type { MovieDetailPageData } from "@/contracts/movie-detail";
+import type { Review } from "@/contracts/reviews";
+import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
+import { fetchMovieReviews } from "@/features/reviews/review-client";
+import {
+  deleteMovieReview,
+  upsertMovieReview,
+} from "@/features/reviews/review-client";
+import {
+  removeMovieReaction,
+  setMovieReaction,
+  setMovieWatched,
+} from "@/features/interactions/interaction-client";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
 
 const FILTER_OPTIONS: readonly {
@@ -117,10 +129,41 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
   const [activeFilter, setActiveFilter] = useState<LikesWatchedFilter>("all");
   const [likedItems, setLikedItems] = useState(items);
   const [selectedItem, setSelectedItem] = useState<LikedMovieItem | null>(null);
+  const [detailExperience, setDetailExperience] = useState<{
+    pageData: MovieDetailPageData;
+    publicReviews: Review[];
+  } | null>(null);
   const visibleItems = getVisibleItems(likedItems, activeFilter);
-  const detailExperience = selectedItem
-    ? getMovieDetailExperienceFixture(selectedItem.movie)
-    : null;
+
+  /** The overlay loads on demand: the list only carries a summary per movie,
+   * and the detail plus its community reviews are two separate endpoints. */
+  async function handleSelectItem(item: LikedMovieItem): Promise<void> {
+    setSelectedItem(item);
+    setDetailExperience(null);
+
+    try {
+      const [pageData, reviews] = await Promise.all([
+        fetchMovieDetail(item.movie.id),
+        fetchMovieReviews(item.movie.id),
+      ]);
+
+      setDetailExperience({ pageData, publicReviews: reviews.data });
+    } catch {
+      setSelectedItem(null);
+    }
+  }
+
+  function createPersistence(movieId: number) {
+    return {
+      setReaction: (reaction: Parameters<typeof setMovieReaction>[1]) =>
+        setMovieReaction(movieId, reaction),
+      clearReaction: () => removeMovieReaction(movieId),
+      setWatched: (watched: boolean) => setMovieWatched(movieId, watched),
+      saveReview: (draft: Parameters<typeof upsertMovieReview>[1]) =>
+        upsertMovieReview(movieId, draft),
+      deleteReview: () => deleteMovieReview(movieId),
+    };
+  }
 
   function handleDetailClose(viewerState: ViewerMovieState) {
     if (!selectedItem) {
@@ -195,7 +238,7 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
               >
                 <MoviePosterCard
                   actionLabel={`Ver detalle de ${item.movie.title}`}
-                  onSelect={() => setSelectedItem(item)}
+                  onSelect={() => void handleSelectItem(item)}
                   title={item.movie.title}
                   year={year}
                   poster={
@@ -217,13 +260,10 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
           <MovieDetailScreen
             key={detailExperience.pageData.movie.id}
             onClose={handleDetailClose}
-            pageData={{
-              ...detailExperience.pageData,
-              viewerState: {
-                reaction: "LIKE",
-                watchedAt: selectedItem.watchedAt,
-              },
-            }}
+            // The viewer state now comes from the server with the rest of the
+            // page instead of being inferred from the list row.
+            pageData={detailExperience.pageData}
+            persistence={createPersistence(selectedItem.movie.id)}
             publicReviews={detailExperience.publicReviews}
           />
         ) : null}

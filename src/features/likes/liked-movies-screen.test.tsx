@@ -9,11 +9,71 @@ import {
   within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LikedMovieItem } from "@/contracts/likes";
 
 import { LikedMoviesScreen } from "./liked-movies-screen";
+
+const { fetchMovieDetail, fetchMovieReviews } = vi.hoisted(() => ({
+  fetchMovieDetail: vi.fn(),
+  fetchMovieReviews: vi.fn(),
+}));
+
+vi.mock("@/features/movie-detail/movie-detail-client", () => ({
+  fetchMovieDetail,
+}));
+
+vi.mock("@/features/reviews/review-client", () => ({
+  fetchMovieReviews,
+  upsertMovieReview: vi.fn().mockResolvedValue(null),
+  deleteMovieReview: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/features/interactions/interaction-client", () => ({
+  setMovieReaction: vi.fn().mockResolvedValue(undefined),
+  removeMovieReaction: vi.fn().mockResolvedValue(undefined),
+  setMovieWatched: vi.fn().mockResolvedValue(undefined),
+}));
+
+/** The overlay now loads the detail from the API instead of a fixture, so the
+ * screen tests provide that payload. */
+function stubMovieDetail(item: LikedMovieItem) {
+  fetchMovieDetail.mockResolvedValue({
+    movie: {
+      ...item.movie,
+      tagline: null,
+      runtime: 120,
+      genres: [{ id: 18, name: "Drama" }],
+      director: null,
+      cast: [],
+      keywords: [],
+      trailer: null,
+    },
+    viewerState: { reaction: "LIKE", watchedAt: item.watchedAt },
+    reviewSummary: {
+      recommended: 0,
+      notWorthIt: 0,
+      total: 0,
+      recommendationRate: null,
+    },
+    myReview: null,
+  });
+  fetchMovieReviews.mockResolvedValue({
+    data: [],
+    meta: {
+      page: 1,
+      pageSize: 20,
+      totalPages: 0,
+      totalResults: 0,
+      hasNextPage: false,
+    },
+  });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 afterEach(cleanup);
 
@@ -46,6 +106,19 @@ const ITEMS = [
   createLikedMovie(2, "Parásitos", null),
   createLikedMovie(3, "Her", null),
 ];
+
+async function openDetail(item: LikedMovieItem) {
+  stubMovieDetail(item);
+  fireEvent.click(
+    screen.getByRole("button", { name: `Ver detalle de ${item.movie.title}` }),
+  );
+
+  return screen.findByRole("dialog", {
+    name: `Detalle de ${item.movie.title}`,
+  });
+}
+
+const [INTERSTELLAR, PARASITOS] = ITEMS;
 
 describe("LikedMoviesScreen", () => {
   it("renders the complete collection with its watched presentation", () => {
@@ -100,13 +173,7 @@ describe("LikedMoviesScreen", () => {
   it("opens the movie detail when selecting a liked movie", async () => {
     render(<LikedMoviesScreen items={ITEMS} />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Ver detalle de Interstellar" }),
-    );
-
-    expect(
-      screen.getByRole("dialog", { name: "Detalle de Interstellar" }),
-    ).toBeInTheDocument();
+    expect(await openDetail(INTERSTELLAR!)).toBeInTheDocument();
     expect(
       within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
         "button",
@@ -129,9 +196,7 @@ describe("LikedMoviesScreen", () => {
   it("removes a movie from Liked after changing its reaction", async () => {
     render(<LikedMoviesScreen items={ITEMS} />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Ver detalle de Interstellar" }),
-    );
+    await openDetail(INTERSTELLAR!);
     fireEvent.click(
       within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
         "button",
@@ -153,9 +218,7 @@ describe("LikedMoviesScreen", () => {
   it("updates watched filters and badges after closing the detail", async () => {
     render(<LikedMoviesScreen items={ITEMS} />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Ver detalle de Parásitos" }),
-    );
+    await openDetail(PARASITOS!);
     fireEvent.click(screen.getByRole("button", { name: "Marcar vista" }));
     fireEvent.click(screen.getByRole("button", { name: "Cerrar detalle" }));
 
