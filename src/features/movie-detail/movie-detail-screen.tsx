@@ -7,7 +7,7 @@ import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { Avatar } from "@/components/ui/avatar";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import type { MovieDetailPageData } from "@/contracts/movie-detail";
-import type { MovieReaction } from "@/contracts/interactions";
+import type { MovieReaction, ViewerMovieState } from "@/contracts/interactions";
 import type { Review, UpsertReviewRequest } from "@/contracts/reviews";
 
 import { MovieReviews, type ReviewEditorMode } from "./movie-reviews";
@@ -15,7 +15,7 @@ import { MovieReviews, type ReviewEditorMode } from "./movie-reviews";
 interface MovieDetailScreenProps {
   pageData: MovieDetailPageData;
   publicReviews: Review[];
-  onClose: () => void;
+  onClose: (viewerState: ViewerMovieState) => void;
 }
 
 function BackIcon({ className }: { className?: string }) {
@@ -331,11 +331,10 @@ export function MovieDetailScreen({
   onClose,
 }: MovieDetailScreenProps) {
   const shouldReduceMotion = useReducedMotion();
-  const { movie, reviewSummary, viewerState } = pageData;
-  const [reaction, setReaction] = useState<MovieReaction | null>(
-    viewerState.reaction,
+  const { movie, reviewSummary } = pageData;
+  const [viewerState, setViewerState] = useState<ViewerMovieState>(
+    pageData.viewerState,
   );
-  const [watched, setWatched] = useState(Boolean(viewerState.watchedAt));
   const [myReview, setMyReview] = useState<Review | null>(pageData.myReview);
   const [editorMode, setEditorMode] = useState<ReviewEditorMode>(null);
   const [trailerOpen, setTrailerOpen] = useState(false);
@@ -343,6 +342,8 @@ export function MovieDetailScreen({
   const year = movie.releaseDate?.slice(0, 4) ?? "Sin fecha";
   const runtime = formatRuntime(movie.runtime);
   const showOriginalTitle = movie.originalTitle !== movie.title;
+  const reaction = viewerState.reaction;
+  const watched = viewerState.watchedAt !== null;
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -364,29 +365,40 @@ export function MovieDetailScreen({
       } else if (editorMode) {
         setEditorMode(null);
       } else {
-        onClose();
+        onClose(viewerState);
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [editorMode, onClose, trailerOpen]);
+  }, [editorMode, onClose, trailerOpen, viewerState]);
 
   function handleReactionChange(nextReaction: MovieReaction) {
-    setReaction(nextReaction);
+    setViewerState((currentState) => ({
+      ...currentState,
+      reaction: nextReaction,
+    }));
     setStatusMessage(
       nextReaction === "LIKE" ? "Marcaste Me gusta" : "Marcaste No me gusta",
     );
   }
 
   function handleClearReaction() {
-    setReaction(null);
+    setViewerState((currentState) => ({
+      ...currentState,
+      reaction: null,
+    }));
     setStatusMessage("Eliminaste tu reacción. El estado Vista no cambió.");
   }
 
   function handleWatchedChange(nextWatched: boolean) {
-    setWatched(nextWatched);
+    setViewerState((currentState) => ({
+      ...currentState,
+      watchedAt: nextWatched
+        ? (currentState.watchedAt ?? new Date().toISOString())
+        : null,
+    }));
     setStatusMessage(
       nextWatched
         ? "Marcaste la película como Vista"
@@ -448,7 +460,7 @@ export function MovieDetailScreen({
           aria-label="Cerrar detalle"
           autoFocus
           className="absolute left-4 top-4 z-10 rounded-full border border-border bg-background/80 text-foreground backdrop-blur-sm hover:border-primary hover:bg-background/80 hover:text-primary sm:left-6 sm:top-6"
-          onClick={onClose}
+          onClick={() => onClose(viewerState)}
           variant={BUTTON_VARIANT.ICON}
         >
           <BackIcon className="size-5" />

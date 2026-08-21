@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it } from "vitest";
@@ -106,6 +107,15 @@ describe("LikedMoviesScreen", () => {
     expect(
       screen.getByRole("dialog", { name: "Detalle de Interstellar" }),
     ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
+        "button",
+        { name: "Me gusta" },
+      ),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "Marcar no vista" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Cerrar detalle" }));
 
@@ -114,6 +124,55 @@ describe("LikedMoviesScreen", () => {
         screen.queryByRole("dialog", { name: "Detalle de Interstellar" }),
       ).not.toBeInTheDocument();
     });
+  });
+
+  it("removes a movie from Liked after changing its reaction", async () => {
+    render(<LikedMoviesScreen items={ITEMS} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver detalle de Interstellar" }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
+        "button",
+        { name: "No me gusta" },
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar detalle" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", {
+          name: "Ver detalle de Interstellar",
+        }),
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("2 películas")).toBeInTheDocument();
+  });
+
+  it("updates watched filters and badges after closing the detail", async () => {
+    render(<LikedMoviesScreen items={ITEMS} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver detalle de Parásitos" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Marcar vista" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar detalle" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "Detalle de Parásitos" }),
+      ).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Vistas" }));
+
+    expect(screen.getByText("2 películas")).toBeInTheDocument();
+    const parasitosAction = screen.getByRole("button", {
+      name: "Ver detalle de Parásitos",
+    });
+    expect(
+      within(parasitosAction.closest("article")!).getByText("Vista"),
+    ).toBeInTheDocument();
   });
 
   it("keeps the hover treatment inside the poster boundary", () => {

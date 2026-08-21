@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AnimatePresence } from "motion/react";
 
 import type { LikedMovieItem, LikesWatchedFilter } from "@/contracts/likes";
-import type { MovieSummary } from "@/contracts/movies";
+import type { ViewerMovieState } from "@/contracts/interactions";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
@@ -115,11 +115,30 @@ function getMovieCountLabel(count: number) {
 
 export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
   const [activeFilter, setActiveFilter] = useState<LikesWatchedFilter>("all");
-  const [selectedMovie, setSelectedMovie] = useState<MovieSummary | null>(null);
-  const visibleItems = getVisibleItems(items, activeFilter);
-  const detailExperience = selectedMovie
-    ? getMovieDetailExperienceFixture(selectedMovie)
+  const [likedItems, setLikedItems] = useState(items);
+  const [selectedItem, setSelectedItem] = useState<LikedMovieItem | null>(null);
+  const visibleItems = getVisibleItems(likedItems, activeFilter);
+  const detailExperience = selectedItem
+    ? getMovieDetailExperienceFixture(selectedItem.movie)
     : null;
+
+  function handleDetailClose(viewerState: ViewerMovieState) {
+    if (!selectedItem) {
+      return;
+    }
+
+    const selectedMovieId = selectedItem.movie.id;
+    setLikedItems((currentItems) =>
+      viewerState.reaction === "LIKE"
+        ? currentItems.map((item) =>
+            item.movie.id === selectedMovieId
+              ? { ...item, watchedAt: viewerState.watchedAt }
+              : item,
+          )
+        : currentItems.filter((item) => item.movie.id !== selectedMovieId),
+    );
+    setSelectedItem(null);
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-[90rem] flex-col gap-8 py-4 md:py-8">
@@ -176,7 +195,7 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
               >
                 <MoviePosterCard
                   actionLabel={`Ver detalle de ${item.movie.title}`}
-                  onSelect={() => setSelectedMovie(item.movie)}
+                  onSelect={() => setSelectedItem(item)}
                   title={item.movie.title}
                   year={year}
                   poster={
@@ -194,11 +213,17 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
       </section>
 
       <AnimatePresence>
-        {detailExperience ? (
+        {detailExperience && selectedItem ? (
           <MovieDetailScreen
             key={detailExperience.pageData.movie.id}
-            onClose={() => setSelectedMovie(null)}
-            pageData={detailExperience.pageData}
+            onClose={handleDetailClose}
+            pageData={{
+              ...detailExperience.pageData,
+              viewerState: {
+                reaction: "LIKE",
+                watchedAt: selectedItem.watchedAt,
+              },
+            }}
             publicReviews={detailExperience.publicReviews}
           />
         ) : null}
