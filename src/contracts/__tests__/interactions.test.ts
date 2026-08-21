@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DeleteMovieReactionResponseSchema,
   MovieInteractionStateSchema,
+  SetMovieReactionResponseSchema,
   ViewerMovieStateSchema,
 } from "../interactions";
 
@@ -41,5 +42,27 @@ describe("ViewerMovieStateSchema", () => {
 
     expect(interaction.success).toBe(true);
     expect(deletion.success).toBe(true);
+  });
+});
+
+describe("SetMovieReactionResponseSchema", () => {
+  it("requires the reaction returned by the set operation", () => {
+    const valid = SetMovieReactionResponseSchema.safeParse({
+      data: {
+        movieId: 438631,
+        reaction: "LIKE",
+        watchedAt: null,
+      },
+    });
+    const missingReaction = SetMovieReactionResponseSchema.safeParse({
+      data: {
+        movieId: 438631,
+        reaction: null,
+        watchedAt: null,
+      },
+    });
+
+    expect(valid.success).toBe(true);
+    expect(missingReaction.success).toBe(false);
   });
 });

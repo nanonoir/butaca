@@ -838,7 +838,9 @@ export const MovieInteractionStateSchema =
 
 export const SetMovieReactionResponseSchema =
   apiDataResponseSchema(
-    MovieInteractionStateSchema,
+    MovieInteractionStateSchema.extend({
+      reaction: MovieReactionSchema,
+    }),
   )
 
 export const SetWatchedRequestSchema = z.object({
