@@ -1,6 +1,6 @@
-import { BUTTON_VARIANT, Button } from "@/components/ui/button";
 import type { Genre } from "@/contracts/movies";
 
+import { LogoutButton } from "./logout-button";
 import { ProfileAvatarEditor } from "./profile-avatar-editor";
 import { ProfilePreferencesSummary } from "./profile-preferences-summary";
 
@@ -89,13 +89,7 @@ export function ProfileScreen({ genreOptions, profile }: ProfileScreenProps) {
 
         <section aria-labelledby="profile-account-title">
           <SectionHeading id="profile-account-title">Cuenta</SectionHeading>
-          <Button
-            className="mt-4 min-h-[4.375rem] w-full justify-start rounded-lg bg-surface-elevated px-5 text-base disabled:opacity-100"
-            disabled
-            variant={BUTTON_VARIANT.OUTLINE}
-          >
-            Cerrar sesión
-          </Button>
+          <LogoutButton />
         </section>
       </div>
     </div>

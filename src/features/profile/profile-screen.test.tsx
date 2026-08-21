@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProfileScreen } from "./profile-screen";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
 beforeEach(() => window.sessionStorage.clear());
@@ -66,15 +66,11 @@ describe("ProfileScreen", () => {
     expect(screen.getByText("Reseñas")).toBeTruthy();
   });
 
-  it("enables preference editing while keeping logout unavailable", () => {
+  it("enables preference editing and signing out", () => {
     render(<ProfileScreen genreOptions={GENRE_OPTIONS} profile={PROFILE} />);
 
-    const editButton = screen.getByRole("button", { name: "Editar gustos" });
-    const logoutButton = screen.getByRole("button", { name: "Cerrar sesión" });
-
-    expect(editButton).toBeEnabled();
-    expect(logoutButton).toBeDisabled();
-    expect(logoutButton.className).toContain("disabled:opacity-100");
+    expect(screen.getByRole("button", { name: "Editar gustos" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeEnabled();
   });
 
   it("uses the compact vertical rhythm from the profile reference", () => {

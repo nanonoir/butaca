@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { PAGE_SIZE } from "../../contracts/common";
 import type { MovieReaction } from "../../contracts/interactions";
@@ -183,5 +183,23 @@ export class UserMovieInteractionRepository {
       .returning({ id: userMovieInteractions.id });
 
     return interaction !== undefined;
+  }
+
+  /** Activity totals for the profile screen. Both counters are scoped by
+   * userId like every other private read in this repository. */
+  async countByUser(
+    userId: string,
+  ): Promise<{ liked: number; watched: number }> {
+    const [totals] = await this.db
+      .select({
+        liked: count(
+          sql`case when ${userMovieInteractions.reaction} = 'LIKE' then 1 end`,
+        ),
+        watched: count(userMovieInteractions.watchedAt),
+      })
+      .from(userMovieInteractions)
+      .where(eq(userMovieInteractions.userId, userId));
+
+    return { liked: totals?.liked ?? 0, watched: totals?.watched ?? 0 };
   }
 }

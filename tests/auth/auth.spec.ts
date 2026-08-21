@@ -31,9 +31,10 @@ test.describe("Authentication routes", () => {
     await expect(
       page.getByRole("link", { name: "¿Olvidaste tu contraseña?" }),
     ).toHaveAttribute("href", "/forgot-password");
-    await expect(
-      page.getByRole("link", { name: "Crear una" }),
-    ).toHaveAttribute("href", "/register");
+    await expect(page.getByRole("link", { name: "Crear una" })).toHaveAttribute(
+      "href",
+      "/register",
+    );
 
     await authPage.goto("/login?reset=success");
     await expect(page.getByRole("status")).toContainText(
@@ -85,11 +86,15 @@ test.describe("Authentication routes", () => {
     ).toHaveAttribute("href", "/forgot-password");
   });
 
-  test("routes a successful reset to login with reset feedback", async ({
+  test("rejects a password reset that has no recovery session", async ({
     page,
   }) => {
     const authPage = new AuthPage(page);
 
+    // Reaching /reset-password directly, without following the emailed link,
+    // leaves no recovery session, so the backend refuses the update. The
+    // previous version of this test asserted success because the form was
+    // wired to a stub that could not tell the two situations apart.
     await authPage.goto("/reset-password");
     await page
       .getByLabel("Nueva contraseña", { exact: true })
@@ -99,10 +104,15 @@ test.describe("Authentication routes", () => {
       .fill("StrongPass1");
     await page.getByRole("button", { name: "Actualizar contraseña" }).click();
 
-    await expect(page).toHaveURL(/\/login\?reset=success$/);
-    await expect(page.getByRole("status")).toContainText(
-      "Tu contraseña fue actualizada. Inicia sesión con tu nueva contraseña.",
-    );
+    // The form maps the rejection onto its unavailable-link state instead of a
+    // field error, so the password inputs disappear and recovery is offered.
+    await expect(
+      page.getByRole("heading", {
+        name: "Enlace de recuperación no disponible",
+      }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Nueva contraseña")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/reset-password$/);
   });
 
   test("keeps auth layouts usable at mobile, tablet, and desktop widths", async ({
@@ -152,7 +162,7 @@ test.describe("Authentication routes", () => {
     );
     await expect(
       page.getByRole("alert").filter({
-          hasText: "Corrige los campos marcados antes de continuar.",
+        hasText: "Corrige los campos marcados antes de continuar.",
       }),
     ).toContainText("Corrige los campos marcados antes de continuar.");
   });
