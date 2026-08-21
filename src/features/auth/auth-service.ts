@@ -1,5 +1,6 @@
 import type {
   AuthErrorCode,
+  AuthErrorField,
   AuthUser,
   ForgotPasswordRequest,
   LoginRequest,
@@ -17,16 +18,17 @@ export const AUTH_SERVICE_OPERATION = {
 export type AuthServiceOperation =
   (typeof AUTH_SERVICE_OPERATION)[keyof typeof AUTH_SERVICE_OPERATION];
 
+/** Field names come from the shared contract so the HTTP boundary and the
+ * forms cannot drift apart. */
+export type AuthServiceErrorField = AuthErrorField;
+
 export const AUTH_SERVICE_ERROR_FIELD = {
   USERNAME: "username",
   EMAIL: "email",
   PASSWORD: "password",
   CONFIRM_PASSWORD: "confirmPassword",
   NEW_PASSWORD: "newPassword",
-} as const;
-
-export type AuthServiceErrorField =
-  (typeof AUTH_SERVICE_ERROR_FIELD)[keyof typeof AUTH_SERVICE_ERROR_FIELD];
+} as const satisfies Record<string, AuthServiceErrorField>;
 
 export interface AuthServiceErrorDetails {
   code: AuthErrorCode;

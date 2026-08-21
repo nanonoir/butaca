@@ -2,25 +2,25 @@ import {
   AuthApiError,
   type AuthSession,
   type AuthUser,
-  type SupabaseClient,
 } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
 import type { UserRepository } from "@/db/repositories/user-repository";
 import type { UserRecord } from "@/db/schema/users";
 
-import { ServerAuthService } from "../server-auth-service";
+import {
+  ServerAuthService,
+  type AuthClientPort,
+} from "../server-auth-service";
 import {
   AuthProviderError,
+  AuthRateLimitedError,
   InvalidCredentialsError,
   UnauthenticatedError,
   UserProfileNotProvisionedError,
 } from "../errors";
 
-type AuthPort = Pick<
-  SupabaseClient["auth"],
-  "signUp" | "signInWithPassword" | "signOut" | "getClaims"
->;
+type AuthPort = AuthClientPort;
 type UsersPort = Pick<UserRepository, "findById" | "upsertFromAuthUser">;
 type SignUpResult = Awaited<ReturnType<AuthPort["signUp"]>>;
 type GetClaimsResult = Awaited<ReturnType<AuthPort["getClaims"]>>;
@@ -35,6 +35,8 @@ function createAuthDouble() {
     signInWithPassword: vi.fn<AuthPort["signInWithPassword"]>(),
     signOut: vi.fn<AuthPort["signOut"]>(),
     getClaims: vi.fn<AuthPort["getClaims"]>(),
+    resetPasswordForEmail: vi.fn<AuthPort["resetPasswordForEmail"]>(),
+    updateUser: vi.fn<AuthPort["updateUser"]>(),
   } satisfies AuthPort;
 }
 
@@ -536,5 +538,125 @@ describe("ServerAuthService", () => {
 
     await expectSafeProviderFailure(operation);
     expect(auth.signOut).toHaveBeenCalledOnce();
+  });
+});
+
+type ResetPasswordResult = Awaited<
+  ReturnType<AuthPort["resetPasswordForEmail"]>
+>;
+type UpdateUserResult = Awaited<ReturnType<AuthPort["updateUser"]>>;
+
+describe("ServerAuthService password recovery", () => {
+  it("requests a reset link with the callback redirect", async () => {
+    const auth = createAuthDouble();
+    const users = createUsersDouble();
+    auth.resetPasswordForEmail.mockResolvedValue({
+      data: {},
+      error: null,
+    } as ResetPasswordResult);
+
+    await new ServerAuthService(auth, users).requestPasswordReset({
+      email: "viewer@example.test",
+      redirectTo: "https://app.example.test/confirm",
+    });
+
+    expect(auth.resetPasswordForEmail).toHaveBeenCalledWith(
+      "viewer@example.test",
+      { redirectTo: "https://app.example.test/confirm" },
+    );
+  });
+
+  it("maps a send rate limit to AuthRateLimitedError", async () => {
+    const auth = createAuthDouble();
+    const users = createUsersDouble();
+    auth.resetPasswordForEmail.mockResolvedValue({
+      data: null,
+      error: new AuthApiError(
+        "rate limited",
+        429,
+        "over_email_send_rate_limit",
+      ),
+    } as ResetPasswordResult);
+
+    await expect(
+      new ServerAuthService(auth, users).requestPasswordReset({
+        email: "viewer@example.test",
+        redirectTo: "https://app.example.test/confirm",
+      }),
+    ).rejects.toBeInstanceOf(AuthRateLimitedError);
+  });
+
+  it("maps any other recovery failure to AuthProviderError", async () => {
+    const auth = createAuthDouble();
+    const users = createUsersDouble();
+    auth.resetPasswordForEmail.mockResolvedValue({
+      data: null,
+      error: new AuthApiError("boom", 500, "unexpected_failure"),
+    } as ResetPasswordResult);
+
+    await expectSafeProviderFailure(
+      new ServerAuthService(auth, users).requestPasswordReset({
+        email: "viewer@example.test",
+        redirectTo: "https://app.example.test/confirm",
+      }),
+    );
+  });
+
+  it("updates the password through the recovery session", async () => {
+    const auth = createAuthDouble();
+    const users = createUsersDouble();
+    auth.updateUser.mockResolvedValue({
+      data: { user: createAuthUser() },
+      error: null,
+    } as UpdateUserResult);
+
+    await new ServerAuthService(auth, users).updatePassword({
+      newPassword: "NewPassword1",
+    });
+
+    expect(auth.updateUser).toHaveBeenCalledWith({ password: "NewPassword1" });
+  });
+
+  it("maps a missing recovery session to UnauthenticatedError", async () => {
+    const auth = createAuthDouble();
+    const users = createUsersDouble();
+    auth.updateUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthApiError("missing session", 401, "session_not_found"),
+    } as UpdateUserResult);
+
+    await expect(
+      new ServerAuthService(auth, users).updatePassword({
+        newPassword: "NewPassword1",
+      }),
+    ).rejects.toBeInstanceOf(UnauthenticatedError);
+  });
+});
+
+describe("ServerAuthService getCurrentSession", () => {
+  it("returns the profile together with the verified claim email", async () => {
+    const auth = createAuthDouble();
+    const users = createUsersDouble();
+    const profile = createUserRecord();
+    auth.getClaims.mockResolvedValue(createClaimsResult(USER_ID));
+    users.findById.mockResolvedValue(profile);
+
+    await expect(
+      new ServerAuthService(auth, users).getCurrentSession(),
+    ).resolves.toEqual({ user: profile, email: "viewer@example.test" });
+  });
+
+  it("returns null for a guest without querying the profile", async () => {
+    const auth = createAuthDouble();
+    const users = createUsersDouble();
+    auth.getClaims.mockResolvedValue({
+      data: null,
+      error: null,
+    } as GetClaimsResult);
+
+    await expect(
+      new ServerAuthService(auth, users).getCurrentSession(),
+    ).resolves.toBeNull();
+    expect(users.findById).not.toHaveBeenCalled();
   });
 });

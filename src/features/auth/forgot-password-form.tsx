@@ -23,7 +23,7 @@ import {
   withAuthTimeout,
   type AuthService,
 } from "./auth-service";
-import { authServiceStub } from "./auth-service.stub";
+import { httpAuthService } from "./http-auth-service";
 import {
   isUnexpectedAuthError,
   reportUnexpectedAuthError,
@@ -38,7 +38,7 @@ export interface ForgotPasswordFormProps {
 }
 
 export function ForgotPasswordForm({
-  service = authServiceStub,
+  service = httpAuthService,
   className,
 }: ForgotPasswordFormProps) {
   const [values, setValues] = useState<ForgotPasswordRequest>(INITIAL_VALUES);

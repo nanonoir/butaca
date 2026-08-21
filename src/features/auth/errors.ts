@@ -25,3 +25,10 @@ export class AuthProviderError extends Error {
     this.name = "AuthProviderError";
   }
 }
+
+export class AuthRateLimitedError extends Error {
+  constructor() {
+    super("Too many authentication attempts");
+    this.name = "AuthRateLimitedError";
+  }
+}

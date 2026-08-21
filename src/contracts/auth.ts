@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { apiDataResponseSchema } from "./common";
 import { PASSWORD_POLICY } from "./password-policy";
 
 export const UsernameSchema = z
@@ -102,6 +103,24 @@ export const AuthErrorCodeSchema = z.enum([
   "UNKNOWN_ERROR",
 ]);
 
+export const AuthErrorFieldSchema = z.enum([
+  "username",
+  "email",
+  "password",
+  "confirmPassword",
+  "newPassword",
+]);
+
+export const AuthErrorResponseSchema = z.object({
+  error: z.object({
+    code: AuthErrorCodeSchema,
+    field: AuthErrorFieldSchema.optional(),
+    message: z.string().min(1),
+  }),
+});
+
+export const AuthUserResponseSchema = apiDataResponseSchema(AuthUserSchema);
+
 export type Username = z.infer<typeof UsernameSchema>;
 export type AuthEmail = z.infer<typeof AuthEmailSchema>;
 export type Password = z.infer<typeof PasswordSchema>;
@@ -111,3 +130,5 @@ export type ForgotPasswordRequest = z.infer<typeof ForgotPasswordRequestSchema>;
 export type ResetPasswordRequest = z.infer<typeof ResetPasswordRequestSchema>;
 export type AuthUser = z.infer<typeof AuthUserSchema>;
 export type AuthErrorCode = z.infer<typeof AuthErrorCodeSchema>;
+export type AuthErrorField = z.infer<typeof AuthErrorFieldSchema>;
+export type AuthErrorResponse = z.infer<typeof AuthErrorResponseSchema>;

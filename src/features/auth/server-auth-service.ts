@@ -12,15 +12,32 @@ import type { UserRecord } from "../../db/schema/users";
 
 import {
   AuthProviderError,
+  AuthRateLimitedError,
   InvalidCredentialsError,
   UnauthenticatedError,
   UserProfileNotProvisionedError,
 } from "./errors";
 
-type AuthClientPort = Pick<
+export type AuthClientPort = Pick<
   SupabaseClient["auth"],
-  "signUp" | "signInWithPassword" | "signOut" | "getClaims"
+  | "signUp"
+  | "signInWithPassword"
+  | "signOut"
+  | "getClaims"
+  | "resetPasswordForEmail"
+  | "updateUser"
 >;
+
+/** Supabase reports send-rate limits with a dedicated code; everything else is
+ * an opaque provider failure. */
+const RATE_LIMIT_ERROR_CODES = new Set([
+  "over_email_send_rate_limit",
+  "over_request_rate_limit",
+]);
+
+function isRateLimitError(code: string | undefined): boolean {
+  return code !== undefined && RATE_LIMIT_ERROR_CODES.has(code);
+}
 
 const MAX_DISPLAY_NAME_LENGTH = 80;
 const FALLBACK_DISPLAY_NAME = "Film Match user";
@@ -145,7 +162,62 @@ export class ServerAuthService {
     }
   }
 
-  async getCurrentUser(): Promise<UserRecord | null> {
+  /** Supabase deliberately does not reveal whether the address exists, so a
+   * successful call proves nothing about the account and the caller must not
+   * branch on it. */
+  async requestPasswordReset(input: {
+    email: string;
+    redirectTo: string;
+  }): Promise<void> {
+    let response: Awaited<ReturnType<AuthClientPort["resetPasswordForEmail"]>>;
+
+    try {
+      response = await this.auth.resetPasswordForEmail(input.email, {
+        redirectTo: input.redirectTo,
+      });
+    } catch (error) {
+      if (isAuthError(error) && isRateLimitError(error.code)) {
+        throw new AuthRateLimitedError();
+      }
+
+      throw new AuthProviderError();
+    }
+
+    if (response.error) {
+      if (isRateLimitError(response.error.code)) {
+        throw new AuthRateLimitedError();
+      }
+
+      throw new AuthProviderError();
+    }
+  }
+
+  /** Requires the recovery session established by the callback route; without
+   * it the update is rejected as unauthenticated. */
+  async updatePassword(input: { newPassword: string }): Promise<void> {
+    let response: Awaited<ReturnType<AuthClientPort["updateUser"]>>;
+
+    try {
+      response = await this.auth.updateUser({ password: input.newPassword });
+    } catch {
+      throw new AuthProviderError();
+    }
+
+    if (response.error) {
+      if (isRateLimitError(response.error.code)) {
+        throw new AuthRateLimitedError();
+      }
+
+      throw new UnauthenticatedError();
+    }
+  }
+
+  /** Resolves the profile together with the verified email from the claims, so
+   * callers that need to display the account do not have to query Auth twice. */
+  async getCurrentSession(): Promise<{
+    user: UserRecord;
+    email: string | null;
+  } | null> {
     let response: Awaited<ReturnType<AuthClientPort["getClaims"]>>;
 
     try {
@@ -174,7 +246,15 @@ export class ServerAuthService {
       throw new UserProfileNotProvisionedError();
     }
 
-    return user;
+    const email = response.data.claims.email;
+
+    return { user, email: typeof email === "string" ? email : null };
+  }
+
+  async getCurrentUser(): Promise<UserRecord | null> {
+    const session = await this.getCurrentSession();
+
+    return session?.user ?? null;
   }
 
   async requireCurrentUser(): Promise<UserRecord> {
