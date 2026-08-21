@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AnimatePresence,
   animate,
@@ -19,6 +19,8 @@ import type { MovieSummary } from "@/contracts/movies";
 import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
 
+import { ButiAssistantDrawer } from "./buti-assistant-drawer";
+import { ButiRecommendation } from "./buti-recommendation";
 import { resolveSwipeIntent, SWIPE_INTENT } from "./resolve-swipe-intent";
 
 interface DiscoverScreenProps {
@@ -151,7 +153,7 @@ function getMovieGenres(movie: MovieSummary) {
 
 function HowItWorks() {
   return (
-    <aside className="hidden max-w-[13rem] self-center lg:block">
+    <aside className="hidden max-w-[13rem] self-center min-[1180px]:col-start-1 min-[1180px]:row-start-1 min-[1180px]:block">
       <p className="font-mono text-xs uppercase tracking-[0.14em] text-primary">
         Cómo funciona
       </p>
@@ -395,14 +397,27 @@ function EndOfStack({ onRestart }: { onRestart: () => void }) {
 
 export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [detailMovie, setDetailMovie] = useState<MovieSummary | null>(null);
   const [exitReaction, setExitReaction] = useState<MovieReaction | null>(null);
   const [lastAction, setLastAction] = useState("");
+  const assistantTrigger = useRef<HTMLButtonElement | null>(null);
   const currentMovie = movies[currentIndex];
   const nextMovie = movies[currentIndex + 1];
   const detailExperience = detailMovie
     ? getMovieDetailExperienceFixture(detailMovie)
     : null;
+
+  useEffect(() => {
+    if (!assistantOpen) {
+      assistantTrigger.current?.focus();
+    }
+  }, [assistantOpen]);
+
+  function openAssistant(trigger: HTMLButtonElement) {
+    assistantTrigger.current = trigger;
+    setAssistantOpen(true);
+  }
 
   function handleReaction(reaction: MovieReaction) {
     if (!currentMovie) {
@@ -425,9 +440,9 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-7 py-2 md:gap-8 md:py-4">
       <div
-        aria-hidden={detailExperience ? true : undefined}
+        aria-hidden={detailExperience || assistantOpen ? true : undefined}
         className="contents"
-        inert={detailExperience ? true : undefined}
+        inert={detailExperience || assistantOpen ? true : undefined}
       >
         <PageHeader
           action={
@@ -446,17 +461,23 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
 
         <section
           aria-labelledby="discover-stack-title"
-          className="grid min-h-0 flex-1 items-center gap-8 lg:grid-cols-[13rem_minmax(0,34rem)_13rem] lg:gap-10"
+          className="grid min-h-0 flex-1 items-center gap-8 min-[980px]:grid-cols-[minmax(26rem,34rem)_minmax(15rem,17rem)] min-[1180px]:grid-cols-[13rem_minmax(26rem,34rem)_minmax(15rem,17rem)] min-[1180px]:gap-10"
         >
           <h2 className="sr-only" id="discover-stack-title">
             Recomendaciones de películas
           </h2>
           <HowItWorks />
 
-          <div className="mx-auto flex w-full max-w-[34rem] flex-col gap-3 lg:col-start-2">
+          <div
+            className="mx-auto flex w-full max-w-[34rem] flex-col gap-3 min-[980px]:col-start-1 min-[980px]:row-start-1 min-[1180px]:col-start-2"
+            data-testid="movie-stack-column"
+          >
             {currentMovie ? (
               <>
-                <div className="relative mx-auto aspect-[2/3] h-[min(52svh,38rem)] max-h-[38rem] max-w-full">
+                <div
+                  className="relative mx-auto aspect-[2/3] h-[min(52svh,38rem)] max-h-[38rem] max-w-full min-[980px]:h-[min(66svh,42rem)] min-[980px]:max-h-[42rem]"
+                  data-testid="discover-poster-frame"
+                >
                   {nextMovie ? <NextMovieCard movie={nextMovie} /> : null}
                   <AnimatePresence custom={exitReaction} initial={false}>
                     <DiscoverMovieCard
@@ -490,16 +511,31 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
             )}
           </div>
 
-          <div
-            aria-hidden="true"
-            className="hidden text-right font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground lg:block"
-          >
-            {currentMovie
-              ? `${currentIndex + 1} / ${movies.length}`
-              : `${movies.length} / ${movies.length}`}
-          </div>
+          {currentMovie ? (
+            <ButiRecommendation
+              movie={currentMovie}
+              onOpenAssistant={openAssistant}
+            />
+          ) : (
+            <div
+              aria-hidden="true"
+              className="hidden text-right font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground min-[980px]:col-start-2 min-[980px]:row-start-1 min-[980px]:block min-[1180px]:col-start-3"
+            >
+              {movies.length} / {movies.length}
+            </div>
+          )}
         </section>
       </div>
+
+      <AnimatePresence>
+        {assistantOpen && currentMovie ? (
+          <ButiAssistantDrawer
+            key={`buti-drawer-${currentMovie.id}`}
+            movie={currentMovie}
+            onClose={() => setAssistantOpen(false)}
+          />
+        ) : null}
+      </AnimatePresence>
 
       <AnimatePresence>
         {detailExperience ? (

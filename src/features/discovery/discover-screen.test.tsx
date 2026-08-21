@@ -42,6 +42,190 @@ describe("DiscoverScreen", () => {
     expect(screen.getByText("PASO")).toBeInTheDocument();
   });
 
+  it("shows Buti's opinion with controls that open the contextual assistant", () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    const buti = screen.getByRole("complementary", {
+      name: "Buti opina sobre Dune",
+    });
+
+    expect(within(buti).getByText("Buti opina")).toBeInTheDocument();
+    expect(
+      within(buti).getByText(
+        /Denis Villeneuve otra vez: te gustó Blade Runner 2049/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(buti).getByRole("img", {
+        name: "Buti feliz, match alto",
+      }),
+    ).toHaveAttribute("data-activity", "jumping");
+    expect(
+      within(buti).getByRole("button", {
+        name: "Preguntale a Buti sobre Dune",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(buti).getByRole("button", {
+        name: "Abrir asistente de Buti sobre Dune",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(buti).queryByRole("link", {
+        name: "Preguntale a Buti sobre Dune",
+      }),
+    ).not.toBeInTheDocument();
+    expect(within(buti).queryByText("1 / 2")).not.toBeInTheDocument();
+  });
+
+  it("keeps the poster ratio and gives it more room only on desktop", () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    expect(screen.getByTestId("discover-poster-frame")).toHaveClass(
+      "aspect-[2/3]",
+      "h-[min(52svh,38rem)]",
+      "max-h-[38rem]",
+      "min-[980px]:h-[min(66svh,42rem)]",
+      "min-[980px]:max-h-[42rem]",
+    );
+  });
+
+  it("places Buti beside the movie when the desktop composition fits", () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    const recommendationRegion = screen.getByRole("region", {
+      name: "Recomendaciones de películas",
+    });
+    const buti = screen.getByRole("complementary", {
+      name: "Buti opina sobre Dune",
+    });
+
+    expect(recommendationRegion).toHaveClass(
+      "min-[980px]:grid-cols-[minmax(26rem,34rem)_minmax(15rem,17rem)]",
+      "min-[1180px]:grid-cols-[13rem_minmax(26rem,34rem)_minmax(15rem,17rem)]",
+    );
+    expect(screen.getByTestId("movie-stack-column")).toHaveClass(
+      "min-[980px]:col-start-1",
+      "min-[980px]:row-start-1",
+      "min-[1180px]:col-start-2",
+    );
+    expect(buti).toHaveClass(
+      "min-[980px]:col-start-2",
+      "min-[980px]:row-start-1",
+      "min-[1180px]:col-start-3",
+    );
+  });
+
+  it("opens Buti as a floating drawer without navigating away from Discover", () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    const movieStack = screen.getByTestId("movie-stack-column");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Preguntale a Buti sobre Dune",
+      }),
+    );
+
+    const drawer = screen.getByRole("dialog", {
+      name: "Asistente de Buti sobre Dune",
+    });
+    expect(drawer.parentElement).toHaveClass("fixed", "inset-0");
+    expect(drawer).toHaveClass("sm:w-[21rem]");
+    expect(movieStack).toBeInTheDocument();
+    expect(within(drawer).getByText("Buti")).toBeInTheDocument();
+    expect(
+      within(drawer).getByText("Conoce tus gustos y tu biblioteca"),
+    ).toBeInTheDocument();
+    expect(
+      within(drawer).getByRole("group", { name: "Sugerencias rápidas" }),
+    ).toBeInTheDocument();
+    expect(
+      within(drawer).getByRole("textbox", { name: "Preguntale a Buti" }),
+    ).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("hidden");
+  });
+
+  it("opens from the mascot and closes with Escape, restoring focus", async () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    const mascotTrigger = screen.getByRole("button", {
+      name: "Abrir asistente de Buti sobre Dune",
+    });
+    fireEvent.click(mascotTrigger);
+
+    expect(
+      screen.getByRole("dialog", { name: "Asistente de Buti sobre Dune" }),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(mascotTrigger).toHaveFocus();
+    });
+    expect(document.body.style.overflow).toBe("");
+  });
+
+  it("lets the user talk to Buti inside the drawer", async () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Preguntale a Buti sobre Dune",
+      }),
+    );
+
+    const drawer = screen.getByRole("dialog", {
+      name: "Asistente de Buti sobre Dune",
+    });
+    const input = within(drawer).getByRole("textbox", {
+      name: "Preguntale a Buti",
+    });
+    fireEvent.change(input, {
+      target: { value: "¿Por qué pensás que me va a gustar?" },
+    });
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "Enviar consulta" }),
+    );
+
+    expect(
+      within(drawer).getByText("¿Por qué pensás que me va a gustar?"),
+    ).toBeInTheDocument();
+    expect(within(drawer).getByRole("status")).toHaveTextContent(
+      "Buti está pensando",
+    );
+    expect(
+      await within(drawer).findByText(/La recomiendo porque/i, undefined, {
+        timeout: 1500,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("updates Buti's opinion when the current recommendation changes", () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Me gusta" }));
+
+    const buti = screen.getByRole("complementary", {
+      name: "Buti opina sobre La llegada",
+    });
+    expect(
+      within(buti).getByText(/otra historia de Denis Villeneuve/i),
+    ).toBeInTheDocument();
+    expect(
+      within(buti).getByRole("img", {
+        name: "Buti atento, match medio",
+      }),
+    ).toHaveAttribute("data-activity", "idle");
+    expect(
+      screen.queryByRole("complementary", {
+        name: "Buti opina sobre Dune",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
   it("offers visible reaction controls and advances after each choice", () => {
     render(<DiscoverScreen movies={MOVIES} />);
 
