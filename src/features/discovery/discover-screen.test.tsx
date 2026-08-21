@@ -9,7 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DISCOVER_MOVIES_FIXTURE } from "@/fixtures/discover-movies";
 
@@ -78,6 +78,34 @@ describe("DiscoverScreen", () => {
     expect(within(buti).queryByText("1 / 2")).not.toBeInTheDocument();
   });
 
+  it("shows a compact full-width Buti card below the movie on mobile", () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    const mobileCard = screen.getByRole("button", {
+      name: "Abrir asistente de Buti sobre Dune desde el resumen",
+    });
+
+    expect(mobileCard).toHaveClass("w-full", "min-[980px]:hidden");
+    expect(screen.getByTestId("movie-stack-column")).toContainElement(
+      mobileCard,
+    );
+    expect(
+      within(mobileCard).getByRole("img", {
+        name: "Buti feliz, match alto",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(mobileCard).getByText(/Denis Villeneuve otra vez/i),
+    ).toBeInTheDocument();
+    expect(within(mobileCard).getByText("›")).toBeInTheDocument();
+
+    fireEvent.click(mobileCard);
+
+    expect(
+      screen.getByRole("dialog", { name: "Asistente de Buti sobre Dune" }),
+    ).toBeInTheDocument();
+  });
+
   it("keeps the poster ratio and gives it more room only on desktop", () => {
     render(<DiscoverScreen movies={MOVIES} />);
 
@@ -110,6 +138,8 @@ describe("DiscoverScreen", () => {
       "min-[1180px]:col-start-2",
     );
     expect(buti).toHaveClass(
+      "hidden",
+      "min-[980px]:block",
       "min-[980px]:col-start-2",
       "min-[980px]:row-start-1",
       "min-[1180px]:col-start-3",
@@ -130,7 +160,16 @@ describe("DiscoverScreen", () => {
       name: "Asistente de Buti sobre Dune",
     });
     expect(drawer.parentElement).toHaveClass("fixed", "inset-0");
-    expect(drawer).toHaveClass("sm:w-[21rem]");
+    expect(drawer).toHaveClass(
+      "inset-x-3",
+      "bottom-3",
+      "top-[clamp(6.5rem,15dvh,9.5rem)]",
+      "min-[980px]:inset-y-2",
+      "min-[980px]:left-auto",
+      "min-[980px]:right-2",
+      "min-[980px]:w-[28rem]",
+    );
+    expect(drawer).not.toHaveClass("min-[980px]:w-[21rem]");
     expect(movieStack).toBeInTheDocument();
     expect(within(drawer).getByText("Buti")).toBeInTheDocument();
     expect(
@@ -142,6 +181,24 @@ describe("DiscoverScreen", () => {
     expect(
       within(drawer).getByRole("textbox", { name: "Preguntale a Buti" }),
     ).toBeInTheDocument();
+    expect(
+      within(drawer).getByRole("button", { name: "Nueva conversación" }),
+    ).toHaveClass("min-[980px]:hidden");
+    expect(within(drawer).getByTestId("buti-assistant-header")).toHaveClass(
+      "shrink-0",
+    );
+    expect(within(drawer).getByTestId("buti-conversation-scroll")).toHaveClass(
+      "min-h-0",
+      "flex-1",
+      "overflow-y-auto",
+      "[scrollbar-width:none]",
+      "[&::-webkit-scrollbar]:hidden",
+      "min-[980px]:[scrollbar-width:auto]",
+      "min-[980px]:[&::-webkit-scrollbar]:block",
+    );
+    expect(within(drawer).getByTestId("buti-assistant-composer")).toHaveClass(
+      "shrink-0",
+    );
     expect(document.body.style.overflow).toBe("hidden");
   });
 
@@ -201,6 +258,153 @@ describe("DiscoverScreen", () => {
         timeout: 1500,
       }),
     ).toBeInTheDocument();
+  });
+
+  it("scrolls the conversation after every user and Buti message", async () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Abrir asistente de Buti sobre Dune desde el resumen",
+      }),
+    );
+
+    const drawer = screen.getByRole("dialog", {
+      name: "Asistente de Buti sobre Dune",
+    });
+    const conversation = within(drawer).getByTestId("buti-conversation-scroll");
+    const scrollTo = vi.fn();
+    let scrollHeight = 640;
+
+    Object.defineProperties(conversation, {
+      scrollHeight: {
+        configurable: true,
+        get: () => scrollHeight,
+      },
+      scrollTo: {
+        configurable: true,
+        value: scrollTo,
+      },
+    });
+
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "¿Por qué esta?" }),
+    );
+
+    await waitFor(() => {
+      expect(scrollTo).toHaveBeenLastCalledWith({
+        behavior: "smooth",
+        top: 640,
+      });
+    });
+
+    scrollHeight = 820;
+    await waitFor(
+      () => {
+        expect(scrollTo).toHaveBeenLastCalledWith({
+          behavior: "smooth",
+          top: 820,
+        });
+      },
+      { timeout: 1500 },
+    );
+
+    const input = within(drawer).getByRole("textbox", {
+      name: "Preguntale a Buti",
+    });
+    scrollHeight = 960;
+    fireEvent.change(input, { target: { value: "Algo más corto" } });
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "Enviar consulta" }),
+    );
+
+    await waitFor(() => {
+      expect(scrollTo).toHaveBeenLastCalledWith({
+        behavior: "smooth",
+        top: 960,
+      });
+    });
+
+    scrollHeight = 1100;
+    await waitFor(
+      () => {
+        expect(scrollTo).toHaveBeenLastCalledWith({
+          behavior: "smooth",
+          top: 1100,
+        });
+      },
+      { timeout: 1500 },
+    );
+    expect(scrollTo).toHaveBeenCalledTimes(4);
+  });
+
+  it("shows compact movie recommendations in the assistant on mobile and desktop", async () => {
+    render(<DiscoverScreen movies={DISCOVER_MOVIES_FIXTURE.data.movies} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Abrir asistente de Buti sobre Dune desde el resumen",
+      }),
+    );
+
+    const drawer = screen.getByRole("dialog", {
+      name: "Asistente de Buti sobre Dune",
+    });
+    fireEvent.click(
+      within(drawer).getByRole("button", {
+        name: "Algo intenso para esta noche",
+      }),
+    );
+
+    expect(
+      await within(drawer).findByText(/La recomiendo porque/i, undefined, {
+        timeout: 1500,
+      }),
+    ).toBeInTheDocument();
+
+    const recommendations = within(drawer).getByRole("list", {
+      name: "Recomendaciones de Buti",
+    });
+    expect(recommendations).toHaveClass(
+      "flex",
+      "overflow-x-auto",
+      "[scrollbar-width:none]",
+      "[&::-webkit-scrollbar]:hidden",
+    );
+    expect(recommendations).not.toHaveClass("min-[980px]:hidden");
+    expect(within(recommendations).getAllByRole("article")).toHaveLength(3);
+  });
+
+  it("starts a new Buti conversation without closing the mobile panel", async () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Abrir asistente de Buti sobre Dune desde el resumen",
+      }),
+    );
+
+    const drawer = screen.getByRole("dialog", {
+      name: "Asistente de Buti sobre Dune",
+    });
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "¿Por qué esta?" }),
+    );
+    expect(
+      await within(drawer).findByText(/La recomiendo porque/i, undefined, {
+        timeout: 1500,
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "Nueva conversación" }),
+    );
+
+    expect(within(drawer).queryByText("¿Por qué esta?")).toBeInTheDocument();
+    expect(
+      within(drawer).queryByText(/La recomiendo porque/i),
+    ).not.toBeInTheDocument();
+    expect(drawer).toBeInTheDocument();
   });
 
   it("updates Buti's opinion when the current recommendation changes", () => {

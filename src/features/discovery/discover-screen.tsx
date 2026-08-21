@@ -20,7 +20,10 @@ import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
 
 import { ButiAssistantDrawer } from "./buti-assistant-drawer";
-import { ButiRecommendation } from "./buti-recommendation";
+import {
+  ButiMobileRecommendation,
+  ButiRecommendation,
+} from "./buti-recommendation";
 import { resolveSwipeIntent, SWIPE_INTENT } from "./resolve-swipe-intent";
 
 interface DiscoverScreenProps {
@@ -490,6 +493,11 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
                   </AnimatePresence>
                 </div>
 
+                <ButiMobileRecommendation
+                  movie={currentMovie}
+                  onOpenAssistant={openAssistant}
+                />
+
                 <p className="text-center font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground lg:hidden">
                   Deslizá la card o usá los controles
                 </p>
@@ -533,6 +541,9 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
             key={`buti-drawer-${currentMovie.id}`}
             movie={currentMovie}
             onClose={() => setAssistantOpen(false)}
+            recommendations={movies
+              .filter((movie) => movie.id !== currentMovie.id)
+              .slice(0, 3)}
           />
         ) : null}
       </AnimatePresence>

@@ -44,12 +44,48 @@ interface ButiRecommendationProps {
   onOpenAssistant: (trigger: HTMLButtonElement) => void;
 }
 
+function getButiActivity(match: ButiMatch) {
+  return match === BUTI_MATCH.HIGH ? BUTI_ACTIVITY.JUMPING : BUTI_ACTIVITY.IDLE;
+}
+
 export function getButiInsight(movie: MovieSummary): ButiInsight {
   return (
     BUTI_INSIGHTS[movie.id] ?? {
       match: BUTI_MATCH.MEDIUM,
       opinion: `${movie.title} encaja con lo que venís viendo y tiene ${movie.tmdbRating.toFixed(1)} en TMDB.`,
     }
+  );
+}
+
+export function ButiMobileRecommendation({
+  movie,
+  onOpenAssistant,
+}: ButiRecommendationProps) {
+  const insight = getButiInsight(movie);
+
+  return (
+    <button
+      aria-label={`Abrir asistente de Buti sobre ${movie.title} desde el resumen`}
+      className="flex w-full items-center gap-3 rounded-xl border border-primary/25 bg-surface-elevated px-3 py-2.5 text-left transition-[background-color,border-color,transform] duration-fast ease-ui hover:border-primary/40 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-safe:active:scale-[0.985] min-[980px]:hidden"
+      onClick={(event) => onOpenAssistant(event.currentTarget)}
+      type="button"
+    >
+      <ButiMascot
+        activity={getButiActivity(insight.match)}
+        className="size-12"
+        key={movie.id}
+        match={insight.match}
+      />
+      <span className="line-clamp-2 min-w-0 flex-1 text-sm leading-5 text-foreground/85">
+        {insight.opinion}
+      </span>
+      <span
+        aria-hidden="true"
+        className="shrink-0 px-1 text-2xl leading-none text-primary"
+      >
+        ›
+      </span>
+    </button>
   );
 }
 
@@ -62,7 +98,7 @@ export function ButiRecommendation({
   return (
     <aside
       aria-label={`Buti opina sobre ${movie.title}`}
-      className="mx-auto w-full max-w-[17rem] self-center min-[980px]:col-start-2 min-[980px]:row-start-1 min-[1180px]:col-start-3"
+      className="mx-auto hidden w-full max-w-[17rem] self-center min-[980px]:col-start-2 min-[980px]:row-start-1 min-[980px]:block min-[1180px]:col-start-3"
     >
       <div className="relative rounded-xl border border-primary/25 bg-surface-elevated px-5 py-4">
         <p className="flex items-center gap-2 font-mono text-[0.625rem] uppercase tracking-[0.14em] text-primary">
@@ -84,11 +120,7 @@ export function ButiRecommendation({
       <div className="mt-4 flex items-center gap-3 px-1">
         <div className="relative shrink-0">
           <ButiMascot
-            activity={
-              insight.match === BUTI_MATCH.HIGH
-                ? BUTI_ACTIVITY.JUMPING
-                : BUTI_ACTIVITY.IDLE
-            }
+            activity={getButiActivity(insight.match)}
             className="size-[4.75rem]"
             key={movie.id}
             match={insight.match}

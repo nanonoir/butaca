@@ -8,6 +8,8 @@ import {
   ButiMascot,
   type ButiActivity,
 } from "@/components/shared/buti-mascot";
+import { MovieArtwork } from "@/components/shared/movie-artwork";
+import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { MovieSummary } from "@/contracts/movies";
@@ -30,6 +32,7 @@ interface DrawerMessage {
 interface ButiAssistantDrawerProps {
   movie: MovieSummary;
   onClose: () => void;
+  recommendations: MovieSummary[];
 }
 
 function CloseIcon({ className }: { className?: string }) {
@@ -69,9 +72,43 @@ function ArrowIcon({ className }: { className?: string }) {
   );
 }
 
+function CompactRecommendationRow({ movies }: { movies: MovieSummary[] }) {
+  if (movies.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul
+      aria-label="Recomendaciones de Buti"
+      className="flex snap-x gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {movies.map((movie) => (
+        <li
+          className="w-[7.75rem] shrink-0 snap-start [&_article]:gap-2 [&_h3]:line-clamp-1 [&_h3]:text-sm [&_h3]:font-semibold [&_p]:text-xs"
+          key={movie.id}
+        >
+          <MoviePosterCard
+            articleLabel={`Recomendación: ${movie.title}`}
+            poster={<MovieArtwork className="size-full" movie={movie} />}
+            presentationSlot={
+              <span className="inline-flex items-center gap-1 rounded-full bg-background/90 px-2 py-1 font-mono text-[0.625rem] text-primary backdrop-blur-sm">
+                <span aria-hidden="true">★</span>
+                {movie.tmdbRating.toFixed(1)}
+              </span>
+            }
+            title={movie.title}
+            year={movie.releaseDate?.slice(0, 4)}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function ButiAssistantDrawer({
   movie,
   onClose,
+  recommendations,
 }: ButiAssistantDrawerProps) {
   const shouldReduceMotion = useReducedMotion();
   const insight = getButiInsight(movie);
@@ -79,6 +116,7 @@ export function ButiAssistantDrawer({
   const [messages, setMessages] = useState<DrawerMessage[]>([]);
   const [pending, setPending] = useState(false);
   const [activity, setActivity] = useState<ButiActivity>(BUTI_ACTIVITY.IDLE);
+  const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const messageSequence = useRef(0);
   const replyTimer = useRef<number | null>(null);
 
@@ -103,6 +141,23 @@ export function ButiAssistantDrawer({
       }
     };
   }, [onClose]);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      return;
+    }
+
+    const conversation = conversationScrollRef.current;
+
+    if (!conversation || typeof conversation.scrollTo !== "function") {
+      return;
+    }
+
+    conversation.scrollTo({
+      behavior: "smooth",
+      top: conversation.scrollHeight,
+    });
+  }, [messages.length]);
 
   function submitPrompt(prompt: string) {
     const content = prompt.trim();
@@ -142,6 +197,18 @@ export function ButiAssistantDrawer({
     submitPrompt(draft);
   }
 
+  function startNewConversation() {
+    if (replyTimer.current !== null) {
+      window.clearTimeout(replyTimer.current);
+      replyTimer.current = null;
+    }
+
+    setDraft("");
+    setMessages([]);
+    setPending(false);
+    setActivity(BUTI_ACTIVITY.IDLE);
+  }
+
   return (
     <motion.div
       animate={{ opacity: 1 }}
@@ -161,7 +228,7 @@ export function ButiAssistantDrawer({
         aria-label={`Asistente de Buti sobre ${movie.title}`}
         aria-modal="true"
         animate={{ opacity: 1, transform: "translate3d(0, 0, 0)" }}
-        className="absolute inset-x-2 bottom-2 flex h-[min(88dvh,46rem)] flex-col overflow-hidden rounded-xl border border-primary/25 bg-surface-elevated shadow-floating sm:inset-y-2 sm:left-auto sm:right-2 sm:h-auto sm:w-[21rem]"
+        className="absolute inset-x-3 bottom-3 top-[clamp(6.5rem,15dvh,9.5rem)] flex flex-col overflow-hidden rounded-xl border border-primary/25 bg-surface-elevated shadow-floating min-[980px]:inset-y-2 min-[980px]:left-auto min-[980px]:right-2 min-[980px]:w-[28rem]"
         exit={
           shouldReduceMotion
             ? { opacity: 0 }
@@ -178,7 +245,10 @@ export function ButiAssistantDrawer({
           ease: [0.23, 1, 0.32, 1],
         }}
       >
-        <header className="flex items-center gap-3 border-b border-border bg-surface px-4 py-3.5">
+        <header
+          className="flex shrink-0 items-center gap-3 border-b border-border bg-surface px-4 py-3.5"
+          data-testid="buti-assistant-header"
+        >
           <ButiMascot
             activity={activity}
             className="size-10"
@@ -193,6 +263,15 @@ export function ButiAssistantDrawer({
             </p>
           </div>
           <Button
+            aria-label="Nueva conversación"
+            className="shrink-0 px-3 min-[980px]:hidden"
+            onClick={startNewConversation}
+            size={CONTROL_SIZE.SM}
+            variant={BUTTON_VARIANT.OUTLINE}
+          >
+            Nueva
+          </Button>
+          <Button
             aria-label="Cerrar asistente de Buti"
             autoFocus
             className="shrink-0 border border-border"
@@ -204,7 +283,11 @@ export function ButiAssistantDrawer({
           </Button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-[980px]:[scrollbar-width:auto] min-[980px]:[&::-webkit-scrollbar]:block"
+          data-testid="buti-conversation-scroll"
+          ref={conversationScrollRef}
+        >
           <section aria-label="Conversación con Buti">
             <div className="rounded-lg border border-primary/25 bg-primary/8 px-4 py-3.5 text-sm leading-6 text-foreground/90">
               {insight.opinion}
@@ -236,15 +319,19 @@ export function ButiAssistantDrawer({
             {messages.length > 0 ? (
               <ol className="mt-6 space-y-3">
                 {messages.map((message) => (
-                  <li
-                    className={
-                      message.role === "user"
-                        ? "ml-8 rounded-lg rounded-br-sm bg-primary px-3.5 py-3 text-sm leading-6 text-primary-foreground"
-                        : "mr-5 rounded-lg border border-border bg-surface px-3.5 py-3 text-sm leading-6 text-foreground/90"
-                    }
-                    key={message.id}
-                  >
-                    {message.content}
+                  <li className="space-y-4" key={message.id}>
+                    <div
+                      className={
+                        message.role === "user"
+                          ? "ml-8 rounded-lg rounded-br-sm bg-primary px-3.5 py-3 text-sm leading-6 text-primary-foreground"
+                          : "mr-5 rounded-lg border border-border bg-surface px-3.5 py-3 text-sm leading-6 text-foreground/90"
+                      }
+                    >
+                      {message.content}
+                    </div>
+                    {message.role === "assistant" ? (
+                      <CompactRecommendationRow movies={recommendations} />
+                    ) : null}
                   </li>
                 ))}
               </ol>
@@ -260,7 +347,8 @@ export function ButiAssistantDrawer({
 
         <form
           aria-label="Consultar a Buti"
-          className="flex items-center gap-2 border-t border-border bg-surface px-4 py-3"
+          className="flex shrink-0 items-center gap-2 border-t border-border bg-surface px-4 py-3"
+          data-testid="buti-assistant-composer"
           onSubmit={handleSubmit}
         >
           <Input
