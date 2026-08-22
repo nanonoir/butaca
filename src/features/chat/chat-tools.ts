@@ -53,13 +53,13 @@ const RecommendMoviesInputSchema = z.object({
     .max(5)
     .optional()
     .describe("ISO 639-1 code, only when the viewer asked for a language."),
-  actorName: z
-    .string()
-    .min(2)
-    .max(100)
+  actorNames: z
+    .array(z.string().min(2).max(100))
+    .max(3)
     .optional()
     .describe(
-      "Full name of an actor the viewer asked for, e.g. 'Leonardo DiCaprio'.",
+      "Full names of actors the viewer asked for. Several names means movies " +
+        "with all of them together, e.g. ['Leonardo DiCaprio', 'Brad Pitt'].",
     ),
   directorName: z
     .string()
@@ -126,13 +126,12 @@ async function resolveFilters(
   catalog: CatalogPort,
   input: z.infer<typeof RecommendMoviesInputSchema>,
 ) {
-  const [castId, crewId, similarMovies] = await Promise.all([
-    input.actorName
-      ? catalog.findPersonId({
-          name: input.actorName,
-          department: ACTING_DEPARTMENT,
-        })
-      : null,
+  const [castIds, crewId, similarMovies] = await Promise.all([
+    Promise.all(
+      (input.actorNames ?? []).map((name) =>
+        catalog.findPersonId({ name, department: ACTING_DEPARTMENT }),
+      ),
+    ),
     input.directorName
       ? catalog.findPersonId({
           name: input.directorName,
@@ -149,7 +148,9 @@ async function resolveFilters(
     ...(input.originalLanguage
       ? { originalLanguage: input.originalLanguage }
       : {}),
-    ...(castId !== null ? { castIds: [castId] } : {}),
+    ...(castIds.some((id) => id !== null)
+      ? { castIds: castIds.filter((id): id is number => id !== null) }
+      : {}),
     ...(crewId !== null ? { crewIds: [crewId] } : {}),
     ...(similarMovies?.data[0]
       ? { similarToMovieId: similarMovies.data[0].id }
@@ -182,8 +183,9 @@ export function createChatTools(
         "Recommends movies for the current viewer using their taste profile. " +
         "Accepts an actor, a director, a movie to resemble, a release year " +
         "range, a runtime bound and a request for well reviewed titles, on " +
-        "top of genre and language. Combine them freely: an actor and a " +
-        "director together means the films they made together. " +
+        "top of genre and language. Combine them freely: two actors means the " +
+        "films they appear in together, and an actor with a director means " +
+        "the films they made together. " +
         "Always call this before naming any movie; never invent titles.",
       inputSchema: RecommendMoviesInputSchema,
       execute: async (input) => {

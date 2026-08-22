@@ -147,7 +147,7 @@ describe("recommendMovies scope", () => {
     const catalog = createCatalog({ personId: 6193 });
     const tools = createChatTools(recommendations, catalog, USER_ID);
 
-    await execute(tools, { actorName: "Leonardo DiCaprio" });
+    await execute(tools, { actorNames: ["Leonardo DiCaprio"] });
 
     expect(catalog.findPersonId).toHaveBeenCalledWith({
       name: "Leonardo DiCaprio",
@@ -226,7 +226,7 @@ describe("recommendMovies scope", () => {
     const tools = createChatTools(recommendations, catalog, USER_ID);
 
     await execute(tools, {
-      actorName: "Leonardo DiCaprio",
+      actorNames: ["Leonardo DiCaprio"],
       similarToTitle: "Interstellar",
       wellReviewed: true,
     });
@@ -247,7 +247,7 @@ describe("recommendMovies scope", () => {
     const catalog = createCatalog({ personId: null });
     const tools = createChatTools(recommendations, catalog, USER_ID);
 
-    const result = await execute(tools, { actorName: "Leonrado Dicapro" });
+    const result = await execute(tools, { actorNames: ["Leonrado Dicapro"] });
 
     const [, options] = recommendations.getDiscoverBatch.mock.calls[0]!;
 
@@ -263,5 +263,44 @@ describe("recommendMovies scope", () => {
 
     expect(catalog.findPersonId).not.toHaveBeenCalled();
     expect(catalog.searchMovies).not.toHaveBeenCalled();
+  });
+});
+
+describe("recommendMovies with several names", () => {
+  it("resolves every actor the viewer named", async () => {
+    const recommendations = createRecommendations();
+    const catalog = createCatalog();
+    catalog.findPersonId
+      .mockResolvedValueOnce(6193)
+      .mockResolvedValueOnce(287);
+    const tools = createChatTools(recommendations, catalog, USER_ID);
+
+    await execute(tools, {
+      actorNames: ["Leonardo DiCaprio", "Brad Pitt"],
+    });
+
+    expect(catalog.findPersonId).toHaveBeenCalledTimes(2);
+    expect(recommendations.getDiscoverBatch).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({
+        filters: expect.objectContaining({ castIds: [6193, 287] }),
+      }),
+    );
+  });
+
+  /** One unrecognised name must not sink the ones that were spelled right. */
+  it("keeps the names it could resolve and drops the rest", async () => {
+    const recommendations = createRecommendations();
+    const catalog = createCatalog();
+    catalog.findPersonId.mockResolvedValueOnce(6193).mockResolvedValueOnce(null);
+    const tools = createChatTools(recommendations, catalog, USER_ID);
+
+    await execute(tools, {
+      actorNames: ["Leonardo DiCaprio", "Nombre Inexistente"],
+    });
+
+    const [, options] = recommendations.getDiscoverBatch.mock.calls[0]!;
+
+    expect(options.filters.castIds).toEqual([6193]);
   });
 });

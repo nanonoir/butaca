@@ -181,6 +181,34 @@ export class RecommendationService {
       .map((result) => result.value);
   }
 
+  private async resolveCastCandidates(
+    castIds: number[],
+    shared: TmdbDiscoverOptions,
+    runtimeBounds: { minRuntime?: number; maxRuntime?: number },
+  ): Promise<MovieSummary[]> {
+    if (castIds.length === 0) {
+      return [];
+    }
+
+    try {
+      if (castIds.length === 1) {
+        return await this.catalog.getMoviesActedIn({
+          personId: castIds[0]!,
+          ...runtimeBounds,
+        });
+      }
+
+      const { data } = await this.catalog.discoverMovies({
+        ...shared,
+        castIds,
+      });
+
+      return data;
+    } catch {
+      return [];
+    }
+  }
+
   /** TMDB generates the candidates; the ranking above decides the order. One
    * query per signal keeps the pool wide enough for the ranking to matter. */
   private async generateCandidates(
@@ -198,12 +226,6 @@ export class RecommendationService {
     // worked on a film, so honouring "a Spielberg movie" means asking for the
     // ones he directed rather than the ones he produced.
     const { similarToMovieId, crewIds, castIds, ...candidateFilters } = filters;
-    const shared = {
-      page: 1,
-      excludedGenreIds: profile.excludedGenreIds,
-      minTmdbVoteCount: MIN_CANDIDATE_VOTE_COUNT,
-      ...candidateFilters,
-    };
     // Naming a person or a movie asks about a subject, not a mood. Fanning out
     // over the profile's genres alongside it fills most of the batch with
     // movies the viewer did not ask about: requesting Spielberg came back three
@@ -211,12 +233,31 @@ export class RecommendationService {
     //
     // A subject replaces the candidate source. The profile still decides the
     // order, so which Spielberg films surface stays personal.
-    const castId = castIds?.[0];
+    const castIdList = castIds ?? [];
     const crewId = crewIds?.[0];
     const subject =
-      castId !== undefined ||
+      castIdList.length > 0 ||
       crewId !== undefined ||
       similarToMovieId !== undefined;
+    // The profile's own exclusions and the vote floor shape the pool for a
+    // batch the profile is driving. They are not constraints on a question
+    // somebody asked out loud, and applying them to one answers it wrongly:
+    // this viewer has thrillers excluded, and Once Upon a Time in Hollywood is
+    // filed under one, so "DiCaprio with Brad Pitt" came back empty while the
+    // film they made together sat right there.
+    //
+    // An exclusion the caller sent is a different thing and still applies: it
+    // came from the same request.
+    const shared = {
+      page: 1,
+      ...(subject
+        ? {}
+        : {
+            excludedGenreIds: profile.excludedGenreIds,
+            minTmdbVoteCount: MIN_CANDIDATE_VOTE_COUNT,
+          }),
+      ...candidateFilters,
+    };
     const requestedGenreIds = subject
       ? []
       : (filters.genreIds ?? profile.preferredGenreIds);
@@ -263,11 +304,13 @@ export class RecommendationService {
       maxRuntime: filters.maxRuntime,
     };
     const [acted, directed, results] = await Promise.all([
-      castId === undefined
-        ? []
-        : this.catalog
-            .getMoviesActedIn({ personId: castId, ...runtimeBounds })
-            .catch(() => []),
+      // One name comes from their filmography, ordered by billing, so a lead
+      // outranks the walk-on an actor had before they were famous. Two names
+      // go to discover instead: a comma there means both, which is a far
+      // narrower question than either -- Leonardo DiCaprio alone matches 87
+      // films, with Brad Pitt three -- and it costs one request rather than two
+      // filmographies whose caps could hide the overlap.
+      this.resolveCastCandidates(castIdList, shared, runtimeBounds),
       crewId === undefined
         ? []
         : this.catalog
@@ -280,7 +323,7 @@ export class RecommendationService {
     // together, not for two lists stapled end to end. Two names is one
     // question with a much smaller answer, and sometimes only one film.
     const fromPeople =
-      castId !== undefined && crewId !== undefined
+      castIdList.length > 0 && crewId !== undefined
         ? intersectById(acted, directed)
         : [...acted, ...directed];
 

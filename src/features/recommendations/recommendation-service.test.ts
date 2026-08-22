@@ -467,3 +467,126 @@ describe("getDiscoverBatch combined constraints", () => {
     expect(deps.catalog.discoverMovies).not.toHaveBeenCalled();
   });
 });
+
+describe("getDiscoverBatch with several actors", () => {
+  function service(deps: ReturnType<typeof createDependencies>) {
+    return new RecommendationService(
+      deps.preferences,
+      deps.interactions,
+      deps.catalog,
+    );
+  }
+
+  /** A comma in `with_cast` means both, which is a far narrower question than
+   * either and needs no cap on how deep a filmography is read. */
+  it("asks discover for two actors at once instead of two filmographies", async () => {
+    const deps = createDependencies();
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(1)]));
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { castIds: [6193, 287] },
+    });
+
+    expect(deps.catalog.getMoviesActedIn).not.toHaveBeenCalled();
+    expect(deps.catalog.discoverMovies).toHaveBeenCalledWith(
+      expect.objectContaining({ castIds: [6193, 287] }),
+    );
+    expect(batch.movies.map(({ movie }) => movie.id)).toEqual([1]);
+  });
+
+  it("still reads one actor from their billing order", async () => {
+    const deps = createDependencies();
+    deps.catalog.getMoviesActedIn.mockResolvedValue([summary(1)]);
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { castIds: [6193] },
+    });
+
+    expect(deps.catalog.getMoviesActedIn).toHaveBeenCalled();
+    expect(deps.catalog.discoverMovies).not.toHaveBeenCalled();
+  });
+
+  it("crosses two actors with a director as one question", async () => {
+    const deps = createDependencies();
+    deps.catalog.discoverMovies.mockResolvedValue(
+      paginated([summary(1), summary(2)]),
+    );
+    deps.catalog.getMoviesDirectedBy.mockResolvedValue([summary(2)]);
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { castIds: [6193, 287], crewIds: [1032] },
+    });
+
+    expect(batch.movies.map(({ movie }) => movie.id)).toEqual([2]);
+  });
+});
+
+describe("getDiscoverBatch and the profile's own defaults", () => {
+  function service(deps: ReturnType<typeof createDependencies>) {
+    return new RecommendationService(
+      deps.preferences,
+      deps.interactions,
+      deps.catalog,
+    );
+  }
+
+  /** A viewer with thrillers excluded asked for DiCaprio with Brad Pitt and got
+   * nothing, while Once Upon a Time in Hollywood -- filed under thriller -- sat
+   * right there. The exclusions shape a pool the profile is driving; they are
+   * not an answer to a question somebody asked out loud. */
+  it("does not let the profile's exclusions erase an explicit request", async () => {
+    const deps = createDependencies();
+    deps.interactions.findDislikesByUser.mockResolvedValue([
+      { movieId: 90 },
+      { movieId: 91 },
+    ]);
+    deps.catalog.getMovieDetail.mockResolvedValue({
+      ...summary(90),
+      genres: [{ id: 53, name: "Suspense" }],
+      runtime: 120,
+      tagline: null,
+      director: null,
+      cast: [],
+      keywords: [],
+      trailer: null,
+    });
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(1)]));
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { castIds: [6193, 287] },
+    });
+
+    const [query] = deps.catalog.discoverMovies.mock.calls[0]!;
+
+    expect(query.excludedGenreIds).toBeUndefined();
+    expect(query.minTmdbVoteCount).toBeUndefined();
+  });
+
+  it("still shapes a profile driven batch with them", async () => {
+    const deps = createDependencies();
+    deps.preferences.findByUserId.mockResolvedValue({
+      preferredGenreIds: [878],
+    });
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(1)]));
+
+    await service(deps).getDiscoverBatch(USER_ID);
+
+    const [query] = deps.catalog.discoverMovies.mock.calls[0]!;
+
+    expect(query.minTmdbVoteCount).toBeGreaterThan(0);
+  });
+
+  /** An exclusion the caller sent came from the same request, so it stays. */
+  it("keeps an exclusion the request itself carried", async () => {
+    const deps = createDependencies();
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(1)]));
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { castIds: [6193, 287], excludedGenreIds: [27] },
+    });
+
+    const [query] = deps.catalog.discoverMovies.mock.calls[0]!;
+
+    expect(query.excludedGenreIds).toEqual([27]);
+  });
+});
