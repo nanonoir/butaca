@@ -62,7 +62,11 @@ export function createChatTools(
         // screen reads the same tool output from the stream to render them, so
         // there is one payload rather than a side channel that a streamed
         // response could never deliver.
-        return { movies: batch.movies } satisfies ChatToolMovies;
+        // The batch pairs each movie with why it was picked; the assistant
+        // only needs the movie.
+        return {
+          movies: batch.movies.map(({ movie }) => movie),
+        } satisfies ChatToolMovies;
       },
     }),
   };

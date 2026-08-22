@@ -20,6 +20,11 @@ function createDependencies() {
     catalog: {
       getMovieDetail: vi.fn(),
       discoverMovies: vi.fn().mockResolvedValue(paginated([])),
+      getGenres: vi.fn().mockResolvedValue([
+        { id: 878, name: "Ciencia ficción" },
+        { id: 18, name: "Drama" },
+        { id: 27, name: "Terror" },
+      ]),
     },
   };
 }
@@ -120,7 +125,7 @@ describe("getDiscoverBatch", () => {
       deps.catalog,
     ).getDiscoverBatch(USER_ID);
 
-    expect(batch.movies.map((movie) => movie.id)).toEqual([2]);
+    expect(batch.movies.map(({ movie }) => movie.id)).toEqual([2]);
   });
 
   it("caps the batch at the declared size", async () => {
@@ -175,7 +180,7 @@ describe("getDiscoverBatch", () => {
       deps.catalog,
     ).getDiscoverBatch(USER_ID);
 
-    expect(batch.movies[0]?.id).toBe(2);
+    expect(batch.movies[0]?.movie.id).toBe(2);
   });
 
   it("builds the profile from the viewer's likes and dislikes", async () => {
@@ -195,7 +200,7 @@ describe("getDiscoverBatch", () => {
       deps.catalog,
     ).getDiscoverBatch(USER_ID);
 
-    expect(batch.movies[0]?.id).toBe(2);
+    expect(batch.movies[0]?.movie.id).toBe(2);
     expect(deps.catalog.getMovieDetail).toHaveBeenCalledWith(10);
     expect(deps.catalog.getMovieDetail).toHaveBeenCalledWith(20);
   });
@@ -229,7 +234,7 @@ describe("getDiscoverBatch", () => {
       deps.catalog,
     ).getDiscoverBatch(USER_ID);
 
-    expect(batch.movies.map((movie) => movie.id)).toEqual([2]);
+    expect(batch.movies.map(({ movie }) => movie.id)).toEqual([2]);
   });
 
   it("skips a liked movie the catalog cannot resolve", async () => {

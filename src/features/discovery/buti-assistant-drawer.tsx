@@ -12,6 +12,7 @@ import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { MatchInsight } from "@/contracts/discover";
 import type { MovieSummary } from "@/contracts/movies";
 
 import { getButiInsight } from "./buti-recommendation";
@@ -31,6 +32,7 @@ interface DrawerMessage {
 
 interface ButiAssistantDrawerProps {
   movie: MovieSummary;
+  insight: MatchInsight;
   onClose: () => void;
   recommendations: MovieSummary[];
 }
@@ -107,11 +109,12 @@ function CompactRecommendationRow({ movies }: { movies: MovieSummary[] }) {
 
 export function ButiAssistantDrawer({
   movie,
+  insight,
   onClose,
   recommendations,
 }: ButiAssistantDrawerProps) {
   const shouldReduceMotion = useReducedMotion();
-  const insight = getButiInsight(movie);
+  const butiInsight = getButiInsight(movie, insight);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<DrawerMessage[]>([]);
   const [pending, setPending] = useState(false);
@@ -188,7 +191,7 @@ export function ButiAssistantDrawer({
       setMessages((currentMessages) => [
         ...currentMessages,
         {
-          content: `La recomiendo porque conecta con tus gustos: ${insight.opinion}`,
+          content: `La recomiendo porque conecta con tus gustos: ${butiInsight.opinion}`,
           id: `drawer-assistant-${sequence}`,
           role: "assistant",
         },
@@ -259,7 +262,7 @@ export function ButiAssistantDrawer({
           <ButiMascot
             activity={activity}
             className="size-10"
-            match={insight.match}
+            match={butiInsight.match}
           />
           <div className="min-w-0 flex-1">
             <h2 className="font-display text-base font-semibold text-foreground">
@@ -297,7 +300,7 @@ export function ButiAssistantDrawer({
         >
           <section aria-label="Conversación con Buti">
             <div className="rounded-lg border border-primary/25 bg-primary/8 px-4 py-3.5 text-sm leading-6 text-foreground/90">
-              {insight.opinion}
+              {butiInsight.opinion}
             </div>
 
             <p className="mt-4 text-sm text-muted">

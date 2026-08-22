@@ -13,9 +13,25 @@ import { MovieSummarySchema } from "./movies";
  * and the client cannot drift apart. */
 export const DISCOVER_BATCH_SIZE = 10;
 
+/** How well a movie lines up with the viewer's taste, and why. Computed from
+ * the same weights that produced the ranking, so the card can explain the
+ * order instead of restating the rating. */
+export const MatchTierSchema = z.enum(["high", "medium", "low"]);
+
+export const MatchInsightSchema = z.object({
+  tier: MatchTierSchema,
+  matchedGenres: z.array(z.string().min(1)).max(5),
+  clashingGenres: z.array(z.string().min(1)).max(5),
+});
+
+export const RecommendedMovieSchema = z.object({
+  movie: MovieSummarySchema,
+  insight: MatchInsightSchema,
+});
+
 export const DiscoverResponseSchema = apiDataResponseSchema(
   z.object({
-    movies: z.array(MovieSummarySchema).max(DISCOVER_BATCH_SIZE),
+    movies: z.array(RecommendedMovieSchema).max(DISCOVER_BATCH_SIZE),
     batchSize: z.literal(DISCOVER_BATCH_SIZE),
     returned: z.number().int().min(0).max(DISCOVER_BATCH_SIZE),
   }),
@@ -60,5 +76,8 @@ export const RecommendationRequestSchema = z.object({
   excludeMovieIds: z.array(TmdbMovieIdSchema).default([]),
 });
 
+export type MatchTier = z.infer<typeof MatchTierSchema>;
+export type MatchInsight = z.infer<typeof MatchInsightSchema>;
+export type RecommendedMovie = z.infer<typeof RecommendedMovieSchema>;
 export type RecommendationFilters = z.infer<typeof RecommendationFiltersSchema>;
 export type RecommendationRequest = z.infer<typeof RecommendationRequestSchema>;

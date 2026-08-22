@@ -4,7 +4,9 @@ import { useState } from "react";
 import { AnimatePresence } from "motion/react";
 
 import type { LikedMovieItem, LikesWatchedFilter } from "@/contracts/likes";
+import type { MovieSummary } from "@/contracts/movies";
 import type { ViewerMovieState } from "@/contracts/interactions";
+import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
@@ -25,11 +27,6 @@ const FILTER_OPTIONS: readonly {
 
 interface LikedMoviesScreenProps {
   items: LikedMovieItem[];
-}
-
-interface PosterPlaceholderProps {
-  title: string;
-  watched: boolean;
 }
 
 function EyeIcon() {
@@ -72,18 +69,17 @@ function OverflowGlyph() {
   );
 }
 
-function PosterPlaceholder({ title, watched }: PosterPlaceholderProps) {
+interface LikedPosterProps {
+  movie: MovieSummary;
+  watched: boolean;
+}
+
+/** Was a hand drawn placeholder from the fixture era, when liked movies had no
+ * poster path. The list carries real artwork now. */
+function LikedPoster({ movie, watched }: LikedPosterProps) {
   return (
     <div className="relative size-full">
-      <div
-        aria-label={`Póster de ${title}`}
-        className="size-full bg-surface-muted"
-        role="img"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(135deg, transparent 0, transparent 12px, var(--border) 12px, var(--border) 13px)",
-        }}
-      />
+      <MovieArtwork className="size-full" movie={movie} />
       <span
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-transparent transition-colors duration-fast ease-ui group-hover:bg-primary/5"
@@ -95,9 +91,6 @@ function PosterPlaceholder({ title, watched }: PosterPlaceholderProps) {
           Vista
         </span>
       ) : null}
-      <span className="absolute bottom-3 left-3 font-mono text-[0.625rem] uppercase tracking-[0.12em] text-muted-foreground">
-        Póster
-      </span>
     </div>
   );
 }
@@ -220,12 +213,7 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
                   onSelect={() => void handleSelectItem(item)}
                   title={item.movie.title}
                   year={year}
-                  poster={
-                    <PosterPlaceholder
-                      title={item.movie.title}
-                      watched={watched}
-                    />
-                  }
+                  poster={<LikedPoster movie={item.movie} watched={watched} />}
                   metadataSlot={<OverflowGlyph />}
                 />
               </li>

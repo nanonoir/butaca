@@ -61,7 +61,12 @@ afterEach(cleanup);
 describe("DiscoverPage", () => {
   it("renders the recommended batch for the viewer", async () => {
     getDiscoverBatch.mockResolvedValue({
-      movies: [createMovie(1, "Interstellar"), createMovie(2, "Dune")],
+      movies: [createMovie(1, "Interstellar"), createMovie(2, "Dune")].map(
+        (movie) => ({
+          movie,
+          insight: { tier: "high", matchedGenres: [], clashingGenres: [] },
+        }),
+      ),
       batchSize: 20,
       returned: 2,
     });

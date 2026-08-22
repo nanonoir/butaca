@@ -258,3 +258,37 @@ describe("LikedMoviesScreen", () => {
     );
   });
 });
+
+describe("LikedMoviesScreen posters", () => {
+  it("paints the real artwork instead of a placeholder", () => {
+    const withPoster = {
+      ...INTERSTELLAR!,
+      movie: { ...INTERSTELLAR!.movie, posterPath: "/poster.jpg" },
+    };
+
+    render(<LikedMoviesScreen items={[withPoster]} />);
+
+    const poster = screen.getByRole("img", {
+      name: `Póster de ${withPoster.movie.title}`,
+    });
+
+    expect(poster).toHaveStyle({
+      backgroundImage: 'url("https://image.tmdb.org/t/p/w780/poster.jpg")',
+    });
+  });
+
+  it("falls back to a neutral fill when the movie has no artwork", () => {
+    const withoutPoster = {
+      ...INTERSTELLAR!,
+      movie: { ...INTERSTELLAR!.movie, posterPath: null, backdropPath: null },
+    };
+
+    render(<LikedMoviesScreen items={[withoutPoster]} />);
+
+    const poster = screen.getByRole("img", {
+      name: `Póster de ${withoutPoster.movie.title}`,
+    });
+
+    expect(poster.getAttribute("style")).toContain("repeating-linear-gradient");
+  });
+});
