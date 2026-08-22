@@ -16,3 +16,7 @@ export function createDatabaseConnection(databaseUrl: string) {
 }
 
 export type Database = ReturnType<typeof createDatabaseConnection>["db"];
+export type DbTransaction = Parameters<
+  Parameters<Database["transaction"]>[0]
+>[0];
+export type DbExecutor = Database | DbTransaction;

@@ -1,8 +1,8 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
-import type { Database } from "../client";
+import type { DbExecutor } from "../client";
 import { type NewUserRecord, type UserRecord, users } from "../schema/users";
 
 export type UserProfileInput = Pick<
@@ -15,7 +15,7 @@ export type UserProfileUpdate = Partial<
 >;
 
 export class UserRepository {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: DbExecutor) {}
 
   async findById(userId: string): Promise<UserRecord | null> {
     const [user] = await this.db
@@ -49,6 +49,23 @@ export class UserRepository {
       .update(users)
       .set({ ...input, updatedAt: new Date() })
       .where(eq(users.id, userId))
+      .returning();
+
+    return user ?? null;
+  }
+
+  /** Claims first-time onboarding exactly once. A losing concurrent request can
+   * read the persisted timestamp and return without changing preferences. */
+  async claimOnboardingCompletion(
+    userId: string,
+    completedAt: Date,
+  ): Promise<UserRecord | null> {
+    const [user] = await this.db
+      .update(users)
+      .set({ onboardingCompletedAt: completedAt, updatedAt: new Date() })
+      .where(
+        and(eq(users.id, userId), isNull(users.onboardingCompletedAt)),
+      )
       .returning();
 
     return user ?? null;

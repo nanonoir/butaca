@@ -1,5 +1,6 @@
 import {
   apiDataResponseSchema,
+  GenreSchema,
   MovieSummarySchema,
   paginatedResponseSchema,
 } from "@/contracts";
@@ -12,6 +13,15 @@ const SimilarMoviesResponseSchema = apiDataResponseSchema(
 const SearchMoviesApiResponseSchema = apiDataResponseSchema(
   SearchMoviesResponseSchema,
 );
+const GenresApiResponseSchema = apiDataResponseSchema(
+  GenreSchema.array(),
+);
+
+export async function fetchMovieGenres() {
+  const { data } = await apiRequest("/api/movies/genres", GenresApiResponseSchema);
+
+  return data;
+}
 
 export async function fetchSearchMovies(query: string, page: number) {
   const searchParams = new URLSearchParams({ query, page: String(page) });
