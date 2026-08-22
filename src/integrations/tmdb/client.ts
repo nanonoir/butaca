@@ -32,6 +32,8 @@ export type TmdbDiscoverRequest = {
   maxRuntime?: number;
   minVoteAverage?: number;
   minVoteCount?: number;
+  releasedFromYear?: number;
+  releasedToYear?: number;
 };
 
 function isAbortError(error: unknown) {
@@ -155,6 +157,14 @@ export class TmdbClient {
         "with_runtime.lte": input.maxRuntime,
         "vote_average.gte": input.minVoteAverage,
         "vote_count.gte": input.minVoteCount,
+        // TMDB takes dates here, not years. The viewer said a year, so the
+        // bounds open on its first day and close on its last.
+        "primary_release_date.gte": input.releasedFromYear
+          ? `${input.releasedFromYear}-01-01`
+          : undefined,
+        "primary_release_date.lte": input.releasedToYear
+          ? `${input.releasedToYear}-12-31`
+          : undefined,
       },
       TmdbMovieListResponseSchema,
     );

@@ -29,6 +29,10 @@ export type TmdbPersonListResponse = z.infer<
 export const TmdbPersonCreditSchema = z.object({
   id: z.number().int().positive(),
   job: z.string().nullish(),
+  /** Billing position. Zero is the lead, and it is what separates a starring
+   * role from the one line an actor had before they were famous -- TMDB lists
+   * DiCaprio in Critters 3 exactly as it lists him in Titanic. */
+  order: z.number().int().min(0).nullish(),
 });
 
 export const TmdbPersonCreditsResponseSchema = z.object({

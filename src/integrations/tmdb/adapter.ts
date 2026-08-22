@@ -89,10 +89,12 @@ function detailToSummary(detail: MovieDetail): MovieSummary {
 /** A prolific director has well over a hundred credits and each one costs a
  * detail lookup, so the filmography is capped at a pool wide enough for the
  * ranking to have something to choose from. */
-const DirectedByOptionsSchema = z
+const FilmographyOptionsSchema = z
   .object({
     personId: TmdbPersonIdSchema,
-    limit: z.number().int().min(1).max(40).default(20),
+    limit: z.number().int().min(1).max(60).default(30),
+    minRuntime: z.number().int().positive().optional(),
+    maxRuntime: z.number().int().positive().optional(),
   })
   .strict();
 
@@ -333,6 +335,8 @@ export class TmdbAdapter {
       maxRuntime: options.maxRuntime,
       minVoteAverage: options.minTmdbRating,
       minVoteCount: options.minTmdbVoteCount,
+      releasedFromYear: options.minReleaseYear,
+      releasedToYear: options.maxReleaseYear,
     });
 
     return parsePublicResult(PaginatedMoviesSchema, mapMovieList(response));
@@ -383,15 +387,46 @@ export class TmdbAdapter {
   async getMoviesDirectedBy(input: {
     personId: number;
     limit?: number;
+    minRuntime?: number;
+    maxRuntime?: number;
   }): Promise<MovieSummary[]> {
-    const { personId, limit } = DirectedByOptionsSchema.parse(input);
-    const credits = await this.client.getPersonMovieCredits(personId);
+    const options = FilmographyOptionsSchema.parse(input);
+    const credits = await this.client.getPersonMovieCredits(options.personId);
     const directed = credits.crew
       .filter((credit) => credit.job === DIRECTOR_JOB)
-      .map((credit) => credit.id)
-      .slice(0, limit);
+      .map((credit) => credit.id);
+
+    return this.resolveFilmography(directed, options);
+  }
+
+  /** The films a person appeared in, led by the ones they were billed highest
+   * on. `with_cast` on discover makes no such distinction: it answers a request
+   * for Leonardo DiCaprio with Critters 3, where he had one line in 1991,
+   * ranked alongside Titanic. */
+  async getMoviesActedIn(input: {
+    personId: number;
+    limit?: number;
+    minRuntime?: number;
+    maxRuntime?: number;
+  }): Promise<MovieSummary[]> {
+    const options = FilmographyOptionsSchema.parse(input);
+    const credits = await this.client.getPersonMovieCredits(options.personId);
+    const billed = [...credits.cast]
+      .sort((left, right) => (left.order ?? 99) - (right.order ?? 99))
+      .map((credit) => credit.id);
+
+    return this.resolveFilmography(billed, options);
+  }
+
+  /** Runtime is the one bound applied here rather than by the caller: it lives
+   * on the detail and not on the summary, so this is the last place that still
+   * knows it. */
+  private async resolveFilmography(
+    movieIds: number[],
+    options: { limit: number; minRuntime?: number; maxRuntime?: number },
+  ): Promise<MovieSummary[]> {
     const settled = await Promise.allSettled(
-      directed.map((movieId) => this.getMovieDetail(movieId)),
+      movieIds.slice(0, options.limit).map((id) => this.getMovieDetail(id)),
     );
 
     return settled
@@ -399,7 +434,16 @@ export class TmdbAdapter {
         (result): result is PromiseFulfilledResult<MovieDetail> =>
           result.status === "fulfilled",
       )
-      .map(({ value }) => detailToSummary(value));
+      .map(({ value }) => value)
+      .filter(
+        (detail) =>
+          (options.minRuntime === undefined ||
+            (detail.runtime ?? 0) >= options.minRuntime) &&
+          (options.maxRuntime === undefined ||
+            (detail.runtime ?? Number.POSITIVE_INFINITY) <=
+              options.maxRuntime),
+      )
+      .map(detailToSummary);
   }
 
   /** What the recommender reaches for when a viewer names a movie. `/similar`

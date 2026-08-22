@@ -22,6 +22,7 @@ function createDependencies() {
       discoverMovies: vi.fn().mockResolvedValue(paginated([])),
       getMovieRecommendations: vi.fn().mockResolvedValue(paginated([])),
       getMoviesDirectedBy: vi.fn().mockResolvedValue([]),
+      getMoviesActedIn: vi.fn().mockResolvedValue([]),
       getGenres: vi.fn().mockResolvedValue([
         { id: 878, name: "Ciencia ficción" },
         { id: 18, name: "Drama" },
@@ -372,5 +373,97 @@ describe("getDiscoverBatch scope", () => {
 
     expect(batch.movies).toEqual([]);
     expect(batch.returned).toBe(0);
+  });
+});
+
+describe("getDiscoverBatch combined constraints", () => {
+  function service(deps: ReturnType<typeof createDependencies>) {
+    return new RecommendationService(
+      deps.preferences,
+      deps.interactions,
+      deps.catalog,
+    );
+  }
+
+  /** Two names is one question with a much smaller answer, not two lists
+   * stapled end to end. */
+  it("answers an actor and a director with the films they made together", async () => {
+    const deps = createDependencies();
+    deps.catalog.getMoviesActedIn.mockResolvedValue([
+      summary(1),
+      summary(2),
+      summary(3),
+    ]);
+    deps.catalog.getMoviesDirectedBy.mockResolvedValue([
+      summary(3),
+      summary(4),
+    ]);
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { castIds: [6193], crewIds: [1032] },
+    });
+
+    expect(batch.movies.map(({ movie }) => movie.id)).toEqual([3]);
+  });
+
+  /** A specific question gets however many honest answers exist. */
+  it("returns fewer than asked for rather than padding the batch", async () => {
+    const deps = createDependencies();
+    deps.catalog.getMoviesActedIn.mockResolvedValue([summary(1), summary(2)]);
+    deps.catalog.getMoviesDirectedBy.mockResolvedValue([summary(2)]);
+    deps.catalog.discoverMovies.mockResolvedValue(
+      paginated([summary(50), summary(51), summary(52)]),
+    );
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { castIds: [6193], crewIds: [1032] },
+      limit: 5,
+    });
+
+    expect(batch.movies).toHaveLength(1);
+    expect(batch.returned).toBe(1);
+  });
+
+  it("keeps only the years the viewer asked for", async () => {
+    const deps = createDependencies();
+    deps.catalog.getMoviesDirectedBy.mockResolvedValue([
+      { ...summary(1), releaseDate: "1993-06-11" },
+      { ...summary(2), releaseDate: "2005-06-29" },
+      { ...summary(3), releaseDate: "1998-07-24" },
+    ]);
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { crewIds: [488], minReleaseYear: 1990, maxReleaseYear: 1999 },
+    });
+
+    expect(batch.movies.map(({ movie }) => movie.id).sort()).toEqual([1, 3]);
+  });
+
+  /** Runtime lives on the detail, not the summary, so the adapter is the last
+   * place that still knows it. */
+  it("hands the runtime bounds to the filmography lookup", async () => {
+    const deps = createDependencies();
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { crewIds: [488], maxRuntime: 100 },
+    });
+
+    expect(deps.catalog.getMoviesDirectedBy).toHaveBeenCalledWith(
+      expect.objectContaining({ personId: 488, maxRuntime: 100 }),
+    );
+  });
+
+  it("takes an actor from their billing order, not from discover", async () => {
+    const deps = createDependencies();
+    deps.catalog.getMoviesActedIn.mockResolvedValue([summary(1)]);
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { castIds: [6193] },
+    });
+
+    expect(deps.catalog.getMoviesActedIn).toHaveBeenCalledWith(
+      expect.objectContaining({ personId: 6193 }),
+    );
+    expect(deps.catalog.discoverMovies).not.toHaveBeenCalled();
   });
 });

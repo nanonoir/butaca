@@ -49,9 +49,26 @@ export const RecommendationFiltersSchema = z
     maxRuntime: z.number().int().positive().optional(),
     minTmdbRating: z.number().min(0).max(10).optional(),
     minTmdbVoteCount: z.number().int().min(0).optional(),
+    /** Whole years rather than dates: every way a viewer asks for this -- a
+     * decade, "after 2010", "something recent" -- is a year, and a month would
+     * only be precision nobody supplied. */
+    minReleaseYear: z.number().int().min(1874).max(2200).optional(),
+    maxReleaseYear: z.number().int().min(1874).max(2200).optional(),
     similarToMovieId: TmdbMovieIdSchema.optional(),
   })
   .superRefine((value, ctx) => {
+    if (
+      value.minReleaseYear !== undefined &&
+      value.maxReleaseYear !== undefined &&
+      value.minReleaseYear > value.maxReleaseYear
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["minReleaseYear"],
+        message: "minReleaseYear cannot be greater than maxReleaseYear",
+      });
+    }
+
     if (
       value.minRuntime !== undefined &&
       value.maxRuntime !== undefined &&

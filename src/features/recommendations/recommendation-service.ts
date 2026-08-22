@@ -52,6 +52,7 @@ type CatalogPort = Pick<
   | "getGenres"
   | "getMovieRecommendations"
   | "getMoviesDirectedBy"
+  | "getMoviesActedIn"
 >;
 
 export type DiscoverBatchOptions = {
@@ -68,6 +69,37 @@ export type DiscoverBatch = {
   batchSize: typeof DISCOVER_BATCH_SIZE;
   returned: number;
 };
+
+/** A movie a locally sourced list and a discover query would both have to
+ * satisfy. Discover applies these as request parameters; a filmography and an
+ * intersection never pass through it, so they are checked here rather than
+ * being silently ignored on exactly the request that asked for them. Runtime is
+ * absent: it lives on the detail, and the adapter applies it while it still
+ * has one. */
+function matchesLocalFilters(
+  movie: MovieSummary,
+  filters: RecommendationFilters,
+): boolean {
+  const year = Number(movie.releaseDate?.slice(0, 4));
+
+  return (
+    movie.tmdbRating >= (filters.minTmdbRating ?? 0) &&
+    movie.tmdbVoteCount >= (filters.minTmdbVoteCount ?? 0) &&
+    (filters.minReleaseYear === undefined ||
+      (Number.isFinite(year) && year >= filters.minReleaseYear)) &&
+    (filters.maxReleaseYear === undefined ||
+      (Number.isFinite(year) && year <= filters.maxReleaseYear))
+  );
+}
+
+function intersectById(
+  left: MovieSummary[],
+  right: MovieSummary[],
+): MovieSummary[] {
+  const rightIds = new Set(right.map((movie) => movie.id));
+
+  return left.filter((movie) => rightIds.has(movie.id));
+}
 
 export class RecommendationService {
   constructor(
@@ -165,7 +197,7 @@ export class RecommendationService {
     // A crew filter leaves with the same treatment: discover matches anyone who
     // worked on a film, so honouring "a Spielberg movie" means asking for the
     // ones he directed rather than the ones he produced.
-    const { similarToMovieId, crewIds, ...candidateFilters } = filters;
+    const { similarToMovieId, crewIds, castIds, ...candidateFilters } = filters;
     const shared = {
       page: 1,
       excludedGenreIds: profile.excludedGenreIds,
@@ -179,9 +211,11 @@ export class RecommendationService {
     //
     // A subject replaces the candidate source. The profile still decides the
     // order, so which Spielberg films surface stays personal.
+    const castId = castIds?.[0];
+    const crewId = crewIds?.[0];
     const subject =
-      crewIds?.[0] !== undefined ||
-      candidateFilters.castIds?.length ||
+      castId !== undefined ||
+      crewId !== undefined ||
       similarToMovieId !== undefined;
     const requestedGenreIds = subject
       ? []
@@ -189,11 +223,6 @@ export class RecommendationService {
     const queries: TmdbDiscoverOptions[] = requestedGenreIds
       .slice(0, CANDIDATE_GENRE_COUNT)
       .map((genreId) => ({ ...shared, genreIds: [genreId] }));
-
-    if (candidateFilters.castIds?.length) {
-      queries.push(shared);
-    }
-
     const [topKeywordId] = profile.keywordIds;
     const [topDirectorId] = profile.crewIds;
     const [topCastId] = profile.castIds;
@@ -229,26 +258,36 @@ export class RecommendationService {
       );
     }
 
-    const [directedBy, results] = await Promise.all([
-      crewIds?.[0] === undefined
+    const runtimeBounds = {
+      minRuntime: filters.minRuntime,
+      maxRuntime: filters.maxRuntime,
+    };
+    const [acted, directed, results] = await Promise.all([
+      castId === undefined
         ? []
         : this.catalog
-            .getMoviesDirectedBy({ personId: crewIds[0] })
+            .getMoviesActedIn({ personId: castId, ...runtimeBounds })
+            .catch(() => []),
+      crewId === undefined
+        ? []
+        : this.catalog
+            .getMoviesDirectedBy({ personId: crewId, ...runtimeBounds })
             .catch(() => []),
       Promise.allSettled(requests),
     ]);
 
-    // The rating floor travels as a discover parameter, which a filmography
-    // never passes through, so it is applied here instead of being silently
-    // ignored on exactly the request that asked for it.
-    const directedAndRated = directedBy.filter(
-      (movie) =>
-        movie.tmdbRating >= (candidateFilters.minTmdbRating ?? 0) &&
-        movie.tmdbVoteCount >= (candidateFilters.minTmdbVoteCount ?? 0),
-    );
+    // Naming both an actor and a director asks for the films they made
+    // together, not for two lists stapled end to end. Two names is one
+    // question with a much smaller answer, and sometimes only one film.
+    const fromPeople =
+      castId !== undefined && crewId !== undefined
+        ? intersectById(acted, directed)
+        : [...acted, ...directed];
 
     return [
-      ...directedAndRated,
+      ...fromPeople.filter((movie) =>
+        matchesLocalFilters(movie, filters),
+      ),
       ...results.flatMap((result) =>
         result.status === "fulfilled" ? result.value.data : [],
       ),

@@ -7,9 +7,11 @@ import { RecommendationFiltersSchema, type MovieSummary } from "@/contracts";
 
 import type { RecommendationService } from "../recommendations/recommendation-service";
 
-/** How many movies a single tool call may hand back to the model. The chat
- * shows a compact row, and a longer list only burns context. */
-export const CHAT_RECOMMENDATION_LIMIT = 5;
+/** A ceiling, not a quota. The chat shows a compact row and a longer list only
+ * burns context, but a question with one honest answer gets one movie: naming
+ * both an actor and a director, or a decade on top of a director, narrows the
+ * pool to what actually exists rather than padding it back up to five. */
+export const CHAT_RECOMMENDATION_LIMIT = 6;
 
 /** TMDB's own labels for what a person is known for. They decide which of the
  * people sharing a name is the one being asked about. */
@@ -81,6 +83,38 @@ const RecommendMoviesInputSchema = z.object({
     .describe(
       "True only when the viewer asked for highly rated or acclaimed movies.",
     ),
+  maxRuntimeMinutes: z
+    .number()
+    .int()
+    .min(20)
+    .max(400)
+    .optional()
+    .describe(
+      "Upper bound in minutes when the viewer asked for something short.",
+    ),
+  minRuntimeMinutes: z
+    .number()
+    .int()
+    .min(20)
+    .max(400)
+    .optional()
+    .describe("Lower bound in minutes when the viewer asked for something long."),
+  fromYear: z
+    .number()
+    .int()
+    .min(1900)
+    .max(2100)
+    .optional()
+    .describe(
+      "Earliest release year. For a decade like the nineties, send 1990 here and 1999 in toYear.",
+    ),
+  toYear: z
+    .number()
+    .int()
+    .min(1900)
+    .max(2100)
+    .optional()
+    .describe("Latest release year."),
 });
 
 export type ChatToolMovies = { movies: MovieSummary[] };
@@ -123,6 +157,14 @@ async function resolveFilters(
     ...(input.wellReviewed
       ? { minTmdbRating: 7.5, minTmdbVoteCount: WELL_REVIEWED_MIN_VOTES }
       : {}),
+    ...(input.maxRuntimeMinutes
+      ? { maxRuntime: input.maxRuntimeMinutes }
+      : {}),
+    ...(input.minRuntimeMinutes
+      ? { minRuntime: input.minRuntimeMinutes }
+      : {}),
+    ...(input.fromYear ? { minReleaseYear: input.fromYear } : {}),
+    ...(input.toYear ? { maxReleaseYear: input.toYear } : {}),
   });
 }
 
@@ -138,8 +180,10 @@ export function createChatTools(
     recommendMovies: tool({
       description:
         "Recommends movies for the current viewer using their taste profile. " +
-        "Accepts an actor, a director, a movie to resemble and a request for " +
-        "well reviewed titles, on top of genre and language. " +
+        "Accepts an actor, a director, a movie to resemble, a release year " +
+        "range, a runtime bound and a request for well reviewed titles, on " +
+        "top of genre and language. Combine them freely: an actor and a " +
+        "director together means the films they made together. " +
         "Always call this before naming any movie; never invent titles.",
       inputSchema: RecommendMoviesInputSchema,
       execute: async (input) => {
