@@ -69,6 +69,23 @@ function createLikedMovie(
   };
 }
 
+function stubLikes(data: LikedMovieItem[], totalResults = data.length) {
+  listLikedMovies.mockResolvedValue({
+    data,
+    meta: {
+      page: 1,
+      pageSize: 20,
+      totalPages: Math.ceil(totalResults / 20),
+      totalResults,
+      hasNextPage: totalResults > 20,
+    },
+  });
+}
+
+function renderPage(searchParams: Record<string, string> = {}) {
+  return LikedMoviesPage({ searchParams: Promise.resolve(searchParams) });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   getOptionalViewer.mockResolvedValue(VIEWER);
@@ -78,14 +95,12 @@ afterEach(cleanup);
 
 describe("LikedMoviesPage", () => {
   it("renders the viewer's stored liked movies", async () => {
-    listLikedMovies.mockResolvedValue({
-      data: [
-        createLikedMovie(1, "Interstellar", "2026-08-02T12:00:00Z"),
-        createLikedMovie(2, "Parásitos", null),
-      ],
-    });
+    stubLikes([
+      createLikedMovie(1, "Interstellar", "2026-08-02T12:00:00Z"),
+      createLikedMovie(2, "Parásitos", null),
+    ]);
 
-    render(await LikedMoviesPage());
+    render(await renderPage());
 
     expect(
       screen.getByRole("heading", { level: 1, name: "Mis películas" }),
@@ -95,9 +110,9 @@ describe("LikedMoviesPage", () => {
   });
 
   it("asks for the first page of every liked movie", async () => {
-    listLikedMovies.mockResolvedValue({ data: [] });
+    stubLikes([]);
 
-    render(await LikedMoviesPage());
+    render(await renderPage());
 
     expect(listLikedMovies).toHaveBeenCalledWith(VIEWER.id, {
       page: 1,
@@ -105,10 +120,45 @@ describe("LikedMoviesPage", () => {
     });
   });
 
+  it("asks the database for the page and filter in the URL", async () => {
+    stubLikes([], 70);
+
+    render(await renderPage({ page: "3", watched: "unwatched" }));
+
+    expect(listLikedMovies).toHaveBeenCalledWith(VIEWER.id, {
+      page: 3,
+      watched: "unwatched",
+    });
+  });
+
+  /** A query string is user editable, and a bad one must not take the library
+   * down. */
+  it("falls back to the first page when the query is not usable", async () => {
+    stubLikes([]);
+
+    render(await renderPage({ page: "definitely-not-a-page" }));
+
+    expect(listLikedMovies).toHaveBeenCalledWith(VIEWER.id, {
+      page: 1,
+      watched: "all",
+    });
+  });
+
+  it("hands the screen the filter it actually queried", async () => {
+    stubLikes([]);
+
+    render(await renderPage({ watched: "watched" }));
+
+    expect(screen.getByRole("button", { name: "Vistas" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
   it("redirects to the sign-in page without a session", async () => {
     getOptionalViewer.mockResolvedValue(null);
 
-    await expect(LikedMoviesPage()).rejects.toThrow("NEXT_REDIRECT");
+    await expect(renderPage()).rejects.toThrow("NEXT_REDIRECT");
     expect(redirect).toHaveBeenCalledWith("/login");
     expect(listLikedMovies).not.toHaveBeenCalled();
   });
