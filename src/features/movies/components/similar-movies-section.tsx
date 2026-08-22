@@ -8,7 +8,9 @@ import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
 import { fetchSimilarMovies } from "@/features/movies/movie-catalog-client";
 
-import { Pagination } from "./pagination";
+/** Similar movies arrive a provider page at a time but are shown three at a
+ * time, so pages are accumulated and the window walks through them. */
+const SIMILAR_WINDOW_SIZE = 3;
 
 interface SimilarMovieResults {
   data: MovieSummary[];
@@ -42,12 +44,15 @@ export function SimilarMoviesSection({
   onSelectMovie,
 }: SimilarMoviesSectionProps) {
   const [results, setResults] = useState<SimilarMovieResults | null>(null);
+  const [windowStart, setWindowStart] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const requestId = useRef(0);
 
-  function loadSimilarMovies(page: number) {
+  /** `append` distinguishes loading the first page from pulling another one in
+   * behind the window; a retry replaces, continuing accumulates. */
+  function loadSimilarMovies(page: number, append = false) {
     const currentRequestId = ++requestId.current;
     setIsLoading(true);
     setHasError(false);
@@ -59,10 +64,18 @@ export function SimilarMoviesSection({
             return;
           }
 
-          setResults({
+          const movies = response.data.filter((movie) => movie.id !== movieId);
+
+          setResults((current) => ({
             ...response,
-            data: response.data.filter((movie) => movie.id !== movieId),
-          });
+            data: append && current ? [...current.data, ...movies] : movies,
+          }));
+
+          if (append) {
+            setWindowStart((start) => start + SIMILAR_WINDOW_SIZE);
+          } else {
+            setWindowStart(0);
+          }
         },
         () => {
           if (currentRequestId === requestId.current) {
@@ -91,6 +104,7 @@ export function SimilarMoviesSection({
             ...response,
             data: response.data.filter((movie) => movie.id !== movieId),
           });
+          setWindowStart(0);
         },
         () => {
           if (currentRequestId === requestId.current) {
@@ -121,7 +135,35 @@ export function SimilarMoviesSection({
     }
   }
 
-  const visibleMovies = results?.data ?? [];
+  const loadedMovies = results?.data ?? [];
+  const visibleMovies = loadedMovies.slice(
+    windowStart,
+    windowStart + SIMILAR_WINDOW_SIZE,
+  );
+  const hasMoreLoaded = windowStart + SIMILAR_WINDOW_SIZE < loadedMovies.length;
+  const canContinue = hasMoreLoaded || (results?.meta.hasNextPage ?? false);
+  const canGoBack = windowStart > 0;
+  /** Counted in windows of three, not in provider pages: it is the number the
+   * viewer is actually stepping through. No total is shown because TMDB's
+   * count for similar movies is not a meaningful one. */
+  const windowPage = Math.floor(windowStart / SIMILAR_WINDOW_SIZE) + 1;
+
+  function showPreviousSimilarMovies() {
+    setWindowStart((start) => Math.max(0, start - SIMILAR_WINDOW_SIZE));
+  }
+
+  /** Walks the window forward, pulling the next provider page only once the
+   * loaded ones are exhausted. */
+  function showNextSimilarMovies() {
+    if (hasMoreLoaded) {
+      setWindowStart((start) => start + SIMILAR_WINDOW_SIZE);
+      return;
+    }
+
+    if (results?.meta.hasNextPage) {
+      loadSimilarMovies(results.meta.page + 1, true);
+    }
+  }
 
   return (
     <section aria-labelledby="similar-movies-heading" className="space-y-5">
@@ -133,11 +175,6 @@ export function SimilarMoviesSection({
           >
             Películas similares
           </h2>
-          {results ? (
-            <p className="mt-2 text-sm text-muted">
-              Página {results.meta.page} de {results.meta.totalPages || 1}
-            </p>
-          ) : null}
         </div>
         {(isLoading || isNavigating) && results ? (
           <p aria-live="polite" className="text-sm text-muted" role="status">
@@ -185,14 +222,26 @@ export function SimilarMoviesSection({
         </ul>
       ) : null}
 
-      {results ? (
-        <Pagination
-          disabled={isLoading || isNavigating}
-          hasNextPage={results.meta.hasNextPage}
-          onPageChange={loadSimilarMovies}
-          page={results.meta.page}
-          totalPages={results.meta.totalPages}
-        />
+      {results && loadedMovies.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            disabled={!canGoBack || isLoading || isNavigating}
+            onClick={showPreviousSimilarMovies}
+            variant={BUTTON_VARIANT.OUTLINE}
+          >
+            Atrás
+          </Button>
+          <p aria-live="polite" className="text-sm text-muted">
+            Página {windowPage}
+          </p>
+          <Button
+            disabled={!canContinue || isLoading || isNavigating}
+            onClick={showNextSimilarMovies}
+            variant={BUTTON_VARIANT.OUTLINE}
+          >
+            Continuar
+          </Button>
+        </div>
       ) : null}
     </section>
   );

@@ -9,12 +9,59 @@ import {
   within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setMovieReaction } from "@/features/interactions/interaction-client";
+import { fetchDiscoverBatch } from "@/features/recommendations/discover-client";
 import { DISCOVER_MOVIES_FIXTURE } from "@/fixtures/discover-movies";
 
 import { DiscoverScreen } from "./discover-screen";
 import { resolveSwipeIntent } from "./resolve-swipe-intent";
+
+/** The screen now persists by default, so the writes are stubbed here instead
+ * of reaching the network. */
+vi.mock("@/features/recommendations/discover-client", () => ({
+  fetchDiscoverBatch: vi.fn().mockResolvedValue({
+    movies: [],
+    batchSize: 10,
+    returned: 0,
+  }),
+}));
+
+vi.mock("@/features/interactions/interaction-client", () => ({
+  setMovieReaction: vi.fn().mockResolvedValue(undefined),
+  removeMovieReaction: vi.fn().mockResolvedValue(undefined),
+  setMovieWatched: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/features/reviews/review-client", () => ({
+  fetchMovieReviews: vi.fn().mockResolvedValue({
+    data: [],
+    meta: {
+      page: 1,
+      pageSize: 20,
+      totalPages: 0,
+      totalResults: 0,
+      hasNextPage: false,
+    },
+  }),
+  upsertMovieReview: vi.fn((_movieId: number, draft: unknown) =>
+    Promise.resolve({
+      id: "20000000-0000-4000-8000-000000000001",
+      movieId: 1,
+      author: { displayName: "Tú", avatarUrl: null },
+      isMine: true,
+      createdAt: "2026-08-20T12:00:00.000Z",
+      updatedAt: "2026-08-20T12:00:00.000Z",
+      ...(draft as Record<string, unknown>),
+    }),
+  ),
+  deleteMovieReview: vi.fn().mockResolvedValue(undefined),
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 afterEach(cleanup);
 
@@ -695,5 +742,125 @@ describe("resolveSwipeIntent", () => {
         velocityY: -150,
       }),
     ).toBeNull();
+  });
+});
+
+describe("DiscoverScreen reactions", () => {
+  it("persists a swipe reaction against the movie on screen", async () => {
+    const movies = DISCOVER_MOVIES_FIXTURE.data.movies;
+
+    render(<DiscoverScreen movies={movies} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Me gusta" })[0]!);
+
+    await waitFor(() => {
+      expect(vi.mocked(setMovieReaction)).toHaveBeenCalledWith(
+        movies[0]!.id,
+        "LIKE",
+      );
+    });
+  });
+
+  it("persists a dislike and moves on to the next movie", async () => {
+    const movies = DISCOVER_MOVIES_FIXTURE.data.movies;
+
+    render(<DiscoverScreen movies={movies} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "No me gusta" })[0]!);
+
+    await waitFor(() => {
+      expect(vi.mocked(setMovieReaction)).toHaveBeenCalledWith(
+        movies[0]!.id,
+        "DISLIKE",
+      );
+    });
+  });
+
+  it("reports a rejected write instead of losing it silently", async () => {
+    vi.mocked(setMovieReaction).mockRejectedValueOnce(new Error("offline"));
+    const movies = DISCOVER_MOVIES_FIXTURE.data.movies;
+
+    render(<DiscoverScreen movies={movies} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Me gusta" })[0]!);
+
+    expect(
+      await screen.findByText(
+        `No pudimos guardar tu reacción sobre ${movies[0]!.title}.`,
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("DiscoverScreen refill", () => {
+  function extraMovie(id: number) {
+    return {
+      id,
+      title: `Extra ${id}`,
+      originalTitle: `Extra ${id}`,
+      overview: "",
+      posterPath: null,
+      backdropPath: null,
+      genreIds: [878],
+      releaseDate: "2020-01-01",
+      originalLanguage: "en",
+      tmdbRating: 8,
+      tmdbVoteCount: 2_000,
+    };
+  }
+
+  it("asks for more before the deck runs out, excluding what is on screen", async () => {
+    const movies = DISCOVER_MOVIES_FIXTURE.data.movies;
+
+    render(<DiscoverScreen movies={movies} />);
+
+    await waitFor(() => {
+      expect(vi.mocked(fetchDiscoverBatch)).toHaveBeenCalledWith(
+        movies.map((movie) => movie.id),
+      );
+    });
+  });
+
+  it("appends the new batch so swiping can continue", async () => {
+    vi.mocked(fetchDiscoverBatch).mockResolvedValueOnce({
+      movies: [extraMovie(9_001)],
+      batchSize: 10,
+      returned: 1,
+    });
+    const movies = DISCOVER_MOVIES_FIXTURE.data.movies;
+
+    render(<DiscoverScreen movies={movies} />);
+
+    await waitFor(() => {
+      expect(vi.mocked(fetchDiscoverBatch)).toHaveBeenCalledOnce();
+    });
+
+    // One swipe drops the deck back to the threshold, and the request that
+    // follows now excludes the appended id: proof it landed in the deck.
+    fireEvent.click(screen.getAllByRole("button", { name: "Me gusta" })[0]!);
+
+    await waitFor(() => {
+      expect(vi.mocked(fetchDiscoverBatch)).toHaveBeenLastCalledWith(
+        expect.arrayContaining([9_001]),
+      );
+    });
+  });
+
+  it("stops asking once the recommender has nothing left", async () => {
+    vi.mocked(fetchDiscoverBatch).mockResolvedValue({
+      movies: [],
+      batchSize: 10,
+      returned: 0,
+    });
+    const movies = DISCOVER_MOVIES_FIXTURE.data.movies;
+
+    render(<DiscoverScreen movies={movies} />);
+
+    await waitFor(() => {
+      expect(vi.mocked(fetchDiscoverBatch)).toHaveBeenCalledOnce();
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Me gusta" })[0]!);
+
+    await waitFor(() => {
+      expect(vi.mocked(fetchDiscoverBatch)).toHaveBeenCalledOnce();
+    });
   });
 });
