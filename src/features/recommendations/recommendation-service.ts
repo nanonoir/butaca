@@ -101,13 +101,7 @@ export class RecommendationService {
     const genres = ranked.length > 0 ? await this.resolveGenres() : [];
     const movies = ranked.map<RecommendedMovie>((movie, position) => ({
       movie,
-      insight: buildMatchInsight(
-        movie,
-        profile,
-        genres,
-        position,
-        ranked.length,
-      ),
+      insight: buildMatchInsight(movie, profile, genres, position),
     }));
 
     return {

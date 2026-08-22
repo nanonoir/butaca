@@ -8,39 +8,38 @@ export const MATCH_TIER = {
   LOW: "low",
 } as const satisfies Record<string, MatchInsight["tier"]>;
 
-/** Share of the batch that earns the enthusiastic face. Candidates are
- * generated from the viewer's own genres, so almost every one of them matches
- * two or more: counting matches alone made every card a high match and left
- * Buti with a single expression. Position in the ranking is what actually
- * separates them.
+/** The tier a card gets by where the ranking put it. Candidates are generated
+ * from the viewer's own genres, so almost every one of them matches two or
+ * more: counting matches alone made every card a high match and left Buti with
+ * a single expression. Position is what actually separates them.
  *
- * Six in ten rather than a third. These are recommendations, already ranked and
- * already filtered to the viewer's taste, so a deck where most cards read as
- * lukewarm undersells work the recommender did. The tail stays wide enough that
- * the top still means something. */
-const HIGH_TIER_SHARE = 3 / 5;
-
-/** And a share at the other end that earns the doubtful one. Without it a deck
- * of well ranked movies never shows Buti's third face at all, because a genuine
- * mismatch is rare once the recommender has done its work.
+ * Six, three and one over ten, but interleaved rather than blocked. Six happy
+ * faces in a row followed by three flat ones reads as a mood that changes once,
+ * halfway down; spreading them means the face changes as the viewer swipes,
+ * which is the whole point of having three.
  *
- * Deliberately fixed rather than derived from the scores: the split is the same
- * six, three and one in every batch. Predictable beats clever until there is a
- * reason to calibrate a threshold. */
-const LOW_TIER_SHARE = 1 / 10;
+ * The pattern cycles, so it holds its shape across a refill and degrades
+ * sensibly on a short batch: five candidates get the first five entries rather
+ * than a forced doubtful one at the end. */
+const TIER_PATTERN = [
+  MATCH_TIER.HIGH,
+  MATCH_TIER.HIGH,
+  MATCH_TIER.MEDIUM,
+  MATCH_TIER.HIGH,
+  MATCH_TIER.HIGH,
+  MATCH_TIER.HIGH,
+  MATCH_TIER.MEDIUM,
+  MATCH_TIER.HIGH,
+  MATCH_TIER.LOW,
+  MATCH_TIER.MEDIUM,
+] as const satisfies readonly MatchInsight["tier"][];
 
 function weightOf(profile: TasteProfile, genreId: number): number {
   return profile.genreWeights[genreId] ?? 0;
 }
 
-function tierForPosition(position: number, batchSize: number): MatchInsight["tier"] {
-  if (position < Math.ceil(batchSize * HIGH_TIER_SHARE)) {
-    return MATCH_TIER.HIGH;
-  }
-
-  const lowCount = Math.ceil(batchSize * LOW_TIER_SHARE);
-
-  return position >= batchSize - lowCount ? MATCH_TIER.LOW : MATCH_TIER.MEDIUM;
+function tierForPosition(position: number): MatchInsight["tier"] {
+  return TIER_PATTERN[position % TIER_PATTERN.length]!;
 }
 
 function sumWeights(
@@ -65,7 +64,6 @@ export function buildMatchInsight(
   profile: TasteProfile,
   genres: Genre[],
   position: number,
-  batchSize: number,
 ): MatchInsight {
   const scored = movie.genreIds
     .map((genreId) => ({ genreId, weight: weightOf(profile, genreId) }))
@@ -104,7 +102,7 @@ export function buildMatchInsight(
   // Relative enthusiasm, not a verdict: everything here matched the profile,
   // and the ranking is what says which ones matched hardest.
   return {
-    tier: tierForPosition(position, batchSize),
+    tier: tierForPosition(position),
     matchedGenres,
     clashingGenres,
   };

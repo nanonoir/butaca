@@ -14,7 +14,7 @@ const GENRES: Genre[] = [
 
 const BATCH_SIZE = 10;
 const TOP_POSITION = 0;
-const LOWER_POSITION = 7;
+const LOWER_POSITION = 6;
 
 function createMovie(genreIds: number[]): MovieSummary {
   return {
@@ -43,6 +43,12 @@ function createProfile(genreWeights: Record<number, number>): TasteProfile {
   };
 }
 
+function tiersAcross(count: number) {
+  return Array.from({ length: count }, (_unused, position) =>
+    insightAt([878, 18], { 878: 3, 18: 2 }, position),
+  ).map(({ tier }) => tier);
+}
+
 function insightAt(
   genreIds: number[],
   genreWeights: Record<number, number>,
@@ -53,7 +59,6 @@ function insightAt(
     createProfile(genreWeights),
     GENRES,
     position,
-    BATCH_SIZE,
   );
 }
 
@@ -133,28 +138,54 @@ describe("buildMatchInsight", () => {
 
   /** These are ranked, already-filtered recommendations, so most of a batch
    * ought to read as a good pick rather than as a shrug -- while still leaving
-   * room for the doubtful face, which a well ranked deck would never show. */
-  it("splits a ten card batch six, three and one", () => {
-    const tiers = Array.from({ length: BATCH_SIZE }, (_unused, position) =>
-      insightAt([878, 18], { 878: 3, 18: 2 }, position),
-    ).map(({ tier }) => tier);
+   * room for the other two faces, which a well ranked deck would never show. */
+  it("spreads six, three and one across a batch instead of blocking them", () => {
+    const tiers = tiersAcross(BATCH_SIZE);
 
     expect(tiers).toEqual([
       MATCH_TIER.HIGH,
       MATCH_TIER.HIGH,
-      MATCH_TIER.HIGH,
+      MATCH_TIER.MEDIUM,
       MATCH_TIER.HIGH,
       MATCH_TIER.HIGH,
       MATCH_TIER.HIGH,
       MATCH_TIER.MEDIUM,
-      MATCH_TIER.MEDIUM,
-      MATCH_TIER.MEDIUM,
+      MATCH_TIER.HIGH,
       MATCH_TIER.LOW,
+      MATCH_TIER.MEDIUM,
     ]);
   });
 
-  it("closes the batch on a doubtful note even when the genres match well", () => {
-    const insight = insightAt([878, 18], { 878: 3, 18: 2 }, BATCH_SIZE - 1);
+  it("still adds up to six, three and one", () => {
+    const tiers = tiersAcross(BATCH_SIZE);
+    const count = (tier: string) =>
+      tiers.filter((current) => current === tier).length;
+
+    expect(count(MATCH_TIER.HIGH)).toBe(6);
+    expect(count(MATCH_TIER.MEDIUM)).toBe(3);
+    expect(count(MATCH_TIER.LOW)).toBe(1);
+  });
+
+  /** Blocked, the face changed once halfway down the deck. */
+  it("changes face more than twice on the way down", () => {
+    const tiers = tiersAcross(BATCH_SIZE);
+    const changes = tiers.filter(
+      (tier, index) => index > 0 && tier !== tiers[index - 1],
+    );
+
+    expect(changes.length).toBeGreaterThan(4);
+  });
+
+  /** A refill appends to the deck, so the pattern has to hold its shape past
+   * the first ten rather than restarting mid-stride. */
+  it("keeps its shape across a refill", () => {
+    const tiers = tiersAcross(BATCH_SIZE * 2);
+
+    expect(tiers.slice(BATCH_SIZE)).toEqual(tiers.slice(0, BATCH_SIZE));
+  });
+
+  it("marks a doubtful card even when its genres match well", () => {
+    const insight = insightAt([878, 18], { 878: 3, 18: 2 }, 8);
 
     expect(insight.tier).toBe(MATCH_TIER.LOW);
     expect(insight.matchedGenres).toEqual(["Ciencia ficción", "Drama"]);
