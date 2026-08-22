@@ -135,12 +135,19 @@ export function ButiAssistantDrawer({
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
 
+  /** Kept apart from the effect above on purpose. Tying the timer cleanup to
+   * `onClose` meant any re-render of the parent that produced a new callback
+   * identity cancelled a reply that was already on its way. */
+  useEffect(() => {
+    return () => {
       if (replyTimer.current !== null) {
         window.clearTimeout(replyTimer.current);
       }
     };
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
     if (messages.length === 0) {

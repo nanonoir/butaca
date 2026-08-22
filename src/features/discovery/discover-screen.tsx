@@ -31,8 +31,13 @@ import {
   ButiRecommendation,
 } from "./buti-recommendation";
 import { setMovieReaction } from "@/features/interactions/interaction-client";
+import { fetchDiscoverBatch } from "@/features/recommendations/discover-client";
 
 import { resolveSwipeIntent, SWIPE_INTENT } from "./resolve-swipe-intent";
+
+/** Cards left before another batch is requested. Five leaves room for the
+ * request to land while the viewer keeps swiping. */
+const REFILL_THRESHOLD = 5;
 
 interface DiscoverScreenProps {
   movies: MovieSummary[];
@@ -413,6 +418,9 @@ function EndOfStack({ onRestart }: { onRestart: () => void }) {
 
 export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [deck, setDeck] = useState(movies);
+  const loadingRef = useRef(false);
+  const [exhausted, setExhausted] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [detailMovie, setDetailMovie] = useState<MovieSummary | null>(null);
   const movieSearch = useMovieSearch(fetchSearchMovies);
@@ -422,8 +430,8 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   const [lastAction, setLastAction] = useState("");
   const assistantTrigger = useRef<HTMLButtonElement | null>(null);
   const searchDetailTrigger = useRef<HTMLElement | null>(null);
-  const currentMovie = movies[currentIndex];
-  const nextMovie = movies[currentIndex + 1];
+  const currentMovie = deck[currentIndex];
+  const nextMovie = deck[currentIndex + 1];
   const detailExperience = detailMovie
     ? getMovieDetailExperienceFixture(detailMovie)
     : null;
@@ -438,6 +446,42 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
     assistantTrigger.current = trigger;
     setAssistantOpen(true);
   }
+
+  /** Refills before the deck runs out so the swipe never stops on an empty
+   * screen. The ids on screen travel with the request: they are not reacted to
+   * yet, so the server cannot know to leave them out.
+   *
+   * The in-flight guard is a ref rather than state on purpose. As a dependency
+   * it would re-run this effect the moment it flipped, and the cleanup would
+   * cancel the request that had just been sent. */
+  useEffect(() => {
+    if (exhausted || loadingRef.current) {
+      return;
+    }
+
+    if (deck.length - currentIndex > REFILL_THRESHOLD) {
+      return;
+    }
+
+    loadingRef.current = true;
+
+    void fetchDiscoverBatch(deck.map((movie) => movie.id))
+      .then((batch) => {
+        if (batch.movies.length === 0) {
+          setExhausted(true);
+          return;
+        }
+
+        setDeck((current) => [...current, ...batch.movies]);
+      })
+      .catch(() => {
+        // Stop retrying on every swipe; the end-of-deck view takes over.
+        setExhausted(true);
+      })
+      .finally(() => {
+        loadingRef.current = false;
+      });
+  }, [currentIndex, deck, exhausted]);
 
   function handleReaction(reaction: MovieReaction) {
     if (!currentMovie) {
@@ -653,7 +697,7 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
                 aria-hidden="true"
                 className="hidden text-right font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground min-[980px]:col-start-2 min-[980px]:row-start-1 min-[980px]:block min-[1180px]:col-start-3"
               >
-                {movies.length} / {movies.length}
+                {deck.length} / {deck.length}
               </div>
             )}
           </section>
@@ -666,7 +710,7 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
             key={`buti-drawer-${currentMovie.id}`}
             movie={currentMovie}
             onClose={() => setAssistantOpen(false)}
-            recommendations={movies
+            recommendations={deck
               .filter((movie) => movie.id !== currentMovie.id)
               .slice(0, 3)}
           />

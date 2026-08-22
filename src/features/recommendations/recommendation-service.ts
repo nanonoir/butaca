@@ -1,6 +1,10 @@
 import "server-only";
 
-import type { MovieDetail, MovieSummary } from "@/contracts";
+import type {
+  MovieDetail,
+  MovieSummary,
+  RecommendationFilters,
+} from "@/contracts";
 
 import type {
   UserMovieInteractionRepository,
@@ -37,6 +41,15 @@ type InteractionsPort = Pick<
 
 type CatalogPort = Pick<TmdbAdapter, "getMovieDetail" | "discoverMovies">;
 
+export type DiscoverBatchOptions = {
+  /** Movies still sitting in the viewer's deck. They are not reacted to yet, so
+   * the database cannot exclude them, and without this the next batch would
+   * hand back cards already on screen. */
+  excludeMovieIds?: number[];
+  limit?: number;
+  filters?: RecommendationFilters;
+};
+
 export type DiscoverBatch = {
   movies: MovieSummary[];
   batchSize: typeof DISCOVER_BATCH_SIZE;
@@ -50,7 +63,10 @@ export class RecommendationService {
     private readonly catalog: CatalogPort,
   ) {}
 
-  async getDiscoverBatch(userId: string): Promise<DiscoverBatch> {
+  async getDiscoverBatch(
+    userId: string,
+    options: DiscoverBatchOptions = {},
+  ): Promise<DiscoverBatch> {
     const [preferences, liked, disliked, reactedMovieIds] = await Promise.all([
       this.preferences.findByUserId(userId),
       this.interactions.findLikesByUser(userId, PROFILE_INTERACTION_PAGE),
@@ -66,11 +82,14 @@ export class RecommendationService {
       liked: likedDetails,
       disliked: dislikedDetails,
     });
-    const candidates = await this.generateCandidates(profile);
+    const candidates = await this.generateCandidates(profile, options.filters);
     const movies = rankMovies(
-      excludeMovies(candidates, reactedMovieIds),
+      excludeMovies(candidates, [
+        ...reactedMovieIds,
+        ...(options.excludeMovieIds ?? []),
+      ]),
       profile,
-      DISCOVER_BATCH_SIZE,
+      options.limit ?? DISCOVER_BATCH_SIZE,
     );
 
     return {
@@ -104,13 +123,24 @@ export class RecommendationService {
    * query per signal keeps the pool wide enough for the ranking to matter. */
   private async generateCandidates(
     profile: TasteProfile,
+    filters: RecommendationFilters = {},
   ): Promise<MovieSummary[]> {
+    // Caller filters are extra constraints on top of the profile, never a
+    // replacement for it: an explicit request narrows the pool, it does not
+    // turn Discover into an unpersonalised search.
+    const { similarToMovieId: _similarToMovieId, ...candidateFilters } =
+      filters;
+    // Not a discover parameter: TMDB exposes similarity through its own
+    // endpoint, so it cannot travel with the rest of the filters.
+    void _similarToMovieId;
     const shared = {
       page: 1,
       excludedGenreIds: profile.excludedGenreIds,
       minTmdbVoteCount: MIN_CANDIDATE_VOTE_COUNT,
+      ...candidateFilters,
     };
-    const queries: TmdbDiscoverOptions[] = profile.preferredGenreIds
+    const requestedGenreIds = filters.genreIds ?? profile.preferredGenreIds;
+    const queries: TmdbDiscoverOptions[] = requestedGenreIds
       .slice(0, CANDIDATE_GENRE_COUNT)
       .map((genreId) => ({ ...shared, genreIds: [genreId] }));
     const [topKeywordId] = profile.keywordIds;
