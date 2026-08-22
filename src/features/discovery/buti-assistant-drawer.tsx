@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
 import { motion, useReducedMotion } from "motion/react";
 
 import {
@@ -15,6 +17,12 @@ import { Input } from "@/components/ui/input";
 import type { MatchInsight } from "@/contracts/discover";
 import type { MovieSummary } from "@/contracts/movies";
 
+import {
+  toChatTurns,
+  toContractMessages,
+  type ChatUiMessage,
+} from "@/features/chat/chat-turns";
+
 import { getButiInsight } from "./buti-recommendation";
 
 const QUICK_PROMPTS = [
@@ -24,17 +32,10 @@ const QUICK_PROMPTS = [
   "Algo para reírme",
 ] as const;
 
-interface DrawerMessage {
-  content: string;
-  id: string;
-  role: "assistant" | "user";
-}
-
 interface ButiAssistantDrawerProps {
   movie: MovieSummary;
   insight: MatchInsight;
   onClose: () => void;
-  recommendations: MovieSummary[];
 }
 
 function CloseIcon({ className }: { className?: string }) {
@@ -111,17 +112,32 @@ export function ButiAssistantDrawer({
   movie,
   insight,
   onClose,
-  recommendations,
 }: ButiAssistantDrawerProps) {
   const shouldReduceMotion = useReducedMotion();
   const butiInsight = getButiInsight(movie, insight);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<DrawerMessage[]>([]);
-  const [pending, setPending] = useState(false);
-  const [activity, setActivity] = useState<ButiActivity>(BUTI_ACTIVITY.IDLE);
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
-  const messageSequence = useRef(0);
-  const replyTimer = useRef<number | null>(null);
+  /** The same assistant the /ai screen talks to, told which card is on screen
+   * so "¿por qué esta?" has a subject. It used to answer every question with
+   * one hardcoded sentence built from the insight above. */
+  const { messages, sendMessage, setMessages, status, error } = useChat({
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+      prepareSendMessagesRequest: ({ messages: uiMessages }) => ({
+        body: {
+          messages: toContractMessages(uiMessages as ChatUiMessage[]),
+          aboutMovieId: movie.id,
+        },
+      }),
+    }),
+  });
+  const turns = toChatTurns(messages as ChatUiMessage[]);
+  const pending = status === "submitted" || status === "streaming";
+  const activity: ButiActivity = pending
+    ? BUTI_ACTIVITY.TALKING
+    : turns.some((turn) => turn.assistant)
+      ? BUTI_ACTIVITY.JUMPING
+      : BUTI_ACTIVITY.IDLE;
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -140,17 +156,6 @@ export function ButiAssistantDrawer({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [onClose]);
-
-  /** Kept apart from the effect above on purpose. Tying the timer cleanup to
-   * `onClose` meant any re-render of the parent that produced a new callback
-   * identity cancelled a reply that was already on its way. */
-  useEffect(() => {
-    return () => {
-      if (replyTimer.current !== null) {
-        window.clearTimeout(replyTimer.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -176,30 +181,8 @@ export function ButiAssistantDrawer({
       return;
     }
 
-    messageSequence.current += 1;
-    const sequence = messageSequence.current;
-
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      { content, id: `drawer-user-${sequence}`, role: "user" },
-    ]);
     setDraft("");
-    setPending(true);
-    setActivity(BUTI_ACTIVITY.TALKING);
-
-    replyTimer.current = window.setTimeout(() => {
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        {
-          content: `La recomiendo porque conecta con tus gustos: ${butiInsight.opinion}`,
-          id: `drawer-assistant-${sequence}`,
-          role: "assistant",
-        },
-      ]);
-      setPending(false);
-      setActivity(BUTI_ACTIVITY.JUMPING);
-      replyTimer.current = null;
-    }, 550);
+    void sendMessage({ text: content });
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -208,15 +191,8 @@ export function ButiAssistantDrawer({
   }
 
   function startNewConversation() {
-    if (replyTimer.current !== null) {
-      window.clearTimeout(replyTimer.current);
-      replyTimer.current = null;
-    }
-
     setDraft("");
     setMessages([]);
-    setPending(false);
-    setActivity(BUTI_ACTIVITY.IDLE);
   }
 
   return (
@@ -326,22 +302,21 @@ export function ButiAssistantDrawer({
               ))}
             </div>
 
-            {messages.length > 0 ? (
+            {turns.length > 0 ? (
               <ol className="mt-6 space-y-3">
-                {messages.map((message) => (
-                  <li className="space-y-4" key={message.id}>
-                    <div
-                      className={
-                        message.role === "user"
-                          ? "ml-8 rounded-lg rounded-br-sm bg-primary px-3.5 py-3 text-sm leading-6 text-primary-foreground"
-                          : "mr-5 rounded-lg border border-border bg-surface px-3.5 py-3 text-sm leading-6 text-foreground/90"
-                      }
-                    >
-                      {message.content}
+                {turns.map((turn) => (
+                  <li className="space-y-4" key={turn.id}>
+                    <div className="ml-8 rounded-lg rounded-br-sm bg-primary px-3.5 py-3 text-sm leading-6 text-primary-foreground">
+                      {turn.user.content}
                     </div>
-                    {message.role === "assistant" ? (
-                      <CompactRecommendationRow movies={recommendations} />
+                    {turn.assistant ? (
+                      <div className="mr-5 rounded-lg border border-border bg-surface px-3.5 py-3 text-sm leading-6 text-foreground/90">
+                        {turn.assistant.content}
+                      </div>
                     ) : null}
+                    {/* What the recommender actually returned for this turn,
+                     * rather than the deck that happened to be on screen. */}
+                    <CompactRecommendationRow movies={turn.movies} />
                   </li>
                 ))}
               </ol>
@@ -350,6 +325,15 @@ export function ButiAssistantDrawer({
             {pending ? (
               <p className="mt-4 text-sm text-muted" role="status">
                 Buti está pensando…
+              </p>
+            ) : null}
+
+            {error ? (
+              <p
+                className="mt-4 rounded-lg border border-border bg-surface-muted p-4 text-sm text-foreground"
+                role="alert"
+              >
+                Buti no pudo responder. Probá de nuevo en un momento.
               </p>
             ) : null}
           </section>

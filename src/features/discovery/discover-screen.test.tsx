@@ -18,6 +18,33 @@ import { DISCOVER_MOVIES_FIXTURE } from "@/fixtures/discover-movies";
 import { DiscoverScreen } from "./discover-screen";
 import { resolveSwipeIntent } from "./resolve-swipe-intent";
 
+/** The drawer talks to the same assistant the /ai screen does, so the
+ * conversation is driven from here rather than from a simulated reply timer. */
+const { chat, transportOptions } = vi.hoisted(() => ({
+  chat: {
+    messages: [] as unknown[],
+    sendMessage: vi.fn(),
+    setMessages: vi.fn(),
+    status: "ready" as string,
+    error: undefined as Error | undefined,
+  },
+  transportOptions: [] as {
+    prepareSendMessagesRequest?: (input: { messages: unknown[] }) => {
+      body: { messages: unknown[]; aboutMovieId?: number };
+    };
+  }[],
+}));
+
+vi.mock("@ai-sdk/react", () => ({ useChat: () => chat }));
+
+vi.mock("ai", () => ({
+  DefaultChatTransport: class {
+    constructor(options: never) {
+      transportOptions.push(options);
+    }
+  },
+}));
+
 /** The screen now persists by default, so the writes are stubbed here instead
  * of reaching the network. */
 vi.mock("@/features/recommendations/discover-client", () => ({
@@ -61,11 +88,46 @@ vi.mock("@/features/reviews/review-client", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  chat.messages = [];
+  chat.status = "ready";
+  chat.error = undefined;
+  transportOptions.length = 0;
 });
 
 afterEach(cleanup);
 
 const MOVIES = DISCOVER_MOVIES_FIXTURE.data.movies.slice(0, 2);
+
+function userMessage(id: string, text: string) {
+  return { id, role: "user", parts: [{ type: "text", text }] };
+}
+
+function assistantMessage(
+  id: string,
+  text: string,
+  movies?: readonly unknown[],
+) {
+  return {
+    id,
+    role: "assistant",
+    parts: [
+      { type: "text", text },
+      ...(movies
+        ? [
+            {
+              type: "tool-recommendMovies",
+              state: "output-available",
+              output: { movies },
+            },
+          ]
+        : []),
+    ],
+  };
+}
+
+const TOOL_MOVIES = DISCOVER_MOVIES_FIXTURE.data.movies
+  .slice(0, 2)
+  .map(({ movie }) => movie);
 
 describe("DiscoverScreen", () => {
   it("centers the current movie and previews the next card", () => {
@@ -275,7 +337,7 @@ describe("DiscoverScreen", () => {
     expect(document.body.style.overflow).toBe("");
   });
 
-  it("lets the user talk to Buti inside the drawer", async () => {
+  it("sends what the viewer typed to the assistant", () => {
     render(<DiscoverScreen movies={MOVIES} />);
 
     fireEvent.click(
@@ -287,31 +349,65 @@ describe("DiscoverScreen", () => {
     const drawer = screen.getByRole("dialog", {
       name: "Asistente de Buti sobre Dune",
     });
-    const input = within(drawer).getByRole("textbox", {
-      name: "Preguntale a Buti",
-    });
-    fireEvent.change(input, {
-      target: { value: "¿Por qué pensás que me va a gustar?" },
-    });
+    fireEvent.change(
+      within(drawer).getByRole("textbox", { name: "Preguntale a Buti" }),
+      { target: { value: "¿Por qué pensás que me va a gustar?" } },
+    );
     fireEvent.click(
       within(drawer).getByRole("button", { name: "Enviar consulta" }),
     );
 
-    expect(
-      within(drawer).getByText("¿Por qué pensás que me va a gustar?"),
-    ).toBeInTheDocument();
-    expect(within(drawer).getByRole("status")).toHaveTextContent(
-      "Buti está pensando",
-    );
-    expect(
-      await within(drawer).findByText(/La recomiendo porque/i, undefined, {
-        timeout: 1500,
+    expect(chat.sendMessage).toHaveBeenCalledWith({
+      text: "¿Por qué pensás que me va a gustar?",
+    });
+  });
+
+  /** The panel used to answer every question with one sentence built from the
+   * insight. It talks to the same assistant the /ai screen does now. */
+  it("shows what the assistant actually replied", () => {
+    chat.messages = [
+      userMessage("u1", "¿Y esta por qué me la traés?"),
+      assistantMessage("a1", "Porque venís marcando ciencia ficción."),
+    ];
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Abrir asistente de Buti sobre Dune desde el resumen",
       }),
+    );
+
+    const drawer = screen.getByRole("dialog", {
+      name: "Asistente de Buti sobre Dune",
+    });
+
+    expect(
+      within(drawer).getByText("¿Y esta por qué me la traés?"),
+    ).toBeInTheDocument();
+    expect(
+      within(drawer).getByText("Porque venís marcando ciencia ficción."),
     ).toBeInTheDocument();
   });
 
-  it("scrolls the conversation after every user and Buti message", async () => {
+  it("tells the assistant which card the viewer is looking at", () => {
     render(<DiscoverScreen movies={MOVIES} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Abrir asistente de Buti sobre Dune desde el resumen",
+      }),
+    );
+
+    const [request] = transportOptions;
+    const body = request?.prepareSendMessagesRequest?.({
+      messages: [userMessage("u1", "¿Por qué esta?")],
+    });
+
+    expect(body?.body.aboutMovieId).toBe(MOVIES[0]!.movie.id);
+  });
+
+  it("scrolls the conversation as replies arrive", async () => {
+    const { rerender } = render(<DiscoverScreen movies={MOVIES} />);
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -324,71 +420,30 @@ describe("DiscoverScreen", () => {
     });
     const conversation = within(drawer).getByTestId("buti-conversation-scroll");
     const scrollTo = vi.fn();
-    let scrollHeight = 640;
 
     Object.defineProperties(conversation, {
-      scrollHeight: {
-        configurable: true,
-        get: () => scrollHeight,
-      },
-      scrollTo: {
-        configurable: true,
-        value: scrollTo,
-      },
+      scrollHeight: { configurable: true, get: () => 820 },
+      scrollTo: { configurable: true, value: scrollTo },
     });
 
-    fireEvent.click(
-      within(drawer).getByRole("button", { name: "¿Por qué esta?" }),
-    );
+    chat.messages = [userMessage("u1", "¿Por qué esta?")];
+    rerender(<DiscoverScreen movies={MOVIES} />);
 
     await waitFor(() => {
       expect(scrollTo).toHaveBeenLastCalledWith({
         behavior: "smooth",
-        top: 640,
+        top: 820,
       });
     });
-
-    scrollHeight = 820;
-    await waitFor(
-      () => {
-        expect(scrollTo).toHaveBeenLastCalledWith({
-          behavior: "smooth",
-          top: 820,
-        });
-      },
-      { timeout: 1500 },
-    );
-
-    const input = within(drawer).getByRole("textbox", {
-      name: "Preguntale a Buti",
-    });
-    scrollHeight = 960;
-    fireEvent.change(input, { target: { value: "Algo más corto" } });
-    fireEvent.click(
-      within(drawer).getByRole("button", { name: "Enviar consulta" }),
-    );
-
-    await waitFor(() => {
-      expect(scrollTo).toHaveBeenLastCalledWith({
-        behavior: "smooth",
-        top: 960,
-      });
-    });
-
-    scrollHeight = 1100;
-    await waitFor(
-      () => {
-        expect(scrollTo).toHaveBeenLastCalledWith({
-          behavior: "smooth",
-          top: 1100,
-        });
-      },
-      { timeout: 1500 },
-    );
-    expect(scrollTo).toHaveBeenCalledTimes(4);
   });
 
-  it("shows compact movie recommendations in the assistant on mobile and desktop", async () => {
+  /** The row used to show whatever was left in the deck. It shows what the
+   * recommender handed back for that turn now. */
+  it("shows the movies the tool returned, not the deck", () => {
+    chat.messages = [
+      userMessage("u1", "Algo intenso para esta noche"),
+      assistantMessage("a1", "Mirá estas.", TOOL_MOVIES),
+    ];
     render(<DiscoverScreen movies={DISCOVER_MOVIES_FIXTURE.data.movies} />);
 
     fireEvent.click(
@@ -400,32 +455,26 @@ describe("DiscoverScreen", () => {
     const drawer = screen.getByRole("dialog", {
       name: "Asistente de Buti sobre Dune",
     });
-    fireEvent.click(
-      within(drawer).getByRole("button", {
-        name: "Algo intenso para esta noche",
-      }),
-    );
-
-    expect(
-      await within(drawer).findByText(/La recomiendo porque/i, undefined, {
-        timeout: 1500,
-      }),
-    ).toBeInTheDocument();
-
     const recommendations = within(drawer).getByRole("list", {
       name: "Recomendaciones de Buti",
     });
+
     expect(recommendations).toHaveClass(
       "flex",
       "overflow-x-auto",
       "[scrollbar-width:none]",
       "[&::-webkit-scrollbar]:hidden",
     );
-    expect(recommendations).not.toHaveClass("min-[980px]:hidden");
-    expect(within(recommendations).getAllByRole("article")).toHaveLength(3);
+    expect(within(recommendations).getAllByRole("article")).toHaveLength(
+      TOOL_MOVIES.length,
+    );
   });
 
-  it("starts a new Buti conversation without closing the mobile panel", async () => {
+  it("starts a new Buti conversation without closing the panel", () => {
+    chat.messages = [
+      userMessage("u1", "¿Por qué esta?"),
+      assistantMessage("a1", "Por la ciencia ficción."),
+    ];
     render(<DiscoverScreen movies={MOVIES} />);
 
     fireEvent.click(
@@ -438,25 +487,29 @@ describe("DiscoverScreen", () => {
       name: "Asistente de Buti sobre Dune",
     });
     fireEvent.click(
-      within(drawer).getByRole("button", { name: "¿Por qué esta?" }),
-    );
-    expect(
-      await within(drawer).findByText(/La recomiendo porque/i, undefined, {
-        timeout: 1500,
-      }),
-    ).toBeInTheDocument();
-
-    fireEvent.click(
       within(drawer).getByRole("button", { name: "Nueva conversación" }),
     );
 
-    expect(within(drawer).queryByText("¿Por qué esta?")).toBeInTheDocument();
-    expect(
-      within(drawer).queryByText(/La recomiendo porque/i),
-    ).not.toBeInTheDocument();
+    expect(chat.setMessages).toHaveBeenCalledWith([]);
     expect(drawer).toBeInTheDocument();
   });
 
+  it("says so when the assistant could not answer", () => {
+    chat.error = new Error("down");
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Abrir asistente de Buti sobre Dune desde el resumen",
+      }),
+    );
+
+    expect(
+      within(
+        screen.getByRole("dialog", { name: "Asistente de Buti sobre Dune" }),
+      ).getByRole("alert"),
+    ).toHaveTextContent("Buti no pudo responder");
+  });
   it("updates Buti's opinion when the current recommendation changes", () => {
     render(<DiscoverScreen movies={MOVIES} />);
 
