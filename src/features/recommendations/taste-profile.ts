@@ -13,13 +13,25 @@ const EXCLUSION_THRESHOLD = -2;
 const MAX_KEYWORDS = 12;
 const MAX_PEOPLE = 8;
 
+/** The name travels with the id because the id alone can only steer a query.
+ * Telling the viewer a movie is here because they keep watching Nolan needs the
+ * word "Nolan", and it is sitting right there in the credits the profile is
+ * built from. */
+export type TastePerson = { id: number; name: string };
+
+/** The most recent thing the viewer liked. It seeds a candidate query of its
+ * own, and it is the only signal in the profile that can be named back as a
+ * movie rather than as a trait. */
+export type TasteSeed = { movieId: number; title: string };
+
 export type TasteProfile = {
   genreWeights: Record<number, number>;
   preferredGenreIds: number[];
   excludedGenreIds: number[];
   keywordIds: number[];
-  castIds: number[];
-  crewIds: number[];
+  cast: TastePerson[];
+  crew: TastePerson[];
+  seed: TasteSeed | null;
 };
 
 export type TasteProfileInput = {
@@ -57,6 +69,32 @@ function topByFrequency(ids: number[], limit: number): number[] {
     )
     .slice(0, limit)
     .map(([id]) => id);
+}
+
+function topPeopleByFrequency(
+  people: TastePerson[],
+  limit: number,
+): TastePerson[] {
+  const counts = new Map<number, { person: TastePerson; count: number }>();
+
+  for (const person of people) {
+    const entry = counts.get(person.id);
+
+    if (entry) {
+      entry.count += 1;
+      continue;
+    }
+
+    counts.set(person.id, { person, count: 1 });
+  }
+
+  return [...counts.values()]
+    .sort(
+      (left, right) =>
+        right.count - left.count || left.person.id - right.person.id,
+    )
+    .slice(0, limit)
+    .map(({ person }) => person);
 }
 
 /** Content-based only: the profile is built from what this viewer stated and
@@ -97,15 +135,23 @@ export function buildTasteProfile(input: TasteProfileInput): TasteProfile {
       input.liked.flatMap((movie) => movie.keywords.map(({ id }) => id)),
       MAX_KEYWORDS,
     ),
-    castIds: topByFrequency(
-      input.liked.flatMap((movie) => movie.cast.map(({ id }) => id)),
-      MAX_PEOPLE,
-    ),
-    crewIds: topByFrequency(
+    cast: topPeopleByFrequency(
       input.liked.flatMap((movie) =>
-        movie.director ? [movie.director.id] : [],
+        movie.cast.map(({ id, name }) => ({ id, name })),
       ),
       MAX_PEOPLE,
     ),
+    crew: topPeopleByFrequency(
+      input.liked.flatMap((movie) =>
+        movie.director
+          ? [{ id: movie.director.id, name: movie.director.name }]
+          : [],
+      ),
+      MAX_PEOPLE,
+    ),
+    // The list arrives newest first, so the head is the most recent like.
+    seed: input.liked[0]
+      ? { movieId: input.liked[0].id, title: input.liked[0].title }
+      : null,
   };
 }

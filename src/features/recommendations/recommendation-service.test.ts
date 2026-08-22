@@ -590,3 +590,118 @@ describe("getDiscoverBatch and the profile's own defaults", () => {
     expect(query.excludedGenreIds).toEqual([27]);
   });
 });
+
+describe("getDiscoverBatch reasons", () => {
+  function service(deps: ReturnType<typeof createDependencies>) {
+    return new RecommendationService(
+      deps.preferences,
+      deps.interactions,
+      deps.catalog,
+    );
+  }
+
+  /** The deck was built entirely from traits and never from a film the viewer
+   * actually liked. */
+  it("asks what goes with the most recent like", async () => {
+    const deps = createDependencies();
+    deps.interactions.findLikesByUser.mockResolvedValue([{ movieId: 603 }]);
+    deps.catalog.getMovieDetail.mockResolvedValue({
+      ...summary(603),
+      title: "Matrix",
+      genres: [{ id: 878, name: "Ciencia ficción" }],
+      runtime: 136,
+      tagline: null,
+      director: { id: 9339, name: "Lana Wachowski", profilePath: null },
+      cast: [],
+      keywords: [],
+      trailer: null,
+    });
+    deps.catalog.getMovieRecommendations.mockResolvedValue(
+      paginated([summary(7)]),
+    );
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID);
+
+    expect(deps.catalog.getMovieRecommendations).toHaveBeenCalledWith({
+      movieId: 603,
+      page: 1,
+    });
+    const seeded = batch.movies.find(({ movie }) => movie.id === 7);
+    expect(seeded?.insight.reason).toEqual({
+      kind: "similar",
+      name: "Matrix",
+    });
+  });
+
+  it("labels a card that came from the viewer's director", async () => {
+    const deps = createDependencies();
+    deps.interactions.findLikesByUser.mockResolvedValue([{ movieId: 27_205 }]);
+    deps.catalog.getMovieDetail.mockResolvedValue({
+      ...summary(27_205),
+      title: "Origen",
+      genres: [{ id: 878, name: "Ciencia ficción" }],
+      runtime: 148,
+      tagline: null,
+      director: { id: 525, name: "Christopher Nolan", profilePath: null },
+      cast: [],
+      keywords: [],
+      trailer: null,
+    });
+    deps.catalog.getMovieRecommendations.mockResolvedValue(paginated([]));
+    deps.catalog.discoverMovies.mockImplementation(
+      async (query: { crewIds?: number[] }) =>
+        query.crewIds?.[0] === 525 ? paginated([summary(11)]) : paginated([]),
+    );
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID);
+
+    expect(
+      batch.movies.find(({ movie }) => movie.id === 11)?.insight.reason,
+    ).toEqual({ kind: "crew", name: "Christopher Nolan" });
+  });
+
+  /** A movie can arrive from two queries at once. "You keep watching Nolan"
+   * says more than "it is science fiction". */
+  it("keeps the most specific reason when a movie came from two queries", async () => {
+    const deps = createDependencies();
+    deps.preferences.findByUserId.mockResolvedValue({
+      preferredGenreIds: [878],
+    });
+    deps.interactions.findLikesByUser.mockResolvedValue([{ movieId: 27_205 }]);
+    deps.catalog.getMovieDetail.mockResolvedValue({
+      ...summary(27_205),
+      title: "Origen",
+      genres: [{ id: 878, name: "Ciencia ficción" }],
+      runtime: 148,
+      tagline: null,
+      director: { id: 525, name: "Christopher Nolan", profilePath: null },
+      cast: [],
+      keywords: [],
+      trailer: null,
+    });
+    deps.catalog.getMovieRecommendations.mockResolvedValue(paginated([]));
+    // The same movie answers both the genre query and the director one.
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(11)]));
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID);
+
+    expect(
+      batch.movies.find(({ movie }) => movie.id === 11)?.insight.reason.kind,
+    ).toBe("crew");
+  });
+
+  it("says nothing beyond the genre when there is nothing else to say", async () => {
+    const deps = createDependencies();
+    deps.preferences.findByUserId.mockResolvedValue({
+      preferredGenreIds: [878],
+    });
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(1)]));
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID);
+
+    expect(batch.movies[0]?.insight.reason).toEqual({
+      kind: "genre",
+      name: null,
+    });
+  });
+});

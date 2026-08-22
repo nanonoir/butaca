@@ -18,10 +18,30 @@ export const DISCOVER_BATCH_SIZE = 10;
  * order instead of restating the rating. */
 export const MatchTierSchema = z.enum(["high", "medium", "low"]);
 
+/** Why this movie is in the deck. The tier says how enthusiastic to be; this
+ * says what to point at, which is the difference between "es ciencia ficción"
+ * and "sale de Nolan, que venís mirando". */
+export const MatchReasonKindSchema = z.enum([
+  "genre",
+  "keyword",
+  "cast",
+  "crew",
+  "similar",
+]);
+
+export const MatchReasonSchema = z.object({
+  kind: MatchReasonKindSchema,
+  /** A person for cast and crew, a movie title for similar. Absent for the
+   * traits that have nothing to name, and for a request the viewer made
+   * themselves -- they already know what they asked for. */
+  name: z.string().min(1).nullable(),
+});
+
 export const MatchInsightSchema = z.object({
   tier: MatchTierSchema,
   matchedGenres: z.array(z.string().min(1)).max(5),
   clashingGenres: z.array(z.string().min(1)).max(5),
+  reason: MatchReasonSchema,
 });
 
 export const RecommendedMovieSchema = z.object({
@@ -95,6 +115,8 @@ export const RecommendationRequestSchema = z.object({
 
 export type MatchTier = z.infer<typeof MatchTierSchema>;
 export type MatchInsight = z.infer<typeof MatchInsightSchema>;
+export type MatchReason = z.infer<typeof MatchReasonSchema>;
+export type MatchReasonKind = z.infer<typeof MatchReasonKindSchema>;
 export type RecommendedMovie = z.infer<typeof RecommendedMovieSchema>;
 export type RecommendationFilters = z.infer<typeof RecommendationFiltersSchema>;
 export type RecommendationRequest = z.infer<typeof RecommendationRequestSchema>;

@@ -7,6 +7,7 @@ import {
   type MovieSummary,
   type RecommendationFilters,
   type RecommendedMovie,
+  type MatchReason,
 } from "@/contracts";
 
 import type {
@@ -15,7 +16,6 @@ import type {
 } from "../../db/repositories";
 import type { UserMovieInteractionRecord } from "../../db/schema/user-movie-interactions";
 import type {
-  PaginatedMovies,
   TmdbAdapter,
   TmdbDiscoverOptions,
 } from "../../integrations/tmdb";
@@ -101,6 +101,40 @@ function intersectById(
   return left.filter((movie) => rightIds.has(movie.id));
 }
 
+type SourcedQuery = { query: TmdbDiscoverOptions; source: MatchReason };
+type SourcedMovies = { movies: MovieSummary[]; source: MatchReason };
+
+export type Candidate = { movie: MovieSummary; source: MatchReason };
+
+/** How specific a reason feels, most specific first. A movie can arrive from
+ * two queries at once -- it is a Nolan film and it is science fiction -- and
+ * "you keep watching Nolan" says more than "it is science fiction". */
+const SOURCE_PRIORITY: Record<MatchReason["kind"], number> = {
+  crew: 0,
+  cast: 1,
+  similar: 2,
+  keyword: 3,
+  genre: 4,
+};
+
+function dedupeBySource(candidates: Candidate[]): Candidate[] {
+  const best = new Map<number, Candidate>();
+
+  for (const candidate of candidates) {
+    const current = best.get(candidate.movie.id);
+
+    if (
+      !current ||
+      SOURCE_PRIORITY[candidate.source.kind] <
+        SOURCE_PRIORITY[current.source.kind]
+    ) {
+      best.set(candidate.movie.id, candidate);
+    }
+  }
+
+  return [...best.values()];
+}
+
 export class RecommendationService {
   constructor(
     private readonly preferences: PreferencesPort,
@@ -128,11 +162,16 @@ export class RecommendationService {
       disliked: dislikedDetails,
     });
     const candidates = await this.generateCandidates(profile, options.filters);
+    // The ranking works on movies; the reason each one is here travels beside
+    // it, keyed by id, so ranking and scoring stay untouched.
+    const sourceById = new Map(
+      candidates.map(({ movie, source }) => [movie.id, source]),
+    );
     const ranked = rankMovies(
-      excludeMovies(candidates, [
-        ...reactedMovieIds,
-        ...(options.excludeMovieIds ?? []),
-      ]),
+      excludeMovies(
+        candidates.map(({ movie }) => movie),
+        [...reactedMovieIds, ...(options.excludeMovieIds ?? [])],
+      ),
       profile,
       options.limit ?? DISCOVER_BATCH_SIZE,
     );
@@ -141,7 +180,13 @@ export class RecommendationService {
     const genres = ranked.length > 0 ? await this.resolveGenres() : [];
     const movies = ranked.map<RecommendedMovie>((movie, position) => ({
       movie,
-      insight: buildMatchInsight(movie, profile, genres, position),
+      insight: buildMatchInsight(
+        movie,
+        profile,
+        genres,
+        position,
+        sourceById.get(movie.id) ?? { kind: "genre", name: null },
+      ),
     }));
 
     return {
@@ -214,7 +259,7 @@ export class RecommendationService {
   private async generateCandidates(
     profile: TasteProfile,
     filters: RecommendationFilters = {},
-  ): Promise<MovieSummary[]> {
+  ): Promise<Candidate[]> {
     // Caller filters are extra constraints on top of the profile, never a
     // replacement for it: an explicit request narrows the pool, it does not
     // turn Discover into an unpersonalised search.
@@ -261,41 +306,77 @@ export class RecommendationService {
     const requestedGenreIds = subject
       ? []
       : (filters.genreIds ?? profile.preferredGenreIds);
-    const queries: TmdbDiscoverOptions[] = requestedGenreIds
+    // Each query carries the reason it exists, so a card can say why it is
+    // there without anyone guessing afterwards.
+    const queries: SourcedQuery[] = requestedGenreIds
       .slice(0, CANDIDATE_GENRE_COUNT)
-      .map((genreId) => ({ ...shared, genreIds: [genreId] }));
+      .map((genreId) => ({
+        query: { ...shared, genreIds: [genreId] },
+        source: { kind: "genre", name: null } as const,
+      }));
     const [topKeywordId] = profile.keywordIds;
-    const [topDirectorId] = profile.crewIds;
-    const [topCastId] = profile.castIds;
+    const [topDirector] = profile.crew;
+    const [topCast] = profile.cast;
 
     if (!subject && topKeywordId !== undefined) {
-      queries.push({ ...shared, keywordIds: [topKeywordId] });
+      queries.push({
+        query: { ...shared, keywordIds: [topKeywordId] },
+        source: { kind: "keyword", name: null },
+      });
     }
 
-    if (!subject && topDirectorId !== undefined) {
-      queries.push({ ...shared, crewIds: [topDirectorId] });
+    if (!subject && topDirector) {
+      queries.push({
+        query: { ...shared, crewIds: [topDirector.id] },
+        source: { kind: "crew", name: topDirector.name },
+      });
     }
 
-    if (!subject && topCastId !== undefined) {
-      queries.push({ ...shared, castIds: [topCastId] });
+    if (!subject && topCast) {
+      queries.push({
+        query: { ...shared, castIds: [topCast.id] },
+        source: { kind: "cast", name: topCast.name },
+      });
     }
 
     if (queries.length === 0 && !subject) {
       // Nothing recorded yet: fall back to a broad, well voted pool so the
       // viewer still gets a batch instead of an empty screen.
-      queries.push(shared);
+      queries.push({ query: shared, source: { kind: "genre", name: null } });
     }
 
-    const requests: Promise<PaginatedMovies>[] = queries.map((query) =>
-      this.catalog.discoverMovies(query),
+    const requests: Promise<SourcedMovies>[] = queries.map(
+      async ({ query, source }) => ({
+        source,
+        movies: (await this.catalog.discoverMovies(query)).data,
+      }),
     );
 
     if (similarToMovieId !== undefined) {
       requests.push(
-        this.catalog.getMovieRecommendations({
-          movieId: similarToMovieId,
-          page: 1,
-        }),
+        this.catalog
+          .getMovieRecommendations({ movieId: similarToMovieId, page: 1 })
+          .then(({ data }) => ({
+            source: { kind: "similar" as const, name: null },
+            movies: data,
+          })),
+      );
+    }
+
+    // The deck used to be built entirely from traits -- a genre, a keyword, a
+    // person -- and never from a film the viewer actually liked. This asks what
+    // goes with their most recent one, which widens the pool and is the only
+    // signal that can be named back as a movie.
+    if (!subject && profile.seed) {
+      const { movieId, title } = profile.seed;
+
+      requests.push(
+        this.catalog
+          .getMovieRecommendations({ movieId, page: 1 })
+          .then(({ data }) => ({
+            source: { kind: "similar" as const, name: title },
+            movies: data,
+          })),
       );
     }
 
@@ -327,13 +408,25 @@ export class RecommendationService {
         ? intersectById(acted, directed)
         : [...acted, ...directed];
 
-    return [
-      ...fromPeople.filter((movie) =>
-        matchesLocalFilters(movie, filters),
-      ),
+    const explicitSource: MatchReason =
+      castIdList.length > 0
+        ? { kind: "cast", name: null }
+        : crewId !== undefined
+          ? { kind: "crew", name: null }
+          : { kind: "similar", name: null };
+
+    return dedupeBySource([
+      ...fromPeople
+        .filter((movie) => matchesLocalFilters(movie, filters))
+        .map((movie) => ({ movie, source: explicitSource })),
       ...results.flatMap((result) =>
-        result.status === "fulfilled" ? result.value.data : [],
+        result.status === "fulfilled"
+          ? result.value.movies.map((movie) => ({
+              movie,
+              source: result.value.source,
+            }))
+          : [],
       ),
-    ];
+    ]);
   }
 }

@@ -4,7 +4,11 @@ import {
   ButiMascot,
   type ButiMatch,
 } from "@/components/shared/buti-mascot";
-import type { MatchInsight, MatchTier } from "@/contracts/discover";
+import type {
+  MatchInsight,
+  MatchReasonKind,
+  MatchTier,
+} from "@/contracts/discover";
 import type { MovieSummary } from "@/contracts/movies";
 
 export interface ButiInsight {
@@ -55,6 +59,29 @@ const PHRASES: Readonly<Record<MatchTier, readonly string[]>> = {
   ],
 };
 
+/** What to point at when the deck knows something better than a genre. Three
+ * phrasings each, same as the tiers, and they only fire for a pick the deck is
+ * positive about: a doubtful card has its own thing to explain. */
+const REASON_PHRASES: Readonly<
+  Partial<Record<MatchReasonKind, readonly string[]>>
+> = {
+  crew: [
+    "Sale de {name}, que venís mirando.",
+    "Otra de {name}: le venís dando bola a lo suyo.",
+    "{name} dirigiendo, que es de lo que más marcás.",
+  ],
+  cast: [
+    "Tiene a {name}, y eso te viene gustando.",
+    "Con {name}, que aparece seguido en lo que elegís.",
+    "{name} en pantalla, que es un imán tuyo.",
+  ],
+  similar: [
+    "Va por el lado de {name}, que te gustó.",
+    "Si te copó {name}, esta juega parecido.",
+    "En la línea de {name}, de tus me gusta.",
+  ],
+};
+
 function pick(phrases: readonly string[], movieId: number): string {
   return phrases[movieId % phrases.length] ?? phrases[0]!;
 }
@@ -65,9 +92,10 @@ function capitalize(text: string): string {
 
 function fill(
   phrase: string,
-  slots: { genres: string; reason: string; rating: string },
+  slots: { genres: string; reason: string; rating: string; name?: string },
 ): string {
   return phrase
+    .replace("{name}", slots.name ?? "")
     .replace("{genres}", slots.genres)
     .replace("{Reason}", capitalize(slots.reason))
     .replace("{reason}", slots.reason)
@@ -102,14 +130,21 @@ export function getButiInsight(
     genres,
     reason: buildLowReason(insight, genres),
     rating: movie.tmdbRating.toFixed(1),
+    name: insight.reason.name ?? undefined,
   };
   // A tier with nothing to name would leave a phrase with an empty slot, and
   // the low lines never need one.
   const tier: MatchTier = genres ? insight.tier : "low";
+  // The reason only speaks for a card the deck is positive about. A doubtful
+  // one has something more useful to say than which director it came from.
+  const reasonPhrases =
+    tier === "low" ? undefined : REASON_PHRASES[insight.reason.kind];
+  const phrases =
+    reasonPhrases && insight.reason.name ? reasonPhrases : PHRASES[tier];
 
   return {
     match: MATCH_BY_TIER[tier],
-    opinion: fill(pick(PHRASES[tier], movie.id), slots),
+    opinion: fill(pick(phrases, movie.id), slots),
   };
 }
 

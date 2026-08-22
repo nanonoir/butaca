@@ -126,8 +126,8 @@ describe("buildTasteProfile", () => {
     });
 
     expect(profile.keywordIds).toEqual([100]);
-    expect(profile.castIds).toEqual([200]);
-    expect(profile.crewIds).toEqual([300]);
+    expect(profile.cast.map(({ id }) => id)).toEqual([200]);
+    expect(profile.crew.map(({ id }) => id)).toEqual([300]);
   });
 
   it("orders keywords by how often they appear across likes", () => {
@@ -154,8 +154,9 @@ describe("buildTasteProfile", () => {
       preferredGenreIds: [],
       excludedGenreIds: [],
       keywordIds: [],
-      castIds: [],
-      crewIds: [],
+      cast: [],
+      crew: [],
+      seed: null,
     });
   });
 });

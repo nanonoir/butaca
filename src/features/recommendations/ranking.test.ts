@@ -28,8 +28,9 @@ function createProfile(overrides: Partial<TasteProfile> = {}): TasteProfile {
     preferredGenreIds: [],
     excludedGenreIds: [],
     keywordIds: [],
-    castIds: [],
-    crewIds: [],
+    cast: [],
+    crew: [],
+    seed: null,
     ...overrides,
   };
 }

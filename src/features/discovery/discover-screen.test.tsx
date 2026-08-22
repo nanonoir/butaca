@@ -872,7 +872,12 @@ describe("DiscoverScreen refill", () => {
       movies: [
         {
           movie: extraMovie(9_001),
-          insight: { tier: "medium", matchedGenres: [], clashingGenres: [] },
+          insight: {
+            tier: "medium",
+            matchedGenres: [],
+            clashingGenres: [],
+            reason: { kind: "genre", name: null },
+          },
         },
       ],
       batchSize: 10,
