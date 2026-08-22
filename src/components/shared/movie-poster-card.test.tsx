@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it } from "vitest";
 import { vi } from "vitest";
 
@@ -67,5 +68,66 @@ describe("MoviePosterCard", () => {
     );
 
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a chosen movie on the artwork itself, not only for a screen reader", () => {
+    render(
+      <MoviePosterCard
+        actionLabel="Quitar La llegada"
+        onSelect={vi.fn()}
+        poster={<div>Póster</div>}
+        pressed
+        title="La llegada"
+      />,
+    );
+
+    const frame = screen.getByRole("article").querySelector("figure");
+
+    expect(frame?.className).toContain("ring-primary");
+    expect(screen.getByTestId("movie-poster-selected")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Quitar La llegada" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("leaves an unchosen movie without the selected treatment", () => {
+    render(
+      <MoviePosterCard
+        actionLabel="Seleccionar La llegada"
+        onSelect={vi.fn()}
+        poster={<div>Póster</div>}
+        pressed={false}
+        title="La llegada"
+      />,
+    );
+
+    const frame = screen.getByRole("article").querySelector("figure");
+
+    expect(frame?.className).not.toContain("ring-primary");
+    expect(screen.queryByTestId("movie-poster-selected")).toBeNull();
+  });
+
+  /** The click target covers the whole card, title included. Painting the hover
+   * on it washed over the text and read as a smudge. */
+  it("keeps the hover treatment on the artwork and off the click target", () => {
+    render(
+      <MoviePosterCard
+        actionLabel="Ver detalle de La llegada"
+        onSelect={vi.fn()}
+        poster={<div>Póster</div>}
+        title="La llegada"
+        year="2016"
+      />,
+    );
+
+    const action = screen.getByRole("button", {
+      name: "Ver detalle de La llegada",
+    });
+    const frame = screen.getByRole("article").querySelector("figure");
+    const hoverLayer = frame?.querySelector('[aria-hidden="true"]');
+
+    expect(action.className).not.toMatch(/hover:bg-/);
+    expect(hoverLayer?.className).toContain("group-hover:bg-primary/10");
+    expect(frame).toHaveClass("overflow-hidden");
   });
 });

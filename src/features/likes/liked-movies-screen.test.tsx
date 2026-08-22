@@ -238,24 +238,22 @@ describe("LikedMoviesScreen", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps the hover treatment inside the poster boundary", () => {
+  /** The screen used to paint its own hover layer and then neutralise the one
+   * the card painted over the whole tile. The card handles it now. */
+  it("leaves the hover treatment to the poster card", () => {
     renderScreen();
 
     const action = screen.getByRole("button", {
       name: "Ver detalle de Interstellar",
     });
-    const article = action.closest("article");
-    const hoverLayer = article?.querySelector("[data-liked-poster-hover]");
-    const posterFrame = screen
-      .getByRole("img", { name: "Póster de Interstellar" })
-      .closest("figure");
 
-    expect(hoverLayer).not.toBeNull();
-    expect(hoverLayer?.closest("figure")).toBe(posterFrame);
-    expect(posterFrame).toHaveClass("overflow-hidden");
-    expect(action.closest("li")).toHaveClass(
-      "[&>article>button:hover]:bg-transparent!",
-    );
+    expect(action.className).not.toMatch(/hover:bg-/);
+    expect(action.closest("li")?.className).not.toMatch(/bg-transparent!/);
+    expect(
+      screen
+        .getByRole("img", { name: "Póster de Interstellar" })
+        .closest("figure"),
+    ).toHaveClass("overflow-hidden");
   });
 });
 
