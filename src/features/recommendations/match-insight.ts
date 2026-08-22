@@ -12,8 +12,13 @@ export const MATCH_TIER = {
  * generated from the viewer's own genres, so almost every one of them matches
  * two or more: counting matches alone made every card a high match and left
  * Buti with a single expression. Position in the ranking is what actually
- * separates them. */
-const HIGH_TIER_SHARE = 1 / 3;
+ * separates them.
+ *
+ * Six in ten rather than a third. These are recommendations, already ranked and
+ * already filtered to the viewer's taste, so a deck where most cards read as
+ * lukewarm undersells work the recommender did. The tail stays wide enough that
+ * the top still means something. */
+const HIGH_TIER_SHARE = 3 / 5;
 
 function weightOf(profile: TasteProfile, genreId: number): number {
   return profile.genreWeights[genreId] ?? 0;

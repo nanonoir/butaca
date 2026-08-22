@@ -12,9 +12,9 @@ const GENRES: Genre[] = [
   { id: 35, name: "Comedia" },
 ];
 
-const BATCH_SIZE = 9;
+const BATCH_SIZE = 10;
 const TOP_POSITION = 0;
-const LOWER_POSITION = 5;
+const LOWER_POSITION = 8;
 
 function createMovie(genreIds: number[]): MovieSummary {
   return {
@@ -131,12 +131,14 @@ describe("buildMatchInsight", () => {
     expect(insight.matchedGenres).toEqual(["Ciencia ficción"]);
   });
 
-  it("spreads the tiers across a whole batch instead of one face", () => {
+  /** These are ranked, already-filtered recommendations, so most of a batch
+   * ought to read as a good pick rather than as a shrug. */
+  it("calls six of a ten card batch a strong match and leaves four behind", () => {
     const tiers = Array.from({ length: BATCH_SIZE }, (_unused, position) =>
       insightAt([878, 18], { 878: 3, 18: 2 }, position),
     ).map(({ tier }) => tier);
 
-    expect(new Set(tiers).size).toBeGreaterThan(1);
-    expect(tiers.filter((tier) => tier === MATCH_TIER.HIGH)).toHaveLength(3);
+    expect(tiers.filter((tier) => tier === MATCH_TIER.HIGH)).toHaveLength(6);
+    expect(tiers.filter((tier) => tier === MATCH_TIER.MEDIUM)).toHaveLength(4);
   });
 });
