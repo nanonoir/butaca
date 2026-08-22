@@ -24,40 +24,47 @@ function joinGenres(genres: string[]): string {
   return second ? `${first} y ${second}` : (first ?? "");
 }
 
-/** Several phrasings per case, picked by movie id. Almost every candidate
- * matches two of the viewer's genres, so a single template made the whole deck
- * read the same; the id keeps a given movie's line stable while it is on
- * screen. */
-const MATCHED_PHRASES: Readonly<Record<"high" | "medium", readonly string[]>> =
-  {
-    high: [
-      "{genres}: justo lo que venís marcando.",
-      "Da en el clavo con {genres}, tus dos fuertes.",
-      "{genres}, y de lo mejor que encontré para vos hoy.",
-    ],
-    medium: [
-      "{genres}, aunque hoy encontré cosas que te pegan más.",
-      "Va por {genres}, sin ser lo más redondo de la tanda.",
-      "{genres}: entra, pero no es la que más te representa.",
-    ],
-  };
-
-const SINGLE_GENRE_PHRASES = [
-  "{genres} es de lo que más mirás, y puntúa {rating} en TMDB.",
-  "Tira para {genres}, con {rating} en TMDB.",
-] as const;
-
-const OFF_PROFILE_PHRASES = [
-  "Se sale de tus géneros habituales, pero puntúa {rating} en TMDB.",
-  "Nada que ver con lo que venís viendo; va por su {rating} en TMDB.",
-] as const;
+/** Three phrasings per tier, picked by movie id. Almost every candidate matches
+ * two of the viewer's genres, so a single template made the whole deck read the
+ * same; the id keeps a given movie's line stable while it is on screen, and
+ * keeps two cards in a row from sounding alike.
+ *
+ * Every line has to survive one genre as well as two, because `joinGenres`
+ * fills the slot either way. That rules out phrasings like "tus dos fuertes",
+ * and it is what lets one table per tier replace the four that were here. */
+const PHRASES: Readonly<Record<MatchTier, readonly string[]>> = {
+  high: [
+    "{genres}: justo lo que venís marcando.",
+    "Le pega de lleno a {genres}.",
+    "{genres}, y de lo mejor que encontré para vos hoy.",
+  ],
+  medium: [
+    "{genres}, aunque hoy encontré cosas que te pegan más.",
+    "Va por {genres}, sin ser lo más redondo de la tanda.",
+    "{genres}: entra, pero no es la que más te representa.",
+  ],
+  // The low lines lean on {reason} rather than {genres}: a movie lands here
+  // either because it carries a genre the viewer rejects or because it matches
+  // nothing at all, and those are two different things to say.
+  low: [
+    "Se apoya en {reason}. La traigo por su {rating} en TMDB.",
+    "Puntúa {rating} en TMDB, pero se apoya en {reason}.",
+    "No es lo tuyo: {reason}. Igual tiene {rating} en TMDB.",
+  ],
+};
 
 function pick(phrases: readonly string[], movieId: number): string {
   return phrases[movieId % phrases.length] ?? phrases[0]!;
 }
 
-function fill(phrase: string, genres: string, rating: string): string {
-  return phrase.replace("{genres}", genres).replace("{rating}", rating);
+function fill(
+  phrase: string,
+  slots: { genres: string; reason: string; rating: string },
+): string {
+  return phrase
+    .replace("{genres}", slots.genres)
+    .replace("{reason}", slots.reason)
+    .replace("{rating}", slots.rating);
 }
 
 /** Says why the recommender picked the movie, using the genres it actually
@@ -68,41 +75,21 @@ export function getButiInsight(
   movie: MovieSummary,
   insight: MatchInsight,
 ): ButiInsight {
-  const match = MATCH_BY_TIER[insight.tier];
-  const matched = joinGenres(insight.matchedGenres);
   const clashing = joinGenres(insight.clashingGenres);
-  const rating = movie.tmdbRating.toFixed(1);
-
-  if (clashing) {
-    return {
-      match,
-      opinion: matched
-        ? `${matched} van con lo tuyo, aunque ${clashing.toLowerCase()} es lo que venís descartando.`
-        : `Se apoya en ${clashing.toLowerCase()}, que venís descartando, pero puntúa ${rating} en TMDB.`,
-    };
-  }
-
-  if (insight.matchedGenres.length > 1 && insight.tier !== "low") {
-    return {
-      match,
-      opinion: fill(
-        pick(MATCHED_PHRASES[insight.tier], movie.id),
-        matched,
-        rating,
-      ),
-    };
-  }
-
-  if (matched) {
-    return {
-      match,
-      opinion: fill(pick(SINGLE_GENRE_PHRASES, movie.id), matched, rating),
-    };
-  }
+  const slots = {
+    genres: joinGenres(insight.matchedGenres),
+    reason: clashing
+      ? `${clashing.toLowerCase()}, que venís descartando`
+      : "géneros que no venís mirando",
+    rating: movie.tmdbRating.toFixed(1),
+  };
+  // A tier with nothing to name would leave a phrase with an empty slot, and
+  // the low lines never need one.
+  const tier: MatchTier = slots.genres ? insight.tier : "low";
 
   return {
-    match,
-    opinion: fill(pick(OFF_PROFILE_PHRASES, movie.id), matched, rating),
+    match: MATCH_BY_TIER[tier],
+    opinion: fill(pick(PHRASES[tier], movie.id), slots),
   };
 }
 
