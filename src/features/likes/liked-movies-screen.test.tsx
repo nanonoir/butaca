@@ -11,13 +11,19 @@ import {
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { LikedMovieItem } from "@/contracts/likes";
+import type { PaginationMeta } from "@/contracts/common";
+import type { LikedMovieItem, LikesWatchedFilter } from "@/contracts/likes";
 
 import { LikedMoviesScreen } from "./liked-movies-screen";
 
-const { fetchMovieDetail, fetchMovieReviews } = vi.hoisted(() => ({
+const { fetchMovieDetail, fetchMovieReviews, push } = vi.hoisted(() => ({
   fetchMovieDetail: vi.fn(),
   fetchMovieReviews: vi.fn(),
+  push: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push, replace: vi.fn(), refresh: vi.fn() }),
 }));
 
 vi.mock("@/features/movie-detail/movie-detail-client", () => ({
@@ -101,11 +107,36 @@ function createLikedMovie(
   };
 }
 
+function createMeta(overrides: Partial<PaginationMeta> = {}): PaginationMeta {
+  return {
+    page: 1,
+    pageSize: 20,
+    totalPages: 1,
+    totalResults: 3,
+    hasNextPage: false,
+    ...overrides,
+  };
+}
+
 const ITEMS = [
   createLikedMovie(1, "Interstellar", "2026-08-02T12:00:00Z"),
   createLikedMovie(2, "Parásitos", null),
   createLikedMovie(3, "Her", null),
 ];
+
+function renderScreen(options?: {
+  items?: LikedMovieItem[];
+  meta?: Partial<PaginationMeta>;
+  watched?: LikesWatchedFilter;
+}) {
+  return render(
+    <LikedMoviesScreen
+      items={options?.items ?? ITEMS}
+      meta={createMeta(options?.meta)}
+      watched={options?.watched ?? "all"}
+    />,
+  );
+}
 
 async function openDetail(item: LikedMovieItem) {
   stubMovieDetail(item);
@@ -122,7 +153,7 @@ const [INTERSTELLAR, PARASITOS] = ITEMS;
 
 describe("LikedMoviesScreen", () => {
   it("renders the complete collection with its watched presentation", () => {
-    render(<LikedMoviesScreen items={ITEMS} />);
+    renderScreen();
 
     expect(
       screen.getByRole("heading", { level: 1, name: "Mis películas" }),
@@ -140,38 +171,8 @@ describe("LikedMoviesScreen", () => {
     );
   });
 
-  it("shows only watched movies and updates the singular count", () => {
-    render(<LikedMoviesScreen items={ITEMS} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Vistas" }));
-
-    expect(screen.getByText("1 película")).toBeTruthy();
-    expect(screen.getByText("Interstellar")).toBeTruthy();
-    expect(screen.queryByText("Parásitos")).toBeNull();
-    expect(screen.queryByText("Her")).toBeNull();
-    expect(screen.getByRole("button", { name: "Vistas" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  });
-
-  it("shows only unwatched movies and updates the plural count", () => {
-    render(<LikedMoviesScreen items={ITEMS} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "No vistas" }));
-
-    expect(screen.getByText("2 películas")).toBeTruthy();
-    expect(screen.queryByText("Interstellar")).toBeNull();
-    expect(screen.getByText("Parásitos")).toBeTruthy();
-    expect(screen.getByText("Her")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "No vistas" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  });
-
   it("opens the movie detail when selecting a liked movie", async () => {
-    render(<LikedMoviesScreen items={ITEMS} />);
+    renderScreen();
 
     expect(await openDetail(INTERSTELLAR!)).toBeInTheDocument();
     expect(
@@ -194,7 +195,7 @@ describe("LikedMoviesScreen", () => {
   });
 
   it("removes a movie from Liked after changing its reaction", async () => {
-    render(<LikedMoviesScreen items={ITEMS} />);
+    renderScreen();
 
     await openDetail(INTERSTELLAR!);
     fireEvent.click(
@@ -215,8 +216,8 @@ describe("LikedMoviesScreen", () => {
     expect(screen.getByText("2 películas")).toBeInTheDocument();
   });
 
-  it("updates watched filters and badges after closing the detail", async () => {
-    render(<LikedMoviesScreen items={ITEMS} />);
+  it("shows the watched badge after marking a movie from the detail", async () => {
+    renderScreen();
 
     await openDetail(PARASITOS!);
     fireEvent.click(screen.getByRole("button", { name: "Marcar vista" }));
@@ -227,9 +228,6 @@ describe("LikedMoviesScreen", () => {
         screen.queryByRole("dialog", { name: "Detalle de Parásitos" }),
       ).not.toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Vistas" }));
-
-    expect(screen.getByText("2 películas")).toBeInTheDocument();
     const parasitosAction = screen.getByRole("button", {
       name: "Ver detalle de Parásitos",
     });
@@ -239,7 +237,7 @@ describe("LikedMoviesScreen", () => {
   });
 
   it("keeps the hover treatment inside the poster boundary", () => {
-    render(<LikedMoviesScreen items={ITEMS} />);
+    renderScreen();
 
     const action = screen.getByRole("button", {
       name: "Ver detalle de Interstellar",
@@ -259,6 +257,125 @@ describe("LikedMoviesScreen", () => {
   });
 });
 
+describe("LikedMoviesScreen paging", () => {
+  it("reports the whole library instead of the movies on screen", () => {
+    renderScreen({ meta: { page: 2, totalPages: 3, totalResults: 47 } });
+
+    expect(
+      screen.getByText("47 películas · Página 2 de 3"),
+    ).toBeInTheDocument();
+  });
+
+  it("walks to the next page and back to the previous one", () => {
+    const { rerender } = renderScreen({
+      meta: { page: 2, totalPages: 3, totalResults: 47, hasNextPage: true },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }));
+    expect(push).toHaveBeenLastCalledWith("/liked?page=3");
+
+    rerender(
+      <LikedMoviesScreen
+        items={ITEMS}
+        meta={createMeta({ page: 3, totalPages: 3, totalResults: 47 })}
+        watched="all"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Página anterior" }));
+
+    expect(push).toHaveBeenLastCalledWith("/liked?page=2");
+  });
+
+  /** The list used to be copied into state on mount, so a second page arrived
+   * as a new prop and was never shown. */
+  it("shows the movies of the page it receives, not the ones it mounted with", () => {
+    const { rerender } = renderScreen({
+      meta: { page: 1, totalPages: 2, totalResults: 25, hasNextPage: true },
+    });
+
+    rerender(
+      <LikedMoviesScreen
+        items={[createLikedMovie(21, "Dune", null)]}
+        meta={createMeta({ page: 2, totalPages: 2, totalResults: 25 })}
+        watched="all"
+      />,
+    );
+
+    expect(screen.getByText("Dune")).toBeInTheDocument();
+    expect(screen.queryByText("Interstellar")).not.toBeInTheDocument();
+  });
+
+  it("keeps the first page out of the URL so /liked stays clean", () => {
+    renderScreen({
+      meta: { page: 2, totalPages: 2, totalResults: 25 },
+      watched: "watched",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Página 1" }));
+
+    expect(push).toHaveBeenLastCalledWith("/liked?watched=watched");
+  });
+
+  it("hides the controls while the whole library fits on one page", () => {
+    renderScreen();
+
+    expect(
+      screen.queryByRole("navigation", { name: "Paginación de resultados" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("LikedMoviesScreen filters", () => {
+  /** Filtering in the browser only ever saw the twenty movies the page had
+   * already loaded, so the filter asks the database now. */
+  it("asks the server for the filtered library from its first page", () => {
+    renderScreen({ meta: { page: 3, totalPages: 4, totalResults: 70 } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Vistas" }));
+
+    expect(push).toHaveBeenLastCalledWith("/liked?watched=watched");
+  });
+
+  it("marks the filter the server actually applied", () => {
+    renderScreen({ watched: "unwatched" });
+
+    expect(screen.getByRole("button", { name: "No vistas" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Todas" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("carries the active filter into the next page", () => {
+    renderScreen({
+      meta: { page: 1, totalPages: 2, totalResults: 25, hasNextPage: true },
+      watched: "unwatched",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }));
+
+    expect(push).toHaveBeenLastCalledWith("/liked?watched=unwatched&page=2");
+  });
+
+  it("explains an empty library in the terms of the active filter", () => {
+    renderScreen({
+      items: [],
+      meta: { totalPages: 0, totalResults: 0 },
+      watched: "watched",
+    });
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Todavía no marcaste ninguna como vista",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+  });
+});
+
 describe("LikedMoviesScreen posters", () => {
   it("paints the real artwork instead of a placeholder", () => {
     const withPoster = {
@@ -266,7 +383,7 @@ describe("LikedMoviesScreen posters", () => {
       movie: { ...INTERSTELLAR!.movie, posterPath: "/poster.jpg" },
     };
 
-    render(<LikedMoviesScreen items={[withPoster]} />);
+    renderScreen({ items: [withPoster] });
 
     const poster = screen.getByRole("img", {
       name: `Póster de ${withPoster.movie.title}`,
@@ -283,7 +400,7 @@ describe("LikedMoviesScreen posters", () => {
       movie: { ...INTERSTELLAR!.movie, posterPath: null, backdropPath: null },
     };
 
-    render(<LikedMoviesScreen items={[withoutPoster]} />);
+    renderScreen({ items: [withoutPoster] });
 
     const poster = screen.getByRole("img", {
       name: `Póster de ${withoutPoster.movie.title}`,
