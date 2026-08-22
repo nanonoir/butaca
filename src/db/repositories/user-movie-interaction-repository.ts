@@ -228,4 +228,20 @@ export class UserMovieInteractionRepository {
 
     return { liked: totals?.liked ?? 0, watched: totals?.watched ?? 0 };
   }
+
+  /** Every movie the viewer already reacted to. Discover excludes them, so it
+   * needs the whole set rather than a page of it. */
+  async findReactedMovieIds(userId: string): Promise<number[]> {
+    const rows = await this.db
+      .select({ movieId: userMovieInteractions.movieId })
+      .from(userMovieInteractions)
+      .where(
+        and(
+          eq(userMovieInteractions.userId, userId),
+          isNotNull(userMovieInteractions.reaction),
+        ),
+      );
+
+    return rows.map((row) => row.movieId);
+  }
 }
