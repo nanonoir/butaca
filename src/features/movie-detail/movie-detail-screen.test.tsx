@@ -167,7 +167,58 @@ describe("MovieDetailScreen similar movies", () => {
     ).toBeInTheDocument();
   });
 
-  it("loads only explicit numbered pages while preserving valid detail content", async () => {
+  it("shows three similar movies at a time and walks the window without refetching", async () => {
+    const movies = Array.from({ length: 6 }, (_unused, index) => ({
+      ...SIMILAR_MOVIE,
+      id: 9_000 + index,
+      title: `Similar ${index + 1}`,
+    }));
+    clientMocks.fetchSimilarMovies.mockResolvedValue({
+      data: movies,
+      meta: {
+        page: 1,
+        pageSize: 20 as const,
+        totalPages: 1,
+        totalResults: 6,
+        hasNextPage: false,
+      },
+    });
+    render(
+      <MovieDetailScreen
+        onClose={vi.fn()}
+        pageData={INITIAL.pageData}
+        publicReviews={INITIAL.publicReviews}
+      />,
+    );
+
+    const section = await screen.findByRole("region", {
+      name: "Películas similares",
+    });
+
+    expect(within(section).getAllByRole("listitem")).toHaveLength(3);
+    expect(
+      within(section).getByRole("button", { name: "Ver detalle de Similar 1" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(section).getByRole("button", { name: "Continuar" }));
+
+    await waitFor(() => {
+      expect(
+        within(section).getByRole("button", {
+          name: "Ver detalle de Similar 4",
+        }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      within(section).queryByRole("button", {
+        name: "Ver detalle de Similar 1",
+      }),
+    ).not.toBeInTheDocument();
+    // The second window came from the movies already loaded.
+    expect(clientMocks.fetchSimilarMovies).toHaveBeenCalledOnce();
+  });
+
+  it("pulls the next provider page once the loaded similar movies run out", async () => {
     clientMocks.fetchSimilarMovies.mockResolvedValue(
       createSimilarResponse(INITIAL.pageData.movie.id),
     );
@@ -179,8 +230,8 @@ describe("MovieDetailScreen similar movies", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: "Página 2" });
-    fireEvent.click(screen.getByRole("button", { name: "Página 2" }));
+    await screen.findByRole("button", { name: "Continuar" });
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
 
     await waitFor(() => {
       expect(clientMocks.fetchSimilarMovies).toHaveBeenLastCalledWith(

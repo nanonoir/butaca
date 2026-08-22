@@ -1,9 +1,10 @@
 import "server-only";
 
-import type {
-  MovieDetail,
-  MovieSummary,
-  RecommendationFilters,
+import {
+  DISCOVER_BATCH_SIZE,
+  type MovieDetail,
+  type MovieSummary,
+  type RecommendationFilters,
 } from "@/contracts";
 
 import type {
@@ -15,8 +16,6 @@ import type { TmdbAdapter, TmdbDiscoverOptions } from "../../integrations/tmdb";
 
 import { excludeMovies, rankMovies } from "./ranking";
 import { buildTasteProfile, type TasteProfile } from "./taste-profile";
-
-export const DISCOVER_BATCH_SIZE = 20;
 
 /** How many of the profile's strongest genres get their own candidate query.
  * TMDB treats a comma separated `with_genres` as AND, so asking for five

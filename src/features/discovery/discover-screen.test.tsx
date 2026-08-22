@@ -23,7 +23,7 @@ import { resolveSwipeIntent } from "./resolve-swipe-intent";
 vi.mock("@/features/recommendations/discover-client", () => ({
   fetchDiscoverBatch: vi.fn().mockResolvedValue({
     movies: [],
-    batchSize: 20,
+    batchSize: 10,
     returned: 0,
   }),
 }));
@@ -821,7 +821,7 @@ describe("DiscoverScreen refill", () => {
   it("appends the new batch so swiping can continue", async () => {
     vi.mocked(fetchDiscoverBatch).mockResolvedValueOnce({
       movies: [extraMovie(9_001)],
-      batchSize: 20,
+      batchSize: 10,
       returned: 1,
     });
     const movies = DISCOVER_MOVIES_FIXTURE.data.movies;
@@ -846,7 +846,7 @@ describe("DiscoverScreen refill", () => {
   it("stops asking once the recommender has nothing left", async () => {
     vi.mocked(fetchDiscoverBatch).mockResolvedValue({
       movies: [],
-      batchSize: 20,
+      batchSize: 10,
       returned: 0,
     });
     const movies = DISCOVER_MOVIES_FIXTURE.data.movies;

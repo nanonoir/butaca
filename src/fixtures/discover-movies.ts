@@ -74,7 +74,7 @@ export const DISCOVER_MOVIES_FIXTURE = DiscoverResponseSchema.parse({
         tmdbVoteCount: 17100,
       },
     ],
-    batchSize: 20,
+    batchSize: 10,
     returned: 5,
   },
 });

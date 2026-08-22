@@ -100,7 +100,7 @@ describe("getDiscoverBatch", () => {
       deps.catalog,
     ).getDiscoverBatch(USER_ID);
 
-    expect(batch.batchSize).toBe(20);
+    expect(batch.batchSize).toBe(10);
     expect(batch.returned).toBe(batch.movies.length);
     expect(DiscoverResponseSchema.safeParse({ data: batch }).success).toBe(
       true,
@@ -123,7 +123,7 @@ describe("getDiscoverBatch", () => {
     expect(batch.movies.map((movie) => movie.id)).toEqual([2]);
   });
 
-  it("caps the batch at twenty", async () => {
+  it("caps the batch at the declared size", async () => {
     const deps = createDependencies();
     deps.catalog.discoverMovies.mockResolvedValue(
       paginated(
@@ -137,8 +137,8 @@ describe("getDiscoverBatch", () => {
       deps.catalog,
     ).getDiscoverBatch(USER_ID);
 
-    expect(batch.movies).toHaveLength(20);
-    expect(batch.returned).toBe(20);
+    expect(batch.movies).toHaveLength(10);
+    expect(batch.returned).toBe(10);
   });
 
   it("issues one query per preferred genre because TMDB ANDs them together", async () => {

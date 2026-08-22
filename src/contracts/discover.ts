@@ -9,11 +9,15 @@ import {
 } from "./common";
 import { MovieSummarySchema } from "./movies";
 
+/** Size of a Discover deck refill. Declared here so the schema, the recommender
+ * and the client cannot drift apart. */
+export const DISCOVER_BATCH_SIZE = 10;
+
 export const DiscoverResponseSchema = apiDataResponseSchema(
   z.object({
-    movies: z.array(MovieSummarySchema).max(20),
-    batchSize: z.literal(20),
-    returned: z.number().int().min(0).max(20),
+    movies: z.array(MovieSummarySchema).max(DISCOVER_BATCH_SIZE),
+    batchSize: z.literal(DISCOVER_BATCH_SIZE),
+    returned: z.number().int().min(0).max(DISCOVER_BATCH_SIZE),
   }),
 );
 
@@ -47,7 +51,12 @@ export const RecommendationFiltersSchema = z
 
 export const RecommendationRequestSchema = z.object({
   filters: RecommendationFiltersSchema.default({}),
-  limit: z.number().int().min(1).max(20).default(20),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(DISCOVER_BATCH_SIZE)
+    .default(DISCOVER_BATCH_SIZE),
   excludeMovieIds: z.array(TmdbMovieIdSchema).default([]),
 });
 
