@@ -142,6 +142,15 @@ export function SimilarMoviesSection({
   );
   const hasMoreLoaded = windowStart + SIMILAR_WINDOW_SIZE < loadedMovies.length;
   const canContinue = hasMoreLoaded || (results?.meta.hasNextPage ?? false);
+  const canGoBack = windowStart > 0;
+  /** Counted in windows of three, not in provider pages: it is the number the
+   * viewer is actually stepping through. No total is shown because TMDB's
+   * count for similar movies is not a meaningful one. */
+  const windowPage = Math.floor(windowStart / SIMILAR_WINDOW_SIZE) + 1;
+
+  function showPreviousSimilarMovies() {
+    setWindowStart((start) => Math.max(0, start - SIMILAR_WINDOW_SIZE));
+  }
 
   /** Walks the window forward, pulling the next provider page only once the
    * loaded ones are exhausted. */
@@ -213,14 +222,26 @@ export function SimilarMoviesSection({
         </ul>
       ) : null}
 
-      {results && canContinue ? (
-        <Button
-          disabled={isLoading || isNavigating}
-          onClick={showNextSimilarMovies}
-          variant={BUTTON_VARIANT.OUTLINE}
-        >
-          Continuar
-        </Button>
+      {results && loadedMovies.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            disabled={!canGoBack || isLoading || isNavigating}
+            onClick={showPreviousSimilarMovies}
+            variant={BUTTON_VARIANT.OUTLINE}
+          >
+            Atrás
+          </Button>
+          <p aria-live="polite" className="text-sm text-muted">
+            Página {windowPage}
+          </p>
+          <Button
+            disabled={!canContinue || isLoading || isNavigating}
+            onClick={showNextSimilarMovies}
+            variant={BUTTON_VARIANT.OUTLINE}
+          >
+            Continuar
+          </Button>
+        </div>
       ) : null}
     </section>
   );

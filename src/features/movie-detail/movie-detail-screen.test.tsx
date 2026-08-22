@@ -218,6 +218,62 @@ describe("MovieDetailScreen similar movies", () => {
     expect(clientMocks.fetchSimilarMovies).toHaveBeenCalledOnce();
   });
 
+  it("walks the similar movies window back and reports the page", async () => {
+    const movies = Array.from({ length: 6 }, (_unused, index) => ({
+      ...SIMILAR_MOVIE,
+      id: 9_000 + index,
+      title: `Similar ${index + 1}`,
+    }));
+    clientMocks.fetchSimilarMovies.mockResolvedValue({
+      data: movies,
+      meta: {
+        page: 1,
+        pageSize: 20 as const,
+        totalPages: 1,
+        totalResults: 6,
+        hasNextPage: false,
+      },
+    });
+    render(
+      <MovieDetailScreen
+        onClose={vi.fn()}
+        pageData={INITIAL.pageData}
+        publicReviews={INITIAL.publicReviews}
+      />,
+    );
+
+    const section = await screen.findByRole("region", {
+      name: "Películas similares",
+    });
+
+    expect(within(section).getByText("Página 1")).toBeInTheDocument();
+    expect(
+      within(section).getByRole("button", { name: "Atrás" }),
+    ).toBeDisabled();
+
+    fireEvent.click(within(section).getByRole("button", { name: "Continuar" }));
+
+    await waitFor(() => {
+      expect(within(section).getByText("Página 2")).toBeInTheDocument();
+    });
+    expect(
+      within(section).getByRole("button", { name: "Atrás" }),
+    ).toBeEnabled();
+    // Nothing left after the second window, so continuing is offered no more.
+    expect(
+      within(section).getByRole("button", { name: "Continuar" }),
+    ).toBeDisabled();
+
+    fireEvent.click(within(section).getByRole("button", { name: "Atrás" }));
+
+    await waitFor(() => {
+      expect(within(section).getByText("Página 1")).toBeInTheDocument();
+    });
+    expect(
+      within(section).getByRole("button", { name: "Ver detalle de Similar 1" }),
+    ).toBeInTheDocument();
+  });
+
   it("pulls the next provider page once the loaded similar movies run out", async () => {
     clientMocks.fetchSimilarMovies.mockResolvedValue(
       createSimilarResponse(INITIAL.pageData.movie.id),
