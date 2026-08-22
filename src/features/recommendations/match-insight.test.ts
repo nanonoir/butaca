@@ -12,9 +12,9 @@ const GENRES: Genre[] = [
   { id: 35, name: "Comedia" },
 ];
 
-const BATCH_SIZE = 9;
+const BATCH_SIZE = 10;
 const TOP_POSITION = 0;
-const LOWER_POSITION = 5;
+const LOWER_POSITION = 8;
 
 function createMovie(genreIds: number[]): MovieSummary {
   return {
@@ -84,12 +84,38 @@ describe("buildMatchInsight", () => {
     );
   });
 
-  it("treats a rejected genre as doubtful wherever it ranked", () => {
+  it("treats a rejected genre as doubtful when it outweighs the match", () => {
     const insight = insightAt([878, 27], { 878: 3, 27: -3 }, TOP_POSITION);
 
     expect(insight.tier).toBe(MATCH_TIER.LOW);
     expect(insight.clashingGenres).toEqual(["Terror"]);
     expect(insight.matchedGenres).toEqual(["Ciencia ficción"]);
+  });
+
+  /** Vetoing on any clash made eight cards in ten doubtful against a real
+   * profile, the movie the ranking had put first among them. */
+  it("does not let a secondary dislike overrule two preferred genres", () => {
+    const insight = insightAt(
+      [878, 27, 35],
+      { 878: 3, 27: 3, 35: -1.5 },
+      TOP_POSITION,
+    );
+
+    expect(insight.tier).toBe(MATCH_TIER.HIGH);
+    expect(insight.matchedGenres).toEqual(["Ciencia ficción", "Terror"]);
+    expect(insight.clashingGenres).toEqual(["Comedia"]);
+  });
+
+  it("still cools a mild match carrying a firm dislike", () => {
+    expect(
+      insightAt([878, 35], { 878: 1, 35: -1.5 }, TOP_POSITION).tier,
+    ).toBe(MATCH_TIER.LOW);
+  });
+
+  it("keeps a clash off the top when it exactly cancels the match", () => {
+    expect(
+      insightAt([878, 35], { 878: 1.5, 35: -1.5 }, TOP_POSITION).tier,
+    ).toBe(MATCH_TIER.LOW);
   });
 
   it("calls a movie with nothing in common a low match", () => {
@@ -105,12 +131,14 @@ describe("buildMatchInsight", () => {
     expect(insight.matchedGenres).toEqual(["Ciencia ficción"]);
   });
 
-  it("spreads the tiers across a whole batch instead of one face", () => {
+  /** These are ranked, already-filtered recommendations, so most of a batch
+   * ought to read as a good pick rather than as a shrug. */
+  it("calls six of a ten card batch a strong match and leaves four behind", () => {
     const tiers = Array.from({ length: BATCH_SIZE }, (_unused, position) =>
       insightAt([878, 18], { 878: 3, 18: 2 }, position),
     ).map(({ tier }) => tier);
 
-    expect(new Set(tiers).size).toBeGreaterThan(1);
-    expect(tiers.filter((tier) => tier === MATCH_TIER.HIGH)).toHaveLength(3);
+    expect(tiers.filter((tier) => tier === MATCH_TIER.HIGH)).toHaveLength(6);
+    expect(tiers.filter((tier) => tier === MATCH_TIER.MEDIUM)).toHaveLength(4);
   });
 });

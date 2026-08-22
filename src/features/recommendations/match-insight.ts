@@ -12,11 +12,26 @@ export const MATCH_TIER = {
  * generated from the viewer's own genres, so almost every one of them matches
  * two or more: counting matches alone made every card a high match and left
  * Buti with a single expression. Position in the ranking is what actually
- * separates them. */
-const HIGH_TIER_SHARE = 1 / 3;
+ * separates them.
+ *
+ * Six in ten rather than a third. These are recommendations, already ranked and
+ * already filtered to the viewer's taste, so a deck where most cards read as
+ * lukewarm undersells work the recommender did. The tail stays wide enough that
+ * the top still means something. */
+const HIGH_TIER_SHARE = 3 / 5;
 
 function weightOf(profile: TasteProfile, genreId: number): number {
   return profile.genreWeights[genreId] ?? 0;
+}
+
+function sumWeights(
+  scored: readonly { weight: number }[],
+  keep: (weight: number) => boolean,
+): number {
+  return scored.reduce(
+    (total, { weight }) => (keep(weight) ? total + weight : total),
+    0,
+  );
 }
 
 function nameOf(genres: Genre[], genreId: number): string | null {
@@ -47,13 +62,23 @@ export function buildMatchInsight(
     .map(({ genreId }) => nameOf(genres, genreId))
     .filter((name): name is string => name !== null);
 
-  // A clash outranks a match: a movie carrying a genre the viewer rejected is
-  // a doubtful pick even when something else about it lines up.
-  if (clashingGenres.length > 0) {
+  if (matchedGenres.length === 0) {
     return { tier: MATCH_TIER.LOW, matchedGenres, clashingGenres };
   }
 
-  if (matchedGenres.length === 0) {
+  // A clash used to veto outright, which read as a verdict the ranking never
+  // reached. Against a real profile that rejects one popular genre it made
+  // eight cards in ten doubtful, including the movie the ranking had put
+  // first: two genres the viewer prefers, one they merely dislike.
+  //
+  // Weighed instead of vetoed. A rejection still sinks a movie when it carries
+  // more of it than of anything the viewer likes -- which is the case the
+  // veto was reaching for -- and a secondary genre no longer overrules two
+  // matches.
+  const matchedWeight = sumWeights(scored, (weight) => weight > 0);
+  const clashWeight = Math.abs(sumWeights(scored, (weight) => weight < 0));
+
+  if (clashWeight >= matchedWeight) {
     return { tier: MATCH_TIER.LOW, matchedGenres, clashingGenres };
   }
 

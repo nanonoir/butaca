@@ -44,8 +44,12 @@ export async function proxy(request: NextRequest) {
   return redirectResponse;
 }
 
+/** `manifest.webmanifest` is named here for the same reason `favicon.ico` is:
+ * the guard would answer a browser asking for it with a redirect to the sign-in
+ * page, and a manifest has to be readable before anyone signs in. The icons it
+ * points at are already covered by the image extensions. */
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
