@@ -19,7 +19,8 @@ const PUBLIC_PATHS = new Set([
   "/confirm",
 ]);
 
-/** Design gallery: no user data, so it stays reachable in either state. */
+/** Design gallery. It carries no user data and only exists outside production,
+ * where the page itself answers 404, so it needs no session while developing. */
 const PUBLIC_PREFIXES = ["/ui-foundation"];
 
 /** Signing in again makes no sense while a session is live. `/reset-password`

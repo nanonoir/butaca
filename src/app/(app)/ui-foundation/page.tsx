@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+
 import { PageHeader } from "@/components/shared/page-header";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { Avatar } from "@/components/ui/avatar";
@@ -58,6 +60,13 @@ function SectionHeading({ id, children }: { id: string; children: string }) {
 }
 
 export default function UIFoundationPage() {
+  // The gallery is a design reference for building the product, not part of
+  // it. Shipping it would put the component library on a public URL, so it
+  // exists while developing and answers 404 once built.
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 py-4 md:py-8">
       <PageHeader
