@@ -164,7 +164,9 @@ describe("LikedMoviesScreen", () => {
     expect(screen.getByText("Her")).toBeTruthy();
     expect(screen.getByText("Vista", { exact: true })).toBeTruthy();
     expect(screen.getByRole("list").classList).toContain("xl:grid-cols-5");
-    expect(screen.getByRole("list").classList).toContain("2xl:grid-cols-6");
+    // The library caps at five across like every other grid in the app: at six
+    // a full page of twenty left a ragged row of two.
+    expect(screen.getByRole("list").className).not.toMatch(/2xl:grid-cols/);
     expect(screen.getByRole("button", { name: "Todas" })).toHaveAttribute(
       "aria-pressed",
       "true",
