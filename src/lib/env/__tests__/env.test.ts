@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { parseAiEnv } from "../ai";
 import { parseMigrationEnv } from "../migration";
 import { parseServerEnv } from "../server";
 
@@ -9,6 +10,7 @@ const valid = {
   DATABASE_URL: "postgresql://runtime.example/db",
   DATABASE_MIGRATION_URL: "postgresql://migration.example/db",
   TMDB_ACCESS_TOKEN: "tmdb-test-token",
+  GOOGLE_GENERATIVE_AI_API_KEY: "google-test-key",
 };
 
 describe("environment parsers", () => {
@@ -42,5 +44,32 @@ describe("environment parsers", () => {
     expect(parseMigrationEnv(valid)).toEqual({
       DATABASE_MIGRATION_URL: valid.DATABASE_MIGRATION_URL,
     });
+  });
+});
+
+describe("AI environment parser", () => {
+  it("returns only the assistant credential", () => {
+    expect(parseAiEnv(valid)).toEqual({
+      GOOGLE_GENERATIVE_AI_API_KEY: valid.GOOGLE_GENERATIVE_AI_API_KEY,
+    });
+  });
+
+  it("reports the missing key without including another secret value", () => {
+    const missingKey: Partial<typeof valid> = { ...valid };
+    delete missingKey.GOOGLE_GENERATIVE_AI_API_KEY;
+
+    expect(() => parseAiEnv(missingKey)).toThrow(
+      "GOOGLE_GENERATIVE_AI_API_KEY",
+    );
+    expect(() => parseAiEnv(missingKey)).not.toThrow("tmdb-test-token");
+  });
+
+  it("stays out of the server environment so the app runs without it", () => {
+    const withoutAiKey: Partial<typeof valid> = { ...valid };
+    delete withoutAiKey.GOOGLE_GENERATIVE_AI_API_KEY;
+
+    expect(parseServerEnv(withoutAiKey)).not.toHaveProperty(
+      "GOOGLE_GENERATIVE_AI_API_KEY",
+    );
   });
 });

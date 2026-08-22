@@ -1,6 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+
+import {
+  toChatTurns,
+  toContractMessages,
+  type ChatTurn,
+  type ChatUiMessage,
+} from "./chat-turns";
 import { AnimatePresence } from "motion/react";
 
 import {
@@ -12,9 +21,11 @@ import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { ChatMessage } from "@/contracts/chat";
 import type { MovieSummary } from "@/contracts/movies";
-import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
+import type { MovieDetailPageData } from "@/contracts/movie-detail";
+import type { Review } from "@/contracts/reviews";
+import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
+import { fetchMovieReviews } from "@/features/reviews/review-client";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
 
 const SUGGESTED_PROMPTS = [
@@ -26,19 +37,7 @@ const SUGGESTED_PROMPTS = [
   "Una película poco conocida",
 ] as const;
 
-const ASSISTANT_REPLY =
-  "Tomé tu pedido y lo crucé con tus gustos y tu biblioteca. Estas opciones tienen una identidad fuerte y son un buen punto de partida:";
 const MESSAGE_SCROLL_MARGIN = 24;
-
-interface MovieAssistantScreenProps {
-  recommendations: MovieSummary[];
-}
-
-interface AssistantTurn {
-  id: string;
-  user: ChatMessage;
-  assistant?: ChatMessage;
-}
 
 interface IconProps {
   className?: string;
@@ -166,11 +165,9 @@ function RecommendationCard({
 
 function Conversation({
   turns,
-  recommendations,
   onMovieSelect,
 }: {
-  turns: AssistantTurn[];
-  recommendations: MovieSummary[];
+  turns: ChatTurn[];
   onMovieSelect: (movie: MovieSummary) => void;
 }) {
   return (
@@ -208,19 +205,24 @@ function Conversation({
                       {turn.assistant.content}
                     </p>
 
-                    <ul
-                      aria-label="Recomendaciones"
-                      className="mt-7 grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 sm:gap-x-5"
-                    >
-                      {recommendations.map((movie) => (
-                        <li className="min-w-0" key={`${turn.id}-${movie.id}`}>
-                          <RecommendationCard
-                            movie={movie}
-                            onSelect={() => onMovieSelect(movie)}
-                          />
-                        </li>
-                      ))}
-                    </ul>
+                    {turn.movies.length > 0 ? (
+                      <ul
+                        aria-label="Recomendaciones"
+                        className="mt-7 grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 sm:gap-x-5"
+                      >
+                        {turn.movies.map((movie) => (
+                          <li
+                            className="min-w-0"
+                            key={`${turn.id}-${movie.id}`}
+                          >
+                            <RecommendationCard
+                              movie={movie}
+                              onSelect={() => onMovieSelect(movie)}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </>
                 ) : (
                   <p className="mt-2 text-sm text-muted" role="status">
@@ -281,31 +283,50 @@ function AssistantComposer({
   );
 }
 
-export function MovieAssistantScreen({
-  recommendations,
-}: MovieAssistantScreenProps) {
+export function MovieAssistantScreen() {
   const [draft, setDraft] = useState("");
-  const [turns, setTurns] = useState<AssistantTurn[]>([]);
-  const [selectedMovie, setSelectedMovie] = useState<MovieSummary | null>(null);
-  const turnSequence = useRef(0);
-  const pendingReplies = useRef<Set<number>>(new Set());
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
+  const { messages, sendMessage, error } = useChat({
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+      // The route validates the shared request contract, so the parts the SDK
+      // keeps are flattened before they travel.
+      prepareSendMessagesRequest: ({ messages: uiMessages }) => ({
+        body: { messages: toContractMessages(uiMessages as ChatUiMessage[]) },
+      }),
+    }),
+  });
+  const turns = toChatTurns(messages as ChatUiMessage[]);
   const messageCount = turns.reduce(
     (count, turn) => count + 1 + (turn.assistant ? 1 : 0),
     0,
   );
-  const detailExperience = selectedMovie
-    ? getMovieDetailExperienceFixture(selectedMovie)
-    : null;
+  const [detailExperience, setDetailExperience] = useState<{
+    pageData: MovieDetailPageData;
+    publicReviews: Review[];
+  } | null>(null);
 
-  useEffect(() => {
-    const replyTimers = pendingReplies.current;
+  /** Loaded on demand: the tool hands back a summary, while the detail and its
+   * community reviews are their own endpoints. */
+  async function openMovieDetail(movie: MovieSummary): Promise<void> {
+    setDetailExperience(null);
 
-    return () => {
-      replyTimers.forEach((timer) => window.clearTimeout(timer));
-      replyTimers.clear();
-    };
-  }, []);
+    try {
+      const [pageData, reviews] = await Promise.all([
+        fetchMovieDetail(movie.id),
+        fetchMovieReviews(movie.id),
+      ]);
+
+      setDetailExperience({ pageData, publicReviews: reviews.data });
+    } catch {
+      // The overlay simply does not open; the conversation stays usable.
+      setDetailExperience(null);
+    }
+  }
+
+  function closeMovieDetail(): void {
+    setDetailExperience(null);
+  }
 
   useEffect(() => {
     if (messageCount === 0) {
@@ -348,42 +369,8 @@ export function MovieAssistantScreen({
       return;
     }
 
-    turnSequence.current += 1;
-    const turnNumber = turnSequence.current;
-    const turnId = `turn-${turnNumber}`;
-
-    setTurns((currentTurns) => [
-      ...currentTurns,
-      {
-        id: turnId,
-        user: {
-          id: `user-${turnNumber}`,
-          role: "user",
-          content,
-        },
-      },
-    ]);
     setDraft("");
-
-    const replyTimer = window.setTimeout(() => {
-      setTurns((currentTurns) =>
-        currentTurns.map((turn) =>
-          turn.id === turnId
-            ? {
-                ...turn,
-                assistant: {
-                  id: `assistant-${turnNumber}`,
-                  role: "assistant",
-                  content: ASSISTANT_REPLY,
-                },
-              }
-            : turn,
-        ),
-      );
-      pendingReplies.current.delete(replyTimer);
-    }, 650);
-
-    pendingReplies.current.add(replyTimer);
+    void sendMessage({ text: content });
   }
 
   return (
@@ -405,11 +392,19 @@ export function MovieAssistantScreen({
               <InitialPromptState onPromptSelect={submitPrompt} />
             ) : (
               <Conversation
-                onMovieSelect={setSelectedMovie}
-                recommendations={recommendations}
+                onMovieSelect={(movie) => void openMovieDetail(movie)}
                 turns={turns}
               />
             )}
+
+            {error ? (
+              <p
+                className="mt-8 rounded-lg border border-border bg-surface-muted p-4 text-sm text-foreground"
+                role="alert"
+              >
+                Buti no pudo responder. Probá de nuevo en un momento.
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -424,7 +419,7 @@ export function MovieAssistantScreen({
         {detailExperience ? (
           <MovieDetailScreen
             key={detailExperience.pageData.movie.id}
-            onClose={() => setSelectedMovie(null)}
+            onClose={closeMovieDetail}
             pageData={detailExperience.pageData}
             publicReviews={detailExperience.publicReviews}
           />
