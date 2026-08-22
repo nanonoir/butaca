@@ -4,6 +4,7 @@ import { resolveRouteGuard } from "./route-guard";
 
 const GUEST = false;
 const AUTHENTICATED = true;
+const COMPLETED_AT = new Date("2026-08-21T18:00:00.000Z");
 
 describe("resolveRouteGuard for a guest", () => {
   it("sends every product route to the sign-in page", () => {
@@ -42,9 +43,9 @@ describe("resolveRouteGuard for a guest", () => {
 });
 
 describe("resolveRouteGuard for an authenticated user", () => {
-  it("keeps every product route reachable", () => {
+  it("keeps every product route reachable after onboarding", () => {
     for (const pathname of ["/", "/liked", "/ai", "/profile", "/about"]) {
-      expect(resolveRouteGuard(pathname, AUTHENTICATED)).toEqual({
+      expect(resolveRouteGuard(pathname, AUTHENTICATED, COMPLETED_AT)).toEqual({
         type: "continue",
       });
     }
@@ -52,7 +53,7 @@ describe("resolveRouteGuard for an authenticated user", () => {
 
   it("redirects away from the routes that only make sense as a guest", () => {
     for (const pathname of ["/login", "/register", "/forgot-password"]) {
-      expect(resolveRouteGuard(pathname, AUTHENTICATED)).toEqual({
+        expect(resolveRouteGuard(pathname, AUTHENTICATED, COMPLETED_AT)).toEqual({
         type: "redirect",
         to: "/",
       });
@@ -62,6 +63,20 @@ describe("resolveRouteGuard for an authenticated user", () => {
   it("keeps reset-password reachable because the recovery link authenticates", () => {
     expect(resolveRouteGuard("/reset-password", AUTHENTICATED)).toEqual({
       type: "continue",
+    });
+  });
+
+  it("gates incomplete users to onboarding without looping", () => {
+    expect(resolveRouteGuard("/", AUTHENTICATED, null)).toEqual({
+      type: "redirect",
+      to: "/onboarding",
+    });
+    expect(resolveRouteGuard("/onboarding", AUTHENTICATED, null)).toEqual({
+      type: "continue",
+    });
+    expect(resolveRouteGuard("/onboarding", AUTHENTICATED, COMPLETED_AT)).toEqual({
+      type: "redirect",
+      to: "/",
     });
   });
 });

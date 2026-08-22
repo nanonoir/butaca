@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { Genre } from "@/contracts/movies";
 import type { SearchMoviesQuery } from "@/contracts/search";
 import {
   getTmdb,
@@ -7,7 +8,10 @@ import {
   type TmdbAdapter,
 } from "@/integrations/tmdb";
 
-type MovieCatalogPort = Pick<TmdbAdapter, "searchMovies" | "getSimilarMovies">;
+type MovieCatalogPort = Pick<
+  TmdbAdapter,
+  "getGenres" | "searchMovies" | "getSimilarMovies"
+>;
 
 /** Thin catalog boundary for public, normalized TMDB list reads. */
 export class MovieCatalogService {
@@ -15,6 +19,10 @@ export class MovieCatalogService {
 
   searchMovies(input: SearchMoviesQuery): Promise<PaginatedMovies> {
     return this.catalog.searchMovies(input);
+  }
+
+  getGenres(): Promise<Genre[]> {
+    return this.catalog.getGenres();
   }
 
   async getSimilarMovies(

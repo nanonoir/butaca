@@ -6,6 +6,7 @@ import { getPublicEnv } from "@/lib/env/public";
 export type SessionUpdate = {
   response: NextResponse;
   isAuthenticated: boolean;
+  userId: string | null;
 };
 
 export async function updateSession(
@@ -39,11 +40,17 @@ export async function updateSession(
 
   const claims = await supabase.auth.getClaims();
 
+  const userId =
+    !claims?.error && typeof claims?.data?.claims.sub === "string"
+      ? claims.data.claims.sub
+      : null;
+
   return {
     response,
     // Defensive optional access: the only contract this function relies on is
     // that the call settles, so a provider shape change degrades to "guest"
     // instead of throwing inside the proxy.
-    isAuthenticated: Boolean(claims?.data) && !claims?.error,
+    isAuthenticated: userId !== null,
+    userId,
   };
 }

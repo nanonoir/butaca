@@ -7,16 +7,18 @@ import {
   apiDataResponseSchema,
 } from "./common";
 
-const UniquePreferredGenreIdsSchema = z
+export const UniquePreferredGenreIdsSchema = z
   .array(TmdbGenreIdSchema)
   .min(2, { error: "Select at least 2 preferred genres" })
+  .max(8, { error: "Select at most 8 preferred genres" })
   .refine((ids) => new Set(ids).size === ids.length, {
     error: "preferredGenreIds cannot contain duplicates",
   });
 
-const UniqueLikedMovieIdsSchema = z
+export const UniqueLikedMovieIdsSchema = z
   .array(TmdbMovieIdSchema)
   .min(3, { error: "Select at least 3 liked movies" })
+  .max(8, { error: "Select at most 8 liked movies" })
   .refine((ids) => new Set(ids).size === ids.length, {
     error: "likedMovieIds cannot contain duplicates",
   });
@@ -35,4 +37,7 @@ export const CompleteOnboardingResponseSchema = apiDataResponseSchema(
 
 export type CompleteOnboardingRequest = z.infer<
   typeof CompleteOnboardingRequestSchema
+>;
+export type CompleteOnboardingResponse = z.infer<
+  typeof CompleteOnboardingResponseSchema
 >;

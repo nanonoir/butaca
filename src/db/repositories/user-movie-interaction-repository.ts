@@ -5,14 +5,14 @@ import { and, count, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { PAGE_SIZE } from "../../contracts/common";
 import type { LikesWatchedFilter } from "../../contracts/likes";
 import type { MovieReaction } from "../../contracts/interactions";
-import type { Database } from "../client";
+import type { DbExecutor } from "../client";
 import {
   type UserMovieInteractionRecord,
   userMovieInteractions,
 } from "../schema/user-movie-interactions";
 
 export class UserMovieInteractionRepository {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: DbExecutor) {}
 
   async findByUserAndMovie(
     userId: string,

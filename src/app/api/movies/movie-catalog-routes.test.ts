@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TmdbError } from "@/integrations/tmdb";
 
 const catalog = {
+  getGenres: vi.fn(),
   searchMovies: vi.fn(),
   getSimilarMovies: vi.fn(),
 };
@@ -13,6 +14,7 @@ vi.mock("@/features/movies/movie-catalog-service", () => ({
 
 import { GET as getSearch } from "./search/route";
 import { GET as getSimilar } from "./[movieId]/similar/route";
+import { GET as getGenres } from "./genres/route";
 
 const PAGE = {
   data: [
@@ -41,10 +43,32 @@ const PAGE = {
 
 beforeEach(() => {
   catalog.searchMovies.mockReset();
+  catalog.getGenres.mockReset();
   catalog.getSimilarMovies.mockReset();
 });
 
 describe("movie catalog route handlers", () => {
+  it("returns normalized movie genres through the catalog boundary", async () => {
+    catalog.getGenres.mockResolvedValue([{ id: 28, name: "Action" }]);
+
+    const response = await getGenres();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      data: [{ id: 28, name: "Action" }],
+    });
+  });
+
+  it("maps genre provider failures through the standard unavailable envelope", async () => {
+    catalog.getGenres.mockRejectedValue(new TmdbError("UNAVAILABLE", 503));
+
+    const response = await getGenres();
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "TMDB_UNAVAILABLE" },
+    });
+  });
   it("returns a normalized search envelope for a valid query", async () => {
     catalog.searchMovies.mockResolvedValue(PAGE);
 

@@ -8,6 +8,7 @@ export interface MoviePosterCardProps {
   metadataSlot?: ReactNode;
   articleLabel?: string;
   actionLabel?: string;
+  pressed?: boolean;
   onSelect?: () => void;
 }
 
@@ -19,6 +20,7 @@ export function MoviePosterCard({
   metadataSlot,
   articleLabel,
   actionLabel,
+  pressed,
   onSelect,
 }: MoviePosterCardProps) {
   return (
@@ -46,6 +48,7 @@ export function MoviePosterCard({
       {onSelect ? (
         <button
           aria-label={actionLabel ?? `Ver detalle de ${title}`}
+          aria-pressed={pressed}
           className="absolute inset-0 z-10 cursor-pointer rounded-lg bg-transparent transition-[background-color,box-shadow] duration-fast ease-ui hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-primary/10"
           onClick={onSelect}
           type="button"

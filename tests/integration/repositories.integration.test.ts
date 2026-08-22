@@ -299,6 +299,57 @@ it("upsertFromAuthUser repairs a missing profile idempotently", async () => {
   }
 });
 
+it("uses transaction-scoped repositories atomically for onboarding persistence", async () => {
+  const authUser = await createTestAuthUser();
+  const completionTimestamp = new Date("2026-08-21T18:00:00.000Z");
+
+  try {
+    await getUserRepository().create({
+      id: authUser.id,
+      displayName: "Onboarding transaction profile",
+      avatarUrl: null,
+    });
+
+    await getDatabase().transaction(async (transaction) => {
+      const users = new UserRepository(transaction);
+      const preferences = new UserPreferencesRepository(transaction);
+      const interactions = new UserMovieInteractionRepository(transaction);
+
+      expect(
+        await users.claimOnboardingCompletion(authUser.id, completionTimestamp),
+      ).toMatchObject({ onboardingCompletedAt: completionTimestamp });
+      await preferences.upsert(authUser.id, [28, 12]);
+      await interactions.upsertReaction(authUser.id, 550, "LIKE");
+      await interactions.setWatched(authUser.id, 550, completionTimestamp);
+    });
+
+    expect(await getUserRepository().findById(authUser.id)).toMatchObject({
+      onboardingCompletedAt: completionTimestamp,
+    });
+    expect(
+      await new UserPreferencesRepository(getDatabase()).findByUserId(authUser.id),
+    ).toMatchObject({ preferredGenreIds: [28, 12] });
+    expect(
+      await new UserMovieInteractionRepository(getDatabase()).findByUserAndMovie(
+        authUser.id,
+        550,
+      ),
+    ).toMatchObject({ reaction: "LIKE", watchedAt: completionTimestamp });
+
+    await expect(
+      getDatabase().transaction(async (transaction) => {
+        await new UserPreferencesRepository(transaction).upsert(authUser.id, [18, 35]);
+        throw new Error("force rollback");
+      }),
+    ).rejects.toThrow("force rollback");
+    expect(
+      await new UserPreferencesRepository(getDatabase()).findByUserId(authUser.id),
+    ).toMatchObject({ preferredGenreIds: [28, 12] });
+  } finally {
+    await deleteTestAuthUser(authUser.id);
+  }
+});
+
 it("deleting the Auth user cascades to public.users", async () => {
   const authUser = await createTestAuthUser();
   let authUserDeleted = false;

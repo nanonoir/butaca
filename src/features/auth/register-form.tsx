@@ -201,7 +201,7 @@ export function RegisterForm({
           );
         }
       } else {
-        router.push("/");
+        router.push("/onboarding");
         keepSubmitting = true;
       }
     } finally {

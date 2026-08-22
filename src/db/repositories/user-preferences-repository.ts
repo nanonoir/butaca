@@ -2,14 +2,14 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
-import type { Database } from "../client";
+import type { DbExecutor } from "../client";
 import {
   type UserPreferenceRecord,
   userPreferences,
 } from "../schema/user-preferences";
 
 export class UserPreferencesRepository {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: DbExecutor) {}
 
   async findByUserId(userId: string): Promise<UserPreferenceRecord | null> {
     const [preferences] = await this.db

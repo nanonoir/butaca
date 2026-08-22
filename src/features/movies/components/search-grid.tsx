@@ -7,7 +7,7 @@ import { BUTTON_VARIANT, Button } from "@/components/ui/button";
 
 import { Pagination } from "./pagination";
 
-interface SearchResults {
+export interface SearchResults {
   data: MovieSummary[];
   meta: PaginationMeta;
 }
@@ -20,6 +20,8 @@ interface SearchGridProps {
   onPageChange: (page: number) => void;
   onRetry: () => void;
   onSelectMovie: (movie: MovieSummary) => void;
+  selectedMovieIds?: ReadonlySet<number>;
+  selectedActionLabel?: (movie: MovieSummary, selected: boolean) => string;
 }
 
 function getMovieYear(movie: MovieSummary) {
@@ -51,6 +53,8 @@ export function SearchGrid({
   onPageChange,
   onRetry,
   onSelectMovie,
+  selectedMovieIds,
+  selectedActionLabel,
 }: SearchGridProps) {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const page = results?.meta.page ?? 1;
@@ -114,8 +118,14 @@ export function SearchGrid({
           {results.data.map((movie) => (
             <li key={movie.id}>
               <MoviePosterCard
-                actionLabel={`Ver detalle de ${movie.title}`}
+                actionLabel={
+                  selectedActionLabel?.(
+                    movie,
+                    selectedMovieIds?.has(movie.id) ?? false,
+                  ) ?? `Ver detalle de ${movie.title}`
+                }
                 onSelect={() => onSelectMovie(movie)}
+                pressed={selectedMovieIds?.has(movie.id)}
                 poster={<MovieArtwork className="size-full" movie={movie} />}
                 title={movie.title}
                 year={getMovieYear(movie)}
