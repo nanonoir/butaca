@@ -14,7 +14,11 @@ import type {
   UserPreferencesRepository,
 } from "../../db/repositories";
 import type { UserMovieInteractionRecord } from "../../db/schema/user-movie-interactions";
-import type { TmdbAdapter, TmdbDiscoverOptions } from "../../integrations/tmdb";
+import type {
+  PaginatedMovies,
+  TmdbAdapter,
+  TmdbDiscoverOptions,
+} from "../../integrations/tmdb";
 
 import { buildMatchInsight } from "./match-insight";
 import { excludeMovies, rankMovies } from "./ranking";
@@ -43,7 +47,12 @@ type InteractionsPort = Pick<
 
 type CatalogPort = Pick<
   TmdbAdapter,
-  "getMovieDetail" | "discoverMovies" | "getGenres"
+  | "getMovieDetail"
+  | "discoverMovies"
+  | "getGenres"
+  | "getMovieRecommendations"
+  | "getMoviesDirectedBy"
+  | "getMoviesActedIn"
 >;
 
 export type DiscoverBatchOptions = {
@@ -60,6 +69,37 @@ export type DiscoverBatch = {
   batchSize: typeof DISCOVER_BATCH_SIZE;
   returned: number;
 };
+
+/** A movie a locally sourced list and a discover query would both have to
+ * satisfy. Discover applies these as request parameters; a filmography and an
+ * intersection never pass through it, so they are checked here rather than
+ * being silently ignored on exactly the request that asked for them. Runtime is
+ * absent: it lives on the detail, and the adapter applies it while it still
+ * has one. */
+function matchesLocalFilters(
+  movie: MovieSummary,
+  filters: RecommendationFilters,
+): boolean {
+  const year = Number(movie.releaseDate?.slice(0, 4));
+
+  return (
+    movie.tmdbRating >= (filters.minTmdbRating ?? 0) &&
+    movie.tmdbVoteCount >= (filters.minTmdbVoteCount ?? 0) &&
+    (filters.minReleaseYear === undefined ||
+      (Number.isFinite(year) && year >= filters.minReleaseYear)) &&
+    (filters.maxReleaseYear === undefined ||
+      (Number.isFinite(year) && year <= filters.maxReleaseYear))
+  );
+}
+
+function intersectById(
+  left: MovieSummary[],
+  right: MovieSummary[],
+): MovieSummary[] {
+  const rightIds = new Set(right.map((movie) => movie.id));
+
+  return left.filter((movie) => rightIds.has(movie.id));
+}
 
 export class RecommendationService {
   constructor(
@@ -141,6 +181,34 @@ export class RecommendationService {
       .map((result) => result.value);
   }
 
+  private async resolveCastCandidates(
+    castIds: number[],
+    shared: TmdbDiscoverOptions,
+    runtimeBounds: { minRuntime?: number; maxRuntime?: number },
+  ): Promise<MovieSummary[]> {
+    if (castIds.length === 0) {
+      return [];
+    }
+
+    try {
+      if (castIds.length === 1) {
+        return await this.catalog.getMoviesActedIn({
+          personId: castIds[0]!,
+          ...runtimeBounds,
+        });
+      }
+
+      const { data } = await this.catalog.discoverMovies({
+        ...shared,
+        castIds,
+      });
+
+      return data;
+    } catch {
+      return [];
+    }
+  }
+
   /** TMDB generates the candidates; the ranking above decides the order. One
    * query per signal keeps the pool wide enough for the ranking to matter. */
   private async generateCandidates(
@@ -150,18 +218,49 @@ export class RecommendationService {
     // Caller filters are extra constraints on top of the profile, never a
     // replacement for it: an explicit request narrows the pool, it does not
     // turn Discover into an unpersonalised search.
-    const { similarToMovieId: _similarToMovieId, ...candidateFilters } =
-      filters;
-    // Not a discover parameter: TMDB exposes similarity through its own
-    // endpoint, so it cannot travel with the rest of the filters.
-    void _similarToMovieId;
+    //
+    // Similarity is the one that cannot travel with the rest: TMDB answers it
+    // from its own endpoint rather than as a discover parameter, so it becomes
+    // a query of its own alongside them.
+    // A crew filter leaves with the same treatment: discover matches anyone who
+    // worked on a film, so honouring "a Spielberg movie" means asking for the
+    // ones he directed rather than the ones he produced.
+    const { similarToMovieId, crewIds, castIds, ...candidateFilters } = filters;
+    // Naming a person or a movie asks about a subject, not a mood. Fanning out
+    // over the profile's genres alongside it fills most of the batch with
+    // movies the viewer did not ask about: requesting Spielberg came back three
+    // parts Spielberg and two parts whatever else matched their taste.
+    //
+    // A subject replaces the candidate source. The profile still decides the
+    // order, so which Spielberg films surface stays personal.
+    const castIdList = castIds ?? [];
+    const crewId = crewIds?.[0];
+    const subject =
+      castIdList.length > 0 ||
+      crewId !== undefined ||
+      similarToMovieId !== undefined;
+    // The profile's own exclusions and the vote floor shape the pool for a
+    // batch the profile is driving. They are not constraints on a question
+    // somebody asked out loud, and applying them to one answers it wrongly:
+    // this viewer has thrillers excluded, and Once Upon a Time in Hollywood is
+    // filed under one, so "DiCaprio with Brad Pitt" came back empty while the
+    // film they made together sat right there.
+    //
+    // An exclusion the caller sent is a different thing and still applies: it
+    // came from the same request.
     const shared = {
       page: 1,
-      excludedGenreIds: profile.excludedGenreIds,
-      minTmdbVoteCount: MIN_CANDIDATE_VOTE_COUNT,
+      ...(subject
+        ? {}
+        : {
+            excludedGenreIds: profile.excludedGenreIds,
+            minTmdbVoteCount: MIN_CANDIDATE_VOTE_COUNT,
+          }),
       ...candidateFilters,
     };
-    const requestedGenreIds = filters.genreIds ?? profile.preferredGenreIds;
+    const requestedGenreIds = subject
+      ? []
+      : (filters.genreIds ?? profile.preferredGenreIds);
     const queries: TmdbDiscoverOptions[] = requestedGenreIds
       .slice(0, CANDIDATE_GENRE_COUNT)
       .map((genreId) => ({ ...shared, genreIds: [genreId] }));
@@ -169,30 +268,72 @@ export class RecommendationService {
     const [topDirectorId] = profile.crewIds;
     const [topCastId] = profile.castIds;
 
-    if (topKeywordId !== undefined) {
+    if (!subject && topKeywordId !== undefined) {
       queries.push({ ...shared, keywordIds: [topKeywordId] });
     }
 
-    if (topDirectorId !== undefined) {
+    if (!subject && topDirectorId !== undefined) {
       queries.push({ ...shared, crewIds: [topDirectorId] });
     }
 
-    if (topCastId !== undefined) {
+    if (!subject && topCastId !== undefined) {
       queries.push({ ...shared, castIds: [topCastId] });
     }
 
-    if (queries.length === 0) {
+    if (queries.length === 0 && !subject) {
       // Nothing recorded yet: fall back to a broad, well voted pool so the
       // viewer still gets a batch instead of an empty screen.
       queries.push(shared);
     }
 
-    const results = await Promise.allSettled(
-      queries.map((query) => this.catalog.discoverMovies(query)),
+    const requests: Promise<PaginatedMovies>[] = queries.map((query) =>
+      this.catalog.discoverMovies(query),
     );
 
-    return results.flatMap((result) =>
-      result.status === "fulfilled" ? result.value.data : [],
-    );
+    if (similarToMovieId !== undefined) {
+      requests.push(
+        this.catalog.getMovieRecommendations({
+          movieId: similarToMovieId,
+          page: 1,
+        }),
+      );
+    }
+
+    const runtimeBounds = {
+      minRuntime: filters.minRuntime,
+      maxRuntime: filters.maxRuntime,
+    };
+    const [acted, directed, results] = await Promise.all([
+      // One name comes from their filmography, ordered by billing, so a lead
+      // outranks the walk-on an actor had before they were famous. Two names
+      // go to discover instead: a comma there means both, which is a far
+      // narrower question than either -- Leonardo DiCaprio alone matches 87
+      // films, with Brad Pitt three -- and it costs one request rather than two
+      // filmographies whose caps could hide the overlap.
+      this.resolveCastCandidates(castIdList, shared, runtimeBounds),
+      crewId === undefined
+        ? []
+        : this.catalog
+            .getMoviesDirectedBy({ personId: crewId, ...runtimeBounds })
+            .catch(() => []),
+      Promise.allSettled(requests),
+    ]);
+
+    // Naming both an actor and a director asks for the films they made
+    // together, not for two lists stapled end to end. Two names is one
+    // question with a much smaller answer, and sometimes only one film.
+    const fromPeople =
+      castIdList.length > 0 && crewId !== undefined
+        ? intersectById(acted, directed)
+        : [...acted, ...directed];
+
+    return [
+      ...fromPeople.filter((movie) =>
+        matchesLocalFilters(movie, filters),
+      ),
+      ...results.flatMap((result) =>
+        result.status === "fulfilled" ? result.value.data : [],
+      ),
+    ];
   }
 }

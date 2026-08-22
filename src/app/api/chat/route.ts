@@ -7,6 +7,7 @@ import {
 } from "@/features/chat/chat-model";
 import { createChatTools } from "@/features/chat/chat-tools";
 import { getRecommendationService } from "@/features/recommendations/recommendation-factory";
+import { getTmdb } from "@/integrations/tmdb";
 import { getAiEnv } from "@/lib/env/ai";
 import { readJsonBody, requireViewer, runApiRoute } from "@/lib/api/route";
 
@@ -19,6 +20,8 @@ const SYSTEM_PROMPT = [
   "Sos Buti, el asistente de cine de Butaca. Respondés en español rioplatense, en tono cercano y breve.",
   "Para hablar de películas concretas SIEMPRE llamás primero a la herramienta recommendMovies.",
   "Nunca inventes títulos, años ni datos: usá solamente lo que devuelve la herramienta.",
+  "Si el usuario nombra uno o varios actores, un director, una película parecida, una década, una duración o pide algo bien puntuado, pasálo en los campos correspondientes de la herramienta en vez de resolverlo vos.",
+  "La herramienta puede devolver menos películas de las que esperás cuando el pedido es muy específico: mostrá las que haya y decilo, nunca completes con otras.",
   "Si la herramienta no devuelve nada, decilo con honestidad y ofrecé cambiar de criterio.",
   "No pidas ni menciones datos personales del usuario.",
 ].join(" ");
@@ -62,7 +65,7 @@ export async function POST(request: Request): Promise<Response> {
       system: SYSTEM_PROMPT,
       messages: toModelMessages(messages),
       stopWhen: stepCountIs(MAX_STEPS),
-      tools: createChatTools(getRecommendationService(), viewer.id),
+      tools: createChatTools(getRecommendationService(), getTmdb(), viewer.id),
       // The chain is the retry strategy. Leaving the default in place would
       // re-run the whole chain instead, spending every model twice over.
       maxRetries: 0,

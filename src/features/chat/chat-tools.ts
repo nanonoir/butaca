@@ -7,14 +7,38 @@ import { RecommendationFiltersSchema, type MovieSummary } from "@/contracts";
 
 import type { RecommendationService } from "../recommendations/recommendation-service";
 
-/** How many movies a single tool call may hand back to the model. The chat
- * shows a compact row, and a longer list only burns context. */
-export const CHAT_RECOMMENDATION_LIMIT = 5;
+/** A ceiling, not a quota. The chat shows a compact row and a longer list only
+ * burns context, but a question with one honest answer gets one movie: naming
+ * both an actor and a director, or a decade on top of a director, narrows the
+ * pool to what actually exists rather than padding it back up to five. */
+export const CHAT_RECOMMENDATION_LIMIT = 6;
+
+/** TMDB's own labels for what a person is known for. They decide which of the
+ * people sharing a name is the one being asked about. */
+const ACTING_DEPARTMENT = "Acting";
+const DIRECTING_DEPARTMENT = "Directing";
+
+/** A rating filter with no floor on votes hands back whatever obscure title
+ * three people rated a ten. Well reviewed has to mean widely reviewed. */
+const WELL_REVIEWED_MIN_VOTES = 500;
 
 type RecommendationPort = Pick<RecommendationService, "getDiscoverBatch">;
 
-/** The shape the model fills in. It is deliberately narrower than the full
- * filter contract: the model picks a mood, not runtimes or vote counts. */
+type CatalogPort = {
+  findPersonId(input: {
+    name: string;
+    department?: string;
+  }): Promise<number | null>;
+  searchMovies(input: { query: string; page: number }): Promise<{
+    data: MovieSummary[];
+  }>;
+};
+
+/** The shape the model fills in. Names rather than ids: a model cannot know
+ * that Leonardo DiCaprio is 6193, and making it find out first would cost an
+ * extra step of every conversation -- each step is a request against a daily
+ * budget the assistant already has to ration. It says the name, this resolves
+ * it, one call. */
 const RecommendMoviesInputSchema = z.object({
   genreIds: z
     .array(z.number().int().positive())
@@ -29,30 +53,143 @@ const RecommendMoviesInputSchema = z.object({
     .max(5)
     .optional()
     .describe("ISO 639-1 code, only when the viewer asked for a language."),
+  actorNames: z
+    .array(z.string().min(2).max(100))
+    .max(3)
+    .optional()
+    .describe(
+      "Full names of actors the viewer asked for. Several names means movies " +
+        "with all of them together, e.g. ['Leonardo DiCaprio', 'Brad Pitt'].",
+    ),
+  directorName: z
+    .string()
+    .min(2)
+    .max(100)
+    .optional()
+    .describe(
+      "Full name of a director the viewer asked for, e.g. 'Steven Spielberg'.",
+    ),
+  similarToTitle: z
+    .string()
+    .min(1)
+    .max(120)
+    .optional()
+    .describe(
+      "Title of a movie the viewer wants something like, e.g. 'Interstellar'.",
+    ),
+  wellReviewed: z
+    .boolean()
+    .optional()
+    .describe(
+      "True only when the viewer asked for highly rated or acclaimed movies.",
+    ),
+  maxRuntimeMinutes: z
+    .number()
+    .int()
+    .min(20)
+    .max(400)
+    .optional()
+    .describe(
+      "Upper bound in minutes when the viewer asked for something short.",
+    ),
+  minRuntimeMinutes: z
+    .number()
+    .int()
+    .min(20)
+    .max(400)
+    .optional()
+    .describe("Lower bound in minutes when the viewer asked for something long."),
+  fromYear: z
+    .number()
+    .int()
+    .min(1900)
+    .max(2100)
+    .optional()
+    .describe(
+      "Earliest release year. For a decade like the nineties, send 1990 here and 1999 in toYear.",
+    ),
+  toYear: z
+    .number()
+    .int()
+    .min(1900)
+    .max(2100)
+    .optional()
+    .describe("Latest release year."),
 });
 
 export type ChatToolMovies = { movies: MovieSummary[] };
+
+/** Every name the model supplied, resolved in one round of lookups. A name that
+ * matches nothing is dropped rather than failing the call: a viewer who
+ * misspells an actor should still get recommendations, not an error. */
+async function resolveFilters(
+  catalog: CatalogPort,
+  input: z.infer<typeof RecommendMoviesInputSchema>,
+) {
+  const [castIds, crewId, similarMovies] = await Promise.all([
+    Promise.all(
+      (input.actorNames ?? []).map((name) =>
+        catalog.findPersonId({ name, department: ACTING_DEPARTMENT }),
+      ),
+    ),
+    input.directorName
+      ? catalog.findPersonId({
+          name: input.directorName,
+          department: DIRECTING_DEPARTMENT,
+        })
+      : null,
+    input.similarToTitle
+      ? catalog.searchMovies({ query: input.similarToTitle, page: 1 })
+      : null,
+  ]);
+
+  return RecommendationFiltersSchema.parse({
+    ...(input.genreIds?.length ? { genreIds: input.genreIds } : {}),
+    ...(input.originalLanguage
+      ? { originalLanguage: input.originalLanguage }
+      : {}),
+    ...(castIds.some((id) => id !== null)
+      ? { castIds: castIds.filter((id): id is number => id !== null) }
+      : {}),
+    ...(crewId !== null ? { crewIds: [crewId] } : {}),
+    ...(similarMovies?.data[0]
+      ? { similarToMovieId: similarMovies.data[0].id }
+      : {}),
+    ...(input.wellReviewed
+      ? { minTmdbRating: 7.5, minTmdbVoteCount: WELL_REVIEWED_MIN_VOTES }
+      : {}),
+    ...(input.maxRuntimeMinutes
+      ? { maxRuntime: input.maxRuntimeMinutes }
+      : {}),
+    ...(input.minRuntimeMinutes
+      ? { minRuntime: input.minRuntimeMinutes }
+      : {}),
+    ...(input.fromYear ? { minReleaseYear: input.fromYear } : {}),
+    ...(input.toYear ? { maxReleaseYear: input.toYear } : {}),
+  });
+}
 
 /** Bound to the viewer resolved from the session, never to an id the model or
  * the request could supply. The model asks for recommendations; it cannot ask
  * for someone else's. */
 export function createChatTools(
   recommendations: RecommendationPort,
+  catalog: CatalogPort,
   userId: string,
 ) {
   return {
     recommendMovies: tool({
       description:
         "Recommends movies for the current viewer using their taste profile. " +
+        "Accepts an actor, a director, a movie to resemble, a release year " +
+        "range, a runtime bound and a request for well reviewed titles, on " +
+        "top of genre and language. Combine them freely: two actors means the " +
+        "films they appear in together, and an actor with a director means " +
+        "the films they made together. " +
         "Always call this before naming any movie; never invent titles.",
       inputSchema: RecommendMoviesInputSchema,
       execute: async (input) => {
-        const filters = RecommendationFiltersSchema.parse({
-          ...(input.genreIds?.length ? { genreIds: input.genreIds } : {}),
-          ...(input.originalLanguage
-            ? { originalLanguage: input.originalLanguage }
-            : {}),
-        });
+        const filters = await resolveFilters(catalog, input);
         const batch = await recommendations.getDiscoverBatch(userId, {
           filters,
           limit: CHAT_RECOMMENDATION_LIMIT,
