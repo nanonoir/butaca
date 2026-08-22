@@ -3,11 +3,14 @@
 # project, so a Postgres container would give the app a database its sessions
 # know nothing about.
 #
-#   cp .env.docker.example .env   # then fill it in
+#   cp .env.example .env          # then fill it in
 #   docker compose up -d --build
 #
-# Compose reads .env for the ${...} below and hands the same file to the
-# container, so the six variables are written once.
+# `.env`, not the `.env.local` the rest of the project uses. Compose
+# interpolates the ${...} below from `.env` only, and pointing it elsewhere
+# needs `--env-file` on *every* command afterwards -- `ps`, `logs`, `exec` and
+# `down` all fail interpolation without it, not just `up`. A deployment host
+# runs nothing that wants `.env.local`, so it gets the name Compose expects.
 
 services:
   web:
@@ -17,8 +20,8 @@ services:
       # See the Dockerfile. The :? form fails the build with this message
       # instead of quietly producing an image that cannot reach Supabase.
       args:
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?set it in .env, the client bundle is built with it}
-        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:?set it in .env, the client bundle is built with it}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?missing from .env, and the client bundle is built with it}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:?missing from .env, and the client bundle is built with it}
     image: butaca:latest
     env_file:
       - .env

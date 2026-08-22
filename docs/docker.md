@@ -18,7 +18,7 @@ Después:
 ```bash
 git clone https://github.com/nanonoir/butaca.git
 cd butaca
-cp .env.docker.example .env
+cp .env.example .env
 nano .env                          # completá las seis variables
 docker compose up -d --build
 ```
@@ -50,6 +50,32 @@ git pull --ff-only origin main
 ```
 
 El `.env` no aparece ahí: está en `.gitignore` y sobrevive a los pull.
+
+## Por qué `.env` y no `.env.local`
+
+El resto del proyecto guarda sus claves en `.env.local` — es lo que leen
+`next build`, `pnpm db:migrate` y el arnés de tests. Compose no.
+
+Compose interpola los `${...}` de `compose.yml` desde `.env` y nada más.
+Apuntarlo a otro archivo se hace con `--env-file`, pero el flag hace falta
+después en **todos** los comandos, no solo en `up`:
+
+```bash
+docker compose ps          # error de interpolación
+docker compose logs -f web # error de interpolación
+docker compose exec web sh # error de interpolación
+```
+
+Un servidor de despliegue no corre nada que quiera `.env.local`, así que ahí el
+archivo se llama `.env` y no hace falta ningún flag. Si en esa misma máquina
+también vas a correr los tests de integración, tené los dos:
+
+```bash
+cp .env .env.local
+```
+
+Y ojo con el nombre del de integración: el arnés carga **`.env.integration.local`**,
+en ese orden. `.env.local.integration` no lo lee nadie.
 
 ## Ver qué está pasando
 
