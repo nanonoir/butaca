@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence } from "motion/react";
 
+import type { PaginationMeta } from "@/contracts/common";
 import type { LikedMovieItem, LikesWatchedFilter } from "@/contracts/likes";
 import type { MovieSummary } from "@/contracts/movies";
 import type { ViewerMovieState } from "@/contracts/interactions";
@@ -15,6 +17,7 @@ import type { Review } from "@/contracts/reviews";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
 import { fetchMovieReviews } from "@/features/reviews/review-client";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
+import { Pagination } from "@/features/movies/components/pagination";
 
 const FILTER_OPTIONS: readonly {
   value: LikesWatchedFilter;
@@ -25,8 +28,35 @@ const FILTER_OPTIONS: readonly {
   { value: "unwatched", label: "No vistas" },
 ];
 
+const EMPTY_STATES: Record<
+  LikesWatchedFilter,
+  { title: string; hint: string }
+> = {
+  all: {
+    title: "Tu biblioteca está vacía",
+    hint: "Las películas que marques con me gusta aparecen acá.",
+  },
+  watched: {
+    title: "Todavía no marcaste ninguna como vista",
+    hint: "Podés marcarlas desde el detalle de cada película.",
+  },
+  unwatched: {
+    title: "Ya viste todas las que guardaste",
+    hint: "No te queda ninguna pendiente en la biblioteca.",
+  },
+};
+
+/** A movie edited from the detail overlay while the page is open. Kept beside
+ * `items` instead of copied over them: the list is server rendered per page, so
+ * a copy taken on mount would survive into the next page and freeze it. */
+type LocalEdit =
+  | { removed: true }
+  | { removed: false; watchedAt: string | null };
+
 interface LikedMoviesScreenProps {
   items: LikedMovieItem[];
+  meta: PaginationMeta;
+  watched: LikesWatchedFilter;
 }
 
 function EyeIcon() {
@@ -95,29 +125,69 @@ function LikedPoster({ movie, watched }: LikedPosterProps) {
   );
 }
 
-function getVisibleItems(items: LikedMovieItem[], filter: LikesWatchedFilter) {
-  if (filter === "all") {
-    return items;
+function applyLocalEdits(
+  items: LikedMovieItem[],
+  edits: ReadonlyMap<number, LocalEdit>,
+): LikedMovieItem[] {
+  return items.flatMap((item) => {
+    const edit = edits.get(item.movie.id);
+
+    if (!edit) {
+      return [item];
+    }
+
+    return edit.removed ? [] : [{ ...item, watchedAt: edit.watchedAt }];
+  });
+}
+
+/** The library spans more than one page, so the URL carries which slice the
+ * viewer is on. Defaults stay out of it to keep `/liked` clean. */
+function buildLikedHref(page: number, watched: LikesWatchedFilter) {
+  const params = new URLSearchParams();
+
+  if (watched !== "all") {
+    params.set("watched", watched);
   }
 
-  return items.filter((item) =>
-    filter === "watched" ? item.watchedAt !== null : item.watchedAt === null,
-  );
+  if (page > 1) {
+    params.set("page", String(page));
+  }
+
+  const query = params.toString();
+
+  return query ? `/liked?${query}` : "/liked";
 }
 
 function getMovieCountLabel(count: number) {
   return `${count} ${count === 1 ? "película" : "películas"}`;
 }
 
-export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
-  const [activeFilter, setActiveFilter] = useState<LikesWatchedFilter>("all");
-  const [likedItems, setLikedItems] = useState(items);
+export function LikedMoviesScreen({
+  items,
+  meta,
+  watched,
+}: LikedMoviesScreenProps) {
+  const router = useRouter();
+  const [isNavigating, startNavigation] = useTransition();
+  const [edits, setEdits] = useState<ReadonlyMap<number, LocalEdit>>(
+    () => new Map(),
+  );
   const [selectedItem, setSelectedItem] = useState<LikedMovieItem | null>(null);
   const [detailExperience, setDetailExperience] = useState<{
     pageData: MovieDetailPageData;
     publicReviews: Review[];
   } | null>(null);
-  const visibleItems = getVisibleItems(likedItems, activeFilter);
+  const visibleItems = applyLocalEdits(items, edits);
+  // Only movies unliked on this very page are missing from the server count:
+  // once the viewer moves on, the next query already leaves them out.
+  const totalResults = meta.totalResults - (items.length - visibleItems.length);
+  const emptyState = EMPTY_STATES[watched];
+
+  function goTo(page: number, nextWatched: LikesWatchedFilter) {
+    startNavigation(() => {
+      router.push(buildLikedHref(page, nextWatched));
+    });
+  }
 
   /** The overlay loads on demand: the list only carries a summary per movie,
    * and the detail plus its community reviews are two separate endpoints. */
@@ -143,15 +213,18 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
     }
 
     const selectedMovieId = selectedItem.movie.id;
-    setLikedItems((currentItems) =>
-      viewerState.reaction === "LIKE"
-        ? currentItems.map((item) =>
-            item.movie.id === selectedMovieId
-              ? { ...item, watchedAt: viewerState.watchedAt }
-              : item,
-          )
-        : currentItems.filter((item) => item.movie.id !== selectedMovieId),
-    );
+    setEdits((currentEdits) => {
+      const nextEdits = new Map(currentEdits);
+
+      nextEdits.set(
+        selectedMovieId,
+        viewerState.reaction === "LIKE"
+          ? { removed: false, watchedAt: viewerState.watchedAt }
+          : { removed: true },
+      );
+
+      return nextEdits;
+    });
     setSelectedItem(null);
   }
 
@@ -165,7 +238,10 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
             aria-live="polite"
             className="font-mono text-xs tracking-[0.08em] text-muted"
           >
-            {getMovieCountLabel(visibleItems.length)}
+            {getMovieCountLabel(totalResults)}
+            {meta.totalPages > 1
+              ? ` · Página ${meta.page} de ${meta.totalPages}`
+              : null}
           </p>
         }
       />
@@ -180,14 +256,18 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
           role="group"
         >
           {FILTER_OPTIONS.map((option) => {
-            const active = activeFilter === option.value;
+            const active = watched === option.value;
 
             return (
               <Button
                 key={option.value}
                 aria-pressed={active}
                 className="rounded-full px-5"
-                onClick={() => setActiveFilter(option.value)}
+                disabled={isNavigating}
+                // A filter changes how many movies there are, so it lands back
+                // on the first page instead of an offset that may not exist
+                // under the new count.
+                onClick={() => goTo(1, option.value)}
                 variant={
                   active ? BUTTON_VARIANT.PRIMARY : BUTTON_VARIANT.OUTLINE
                 }
@@ -198,28 +278,49 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
           })}
         </div>
 
-        <ul className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-          {visibleItems.map((item) => {
-            const watched = item.watchedAt !== null;
-            const year = item.movie.releaseDate?.slice(0, 4);
+        {visibleItems.length === 0 ? (
+          <div className="rounded-lg border border-border bg-surface-muted p-8 text-center">
+            <h3 className="font-display text-xl font-semibold text-foreground">
+              {emptyState.title}
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              {emptyState.hint}
+            </p>
+          </div>
+        ) : (
+          <ul className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4 xl:grid-cols-5">
+            {visibleItems.map((item) => {
+              const watchedMovie = item.watchedAt !== null;
+              const year = item.movie.releaseDate?.slice(0, 4);
 
-            return (
-              <li
-                key={item.movie.id}
-                className="min-w-0 [&>article>button:hover]:bg-transparent!"
-              >
-                <MoviePosterCard
-                  actionLabel={`Ver detalle de ${item.movie.title}`}
-                  onSelect={() => void handleSelectItem(item)}
-                  title={item.movie.title}
-                  year={year}
-                  poster={<LikedPoster movie={item.movie} watched={watched} />}
-                  metadataSlot={<OverflowGlyph />}
-                />
-              </li>
-            );
-          })}
-        </ul>
+              return (
+                <li
+                  key={item.movie.id}
+                  className="min-w-0 [&>article>button:hover]:bg-transparent!"
+                >
+                  <MoviePosterCard
+                    actionLabel={`Ver detalle de ${item.movie.title}`}
+                    onSelect={() => void handleSelectItem(item)}
+                    title={item.movie.title}
+                    year={year}
+                    poster={
+                      <LikedPoster movie={item.movie} watched={watchedMovie} />
+                    }
+                    metadataSlot={<OverflowGlyph />}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <Pagination
+          disabled={isNavigating}
+          hasNextPage={meta.hasNextPage}
+          onPageChange={(page) => goTo(page, watched)}
+          page={meta.page}
+          totalPages={meta.totalPages}
+        />
       </section>
 
       <AnimatePresence>
