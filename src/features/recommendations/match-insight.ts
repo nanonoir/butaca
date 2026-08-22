@@ -19,6 +19,16 @@ function weightOf(profile: TasteProfile, genreId: number): number {
   return profile.genreWeights[genreId] ?? 0;
 }
 
+function sumWeights(
+  scored: readonly { weight: number }[],
+  keep: (weight: number) => boolean,
+): number {
+  return scored.reduce(
+    (total, { weight }) => (keep(weight) ? total + weight : total),
+    0,
+  );
+}
+
 function nameOf(genres: Genre[], genreId: number): string | null {
   return genres.find((genre) => genre.id === genreId)?.name ?? null;
 }
@@ -47,13 +57,23 @@ export function buildMatchInsight(
     .map(({ genreId }) => nameOf(genres, genreId))
     .filter((name): name is string => name !== null);
 
-  // A clash outranks a match: a movie carrying a genre the viewer rejected is
-  // a doubtful pick even when something else about it lines up.
-  if (clashingGenres.length > 0) {
+  if (matchedGenres.length === 0) {
     return { tier: MATCH_TIER.LOW, matchedGenres, clashingGenres };
   }
 
-  if (matchedGenres.length === 0) {
+  // A clash used to veto outright, which read as a verdict the ranking never
+  // reached. Against a real profile that rejects one popular genre it made
+  // eight cards in ten doubtful, including the movie the ranking had put
+  // first: two genres the viewer prefers, one they merely dislike.
+  //
+  // Weighed instead of vetoed. A rejection still sinks a movie when it carries
+  // more of it than of anything the viewer likes -- which is the case the
+  // veto was reaching for -- and a secondary genre no longer overrules two
+  // matches.
+  const matchedWeight = sumWeights(scored, (weight) => weight > 0);
+  const clashWeight = Math.abs(sumWeights(scored, (weight) => weight < 0));
+
+  if (clashWeight >= matchedWeight) {
     return { tier: MATCH_TIER.LOW, matchedGenres, clashingGenres };
   }
 
