@@ -23,3 +23,11 @@ export {
   type TmdbMovieListResponse,
   type TmdbMovieSummary,
 } from "./movie-list";
+export {
+  TmdbPersonCreditsResponseSchema,
+  TmdbPersonListResponseSchema,
+  TmdbPersonSummarySchema,
+  type TmdbPersonCreditsResponse,
+  type TmdbPersonListResponse,
+  type TmdbPersonSummary,
+} from "./person-list";

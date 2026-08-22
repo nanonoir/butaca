@@ -8,9 +8,13 @@ import {
   TmdbGenresResponseSchema,
   TmdbMovieDetailResponseSchema,
   TmdbMovieListResponseSchema,
+  TmdbPersonCreditsResponseSchema,
+  TmdbPersonListResponseSchema,
   type TmdbGenresResponse,
   type TmdbMovieDetailResponse,
   type TmdbMovieListResponse,
+  type TmdbPersonCreditsResponse,
+  type TmdbPersonListResponse,
 } from "./schemas";
 
 type QueryValue = string | number | boolean | undefined;
@@ -98,6 +102,30 @@ export class TmdbClient {
     );
   }
 
+  searchPeople(input: {
+    query: string;
+    page: number;
+  }): Promise<TmdbPersonListResponse> {
+    return this.request(
+      "/search/person",
+      {
+        language: this.config.language,
+        include_adult: this.config.includeAdult,
+        query: input.query,
+        page: input.page,
+      },
+      TmdbPersonListResponseSchema,
+    );
+  }
+
+  getPersonMovieCredits(personId: number): Promise<TmdbPersonCreditsResponse> {
+    return this.request(
+      `/person/${personId}/movie_credits`,
+      { language: this.config.language },
+      TmdbPersonCreditsResponseSchema,
+    );
+  }
+
   getMovieDetail(movieId: number): Promise<TmdbMovieDetailResponse> {
     return this.request(
       `/movie/${movieId}`,
@@ -127,6 +155,23 @@ export class TmdbClient {
         "with_runtime.lte": input.maxRuntime,
         "vote_average.gte": input.minVoteAverage,
         "vote_count.gte": input.minVoteCount,
+      },
+      TmdbMovieListResponseSchema,
+    );
+  }
+
+  /** TMDB's editorial "you might also like", as opposed to `/similar`, which
+   * matches on genre and keyword overlap alone and is happy to answer
+   * Interstellar with a direct-to-video sequel rated 3.3. */
+  getMovieRecommendations(input: {
+    movieId: number;
+    page: number;
+  }): Promise<TmdbMovieListResponse> {
+    return this.request(
+      `/movie/${input.movieId}/recommendations`,
+      {
+        language: this.config.language,
+        page: input.page,
       },
       TmdbMovieListResponseSchema,
     );

@@ -14,7 +14,11 @@ import type {
   UserPreferencesRepository,
 } from "../../db/repositories";
 import type { UserMovieInteractionRecord } from "../../db/schema/user-movie-interactions";
-import type { TmdbAdapter, TmdbDiscoverOptions } from "../../integrations/tmdb";
+import type {
+  PaginatedMovies,
+  TmdbAdapter,
+  TmdbDiscoverOptions,
+} from "../../integrations/tmdb";
 
 import { buildMatchInsight } from "./match-insight";
 import { excludeMovies, rankMovies } from "./ranking";
@@ -43,7 +47,11 @@ type InteractionsPort = Pick<
 
 type CatalogPort = Pick<
   TmdbAdapter,
-  "getMovieDetail" | "discoverMovies" | "getGenres"
+  | "getMovieDetail"
+  | "discoverMovies"
+  | "getGenres"
+  | "getMovieRecommendations"
+  | "getMoviesDirectedBy"
 >;
 
 export type DiscoverBatchOptions = {
@@ -150,49 +158,100 @@ export class RecommendationService {
     // Caller filters are extra constraints on top of the profile, never a
     // replacement for it: an explicit request narrows the pool, it does not
     // turn Discover into an unpersonalised search.
-    const { similarToMovieId: _similarToMovieId, ...candidateFilters } =
-      filters;
-    // Not a discover parameter: TMDB exposes similarity through its own
-    // endpoint, so it cannot travel with the rest of the filters.
-    void _similarToMovieId;
+    //
+    // Similarity is the one that cannot travel with the rest: TMDB answers it
+    // from its own endpoint rather than as a discover parameter, so it becomes
+    // a query of its own alongside them.
+    // A crew filter leaves with the same treatment: discover matches anyone who
+    // worked on a film, so honouring "a Spielberg movie" means asking for the
+    // ones he directed rather than the ones he produced.
+    const { similarToMovieId, crewIds, ...candidateFilters } = filters;
     const shared = {
       page: 1,
       excludedGenreIds: profile.excludedGenreIds,
       minTmdbVoteCount: MIN_CANDIDATE_VOTE_COUNT,
       ...candidateFilters,
     };
-    const requestedGenreIds = filters.genreIds ?? profile.preferredGenreIds;
+    // Naming a person or a movie asks about a subject, not a mood. Fanning out
+    // over the profile's genres alongside it fills most of the batch with
+    // movies the viewer did not ask about: requesting Spielberg came back three
+    // parts Spielberg and two parts whatever else matched their taste.
+    //
+    // A subject replaces the candidate source. The profile still decides the
+    // order, so which Spielberg films surface stays personal.
+    const subject =
+      crewIds?.[0] !== undefined ||
+      candidateFilters.castIds?.length ||
+      similarToMovieId !== undefined;
+    const requestedGenreIds = subject
+      ? []
+      : (filters.genreIds ?? profile.preferredGenreIds);
     const queries: TmdbDiscoverOptions[] = requestedGenreIds
       .slice(0, CANDIDATE_GENRE_COUNT)
       .map((genreId) => ({ ...shared, genreIds: [genreId] }));
+
+    if (candidateFilters.castIds?.length) {
+      queries.push(shared);
+    }
+
     const [topKeywordId] = profile.keywordIds;
     const [topDirectorId] = profile.crewIds;
     const [topCastId] = profile.castIds;
 
-    if (topKeywordId !== undefined) {
+    if (!subject && topKeywordId !== undefined) {
       queries.push({ ...shared, keywordIds: [topKeywordId] });
     }
 
-    if (topDirectorId !== undefined) {
+    if (!subject && topDirectorId !== undefined) {
       queries.push({ ...shared, crewIds: [topDirectorId] });
     }
 
-    if (topCastId !== undefined) {
+    if (!subject && topCastId !== undefined) {
       queries.push({ ...shared, castIds: [topCastId] });
     }
 
-    if (queries.length === 0) {
+    if (queries.length === 0 && !subject) {
       // Nothing recorded yet: fall back to a broad, well voted pool so the
       // viewer still gets a batch instead of an empty screen.
       queries.push(shared);
     }
 
-    const results = await Promise.allSettled(
-      queries.map((query) => this.catalog.discoverMovies(query)),
+    const requests: Promise<PaginatedMovies>[] = queries.map((query) =>
+      this.catalog.discoverMovies(query),
     );
 
-    return results.flatMap((result) =>
-      result.status === "fulfilled" ? result.value.data : [],
+    if (similarToMovieId !== undefined) {
+      requests.push(
+        this.catalog.getMovieRecommendations({
+          movieId: similarToMovieId,
+          page: 1,
+        }),
+      );
+    }
+
+    const [directedBy, results] = await Promise.all([
+      crewIds?.[0] === undefined
+        ? []
+        : this.catalog
+            .getMoviesDirectedBy({ personId: crewIds[0] })
+            .catch(() => []),
+      Promise.allSettled(requests),
+    ]);
+
+    // The rating floor travels as a discover parameter, which a filmography
+    // never passes through, so it is applied here instead of being silently
+    // ignored on exactly the request that asked for it.
+    const directedAndRated = directedBy.filter(
+      (movie) =>
+        movie.tmdbRating >= (candidateFilters.minTmdbRating ?? 0) &&
+        movie.tmdbVoteCount >= (candidateFilters.minTmdbVoteCount ?? 0),
     );
+
+    return [
+      ...directedAndRated,
+      ...results.flatMap((result) =>
+        result.status === "fulfilled" ? result.value.data : [],
+      ),
+    ];
   }
 }

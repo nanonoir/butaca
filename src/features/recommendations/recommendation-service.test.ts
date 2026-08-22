@@ -20,6 +20,8 @@ function createDependencies() {
     catalog: {
       getMovieDetail: vi.fn(),
       discoverMovies: vi.fn().mockResolvedValue(paginated([])),
+      getMovieRecommendations: vi.fn().mockResolvedValue(paginated([])),
+      getMoviesDirectedBy: vi.fn().mockResolvedValue([]),
       getGenres: vi.fn().mockResolvedValue([
         { id: 878, name: "Ciencia ficción" },
         { id: 18, name: "Drama" },
@@ -261,5 +263,114 @@ describe("getDiscoverBatch", () => {
     ).getDiscoverBatch(USER_ID);
 
     expect(batch.movies).toHaveLength(1);
+  });
+});
+
+describe("getDiscoverBatch scope", () => {
+  function service(deps: ReturnType<typeof createDependencies>) {
+    return new RecommendationService(
+      deps.preferences,
+      deps.interactions,
+      deps.catalog,
+    );
+  }
+
+  /** Asking for a director is a question about a subject, not a mood. Fanning
+   * out over the profile's genres alongside it filled most of the batch with
+   * movies nobody asked about. */
+  it("stops asking about the profile's genres once a subject is named", async () => {
+    const deps = createDependencies();
+    deps.catalog.getMoviesDirectedBy.mockResolvedValue([summary(7)]);
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { crewIds: [488] },
+    });
+
+    expect(deps.catalog.discoverMovies).not.toHaveBeenCalled();
+    expect(deps.catalog.getMoviesDirectedBy).toHaveBeenCalledWith({
+      personId: 488,
+    });
+    expect(batch.movies.map(({ movie }) => movie.id)).toEqual([7]);
+  });
+
+  /** Discover matches anyone who worked on a film, so a crew filter built on it
+   * answers "a Spielberg movie" with everything he produced. */
+  it("asks for the films a director directed, not the ones they crewed", async () => {
+    const deps = createDependencies();
+    deps.catalog.getMoviesDirectedBy.mockResolvedValue([summary(1)]);
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { crewIds: [488] },
+    });
+
+    const crewQueries = deps.catalog.discoverMovies.mock.calls.filter(
+      ([query]) => query.crewIds !== undefined,
+    );
+
+    expect(crewQueries).toEqual([]);
+  });
+
+  /** A rating floor travels as a discover parameter, which a filmography never
+   * passes through. */
+  it("applies a rating floor to a filmography as well", async () => {
+    const deps = createDependencies();
+    deps.catalog.getMoviesDirectedBy.mockResolvedValue([
+      { ...summary(1), tmdbRating: 8.4, tmdbVoteCount: 4_000 },
+      { ...summary(2), tmdbRating: 5.1, tmdbVoteCount: 4_000 },
+      { ...summary(3), tmdbRating: 8.9, tmdbVoteCount: 12 },
+    ]);
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { crewIds: [488], minTmdbRating: 7.5, minTmdbVoteCount: 500 },
+    });
+
+    expect(batch.movies.map(({ movie }) => movie.id)).toEqual([1]);
+  });
+
+  /** `/similar` matches on genre and keyword overlap alone, and answers
+   * Interstellar with a direct-to-video sequel rated 3.3. */
+  it("reaches for the editorial recommendations when a movie is named", async () => {
+    const deps = createDependencies();
+    deps.catalog.getMovieRecommendations.mockResolvedValue(
+      paginated([summary(9)]),
+    );
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { similarToMovieId: 157_336 },
+    });
+
+    expect(deps.catalog.getMovieRecommendations).toHaveBeenCalledWith({
+      movieId: 157_336,
+      page: 1,
+    });
+    expect(batch.movies.map(({ movie }) => movie.id)).toEqual([9]);
+  });
+
+  it("still leans on the profile when no subject was named", async () => {
+    const deps = createDependencies();
+    deps.preferences.findByUserId.mockResolvedValue({
+      preferredGenreIds: [878, 18],
+    });
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(1)]));
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { minTmdbRating: 7.5 },
+    });
+
+    expect(deps.catalog.discoverMovies).toHaveBeenCalled();
+    expect(deps.catalog.getMoviesDirectedBy).not.toHaveBeenCalled();
+  });
+
+  /** A filmography lookup that fails must cost that one source, not the batch. */
+  it("survives a filmography the provider cannot answer", async () => {
+    const deps = createDependencies();
+    deps.catalog.getMoviesDirectedBy.mockRejectedValue(new Error("down"));
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { crewIds: [488] },
+    });
+
+    expect(batch.movies).toEqual([]);
+    expect(batch.returned).toBe(0);
   });
 });

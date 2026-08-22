@@ -11,6 +11,7 @@ import {
   RecommendationFiltersSchema,
   SearchMoviesResponseSchema,
   TmdbMovieIdSchema,
+  TmdbPersonIdSchema,
   paginatedResponseSchema,
   type Genre,
   type MovieDetail,
@@ -29,7 +30,10 @@ import type {
   TmdbMovieSummary,
   TmdbVideo,
 } from "./schemas";
-import { TmdbMovieDetailResponseSchema } from "./schemas";
+import {
+  TmdbMovieDetailResponseSchema,
+  TmdbPersonSummarySchema,
+} from "./schemas";
 
 const PaginatedMoviesSchema = paginatedResponseSchema(MovieSummarySchema);
 export type PaginatedMovies = z.infer<typeof PaginatedMoviesSchema>;
@@ -53,6 +57,44 @@ const TmdbDiscoverOptionsSchema = z
   });
 
 export type TmdbDiscoverOptions = z.infer<typeof TmdbDiscoverOptionsSchema>;
+
+const FindPersonOptionsSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    department: z.string().trim().min(1).max(40).optional(),
+  })
+  .strict();
+
+/** TMDB's own label for the job, exactly as it appears in a credit. */
+const DIRECTOR_JOB = "Director";
+
+/** A detail carries the same fields a summary needs plus the genre objects the
+ * list shape flattens back to ids. */
+function detailToSummary(detail: MovieDetail): MovieSummary {
+  return {
+    id: detail.id,
+    title: detail.title,
+    originalTitle: detail.originalTitle,
+    overview: detail.overview,
+    posterPath: detail.posterPath,
+    backdropPath: detail.backdropPath,
+    genreIds: detail.genres.map((genre) => genre.id),
+    releaseDate: detail.releaseDate,
+    originalLanguage: detail.originalLanguage,
+    tmdbRating: detail.tmdbRating,
+    tmdbVoteCount: detail.tmdbVoteCount,
+  };
+}
+
+/** A prolific director has well over a hundred credits and each one costs a
+ * detail lookup, so the filmography is capped at a pool wide enough for the
+ * ranking to have something to choose from. */
+const DirectedByOptionsSchema = z
+  .object({
+    personId: TmdbPersonIdSchema,
+    limit: z.number().int().min(1).max(40).default(20),
+  })
+  .strict();
 
 const SimilarMoviesOptionsSchema = z
   .object({
@@ -292,6 +334,82 @@ export class TmdbAdapter {
       minVoteAverage: options.minTmdbRating,
       minVoteCount: options.minTmdbVoteCount,
     });
+
+    return parsePublicResult(PaginatedMoviesSchema, mapMovieList(response));
+  }
+
+  /** Turns a name into the id TMDB actually filters on. A model can say
+   * "Leonardo DiCaprio"; `with_cast` only takes 6193.
+   *
+   * `department` breaks the tie when a name belongs to several people, which is
+   * the common case rather than the exception: asking for a director called
+   * Anderson and an actor called Anderson are different questions. Within a
+   * department TMDB's own ordering decides, and its first result for a name a
+   * viewer typed unprompted is the famous one. */
+  async findPersonId(input: {
+    name: string;
+    department?: string;
+  }): Promise<number | null> {
+    const { name, department } = FindPersonOptionsSchema.parse(input);
+    const response = await this.client.searchPeople({ query: name, page: 1 });
+    const people = parsePublicResult(
+      z.array(TmdbPersonSummarySchema),
+      response.results,
+    );
+
+    if (people.length === 0) {
+      return null;
+    }
+
+    const inDepartment = department
+      ? people.filter(
+          (person) =>
+            person.known_for_department?.toLowerCase() ===
+            department.toLowerCase(),
+        )
+      : [];
+
+    return (inDepartment[0] ?? people[0])?.id ?? null;
+  }
+
+  /** The films a person actually directed, as opposed to every film they were
+   * on the crew of. Discover has no filter for the job, so asking it for
+   * `with_crew` hands back everything Spielberg ever produced -- Men in Black 3
+   * among them -- which is not what somebody asking for a Spielberg movie
+   * means.
+   *
+   * Resolved through the movie cache one id at a time, so a filmography costs
+   * nothing the second time it is asked for. */
+  async getMoviesDirectedBy(input: {
+    personId: number;
+    limit?: number;
+  }): Promise<MovieSummary[]> {
+    const { personId, limit } = DirectedByOptionsSchema.parse(input);
+    const credits = await this.client.getPersonMovieCredits(personId);
+    const directed = credits.crew
+      .filter((credit) => credit.job === DIRECTOR_JOB)
+      .map((credit) => credit.id)
+      .slice(0, limit);
+    const settled = await Promise.allSettled(
+      directed.map((movieId) => this.getMovieDetail(movieId)),
+    );
+
+    return settled
+      .filter(
+        (result): result is PromiseFulfilledResult<MovieDetail> =>
+          result.status === "fulfilled",
+      )
+      .map(({ value }) => detailToSummary(value));
+  }
+
+  /** What the recommender reaches for when a viewer names a movie. `/similar`
+   * stays behind `getSimilarMovies` for the detail screen's own row. */
+  async getMovieRecommendations(input: {
+    movieId: number;
+    page?: number;
+  }): Promise<PaginatedMovies> {
+    const options = SimilarMoviesOptionsSchema.parse(input);
+    const response = await this.client.getMovieRecommendations(options);
 
     return parsePublicResult(PaginatedMoviesSchema, mapMovieList(response));
   }
