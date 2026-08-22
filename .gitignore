@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/test-results/
 
 # next.js
 /.next/
@@ -45,6 +46,8 @@ next-env.d.ts
 
 # local AI tooling
 /.atl/
+.codegraph
+.playwright-mcp
 
 # editor files
 .idea/

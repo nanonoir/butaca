@@ -40,7 +40,7 @@ The system MUST validate positive integer TMDB identifiers, ISO date/time values
 
 ### Requirement: Interaction and Onboarding Invariants
 
-The system MUST restrict reactions to `LIKE` and `DISLIKE`. Viewer movie state MUST permit anonymous or neutral state as `reaction: null` with `watchedAt: null`, and MUST reject a non-null `watchedAt` without a reaction. Onboarding and preferred genres MUST require unique positive IDs, at least two genres, and onboarding MUST require at least three unique liked movie IDs.
+The system MUST restrict reactions to `LIKE` and `DISLIKE`. Viewer movie state MUST permit `reaction: null` with either a null or non-null `watchedAt`, because watched state is independent from reactions. Onboarding and preferred genres MUST require unique positive IDs, at least two genres, and onboarding MUST require at least three unique liked movie IDs.
 
 #### Scenario: Anonymous viewer state
 
@@ -48,11 +48,11 @@ The system MUST restrict reactions to `LIKE` and `DISLIKE`. Viewer movie state M
 - WHEN state contains null reaction and null watchedAt
 - THEN validation MUST succeed
 
-#### Scenario: Orphaned watched state
+#### Scenario: Watched state without a reaction
 
 - GIVEN a viewer state contains null reaction and a timestamp
 - WHEN it is parsed
-- THEN validation MUST fail at watchedAt
+- THEN validation MUST succeed and preserve watchedAt
 
 ### Requirement: Search, Discover, and Likes Contracts
 

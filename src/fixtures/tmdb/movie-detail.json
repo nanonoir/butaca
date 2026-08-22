@@ -1,0 +1,310 @@
+{
+  "id": 8101,
+  "title": "La ciudad de vidrio",
+  "original_title": "The Glass City",
+  "overview": "Una archivista descubre un mapa imposible bajo la ciudad.",
+  "poster_path": "/glass-city-poster.jpg",
+  "backdrop_path": "/glass-city-backdrop.jpg",
+  "release_date": "2025-04-18",
+  "original_language": "es",
+  "vote_average": 7.4,
+  "vote_count": 1842,
+  "tagline": "Cada reflejo guarda una salida.",
+  "runtime": 118,
+  "genres": [
+    { "id": 7101, "name": "Drama" },
+    { "id": 7102, "name": "Misterio" }
+  ],
+  "credits": {
+    "cast": [
+      {
+        "id": 9101,
+        "name": "Elena Ríos",
+        "character": "Mara",
+        "profile_path": "/elena-rios.jpg",
+        "order": 8
+      },
+      {
+        "id": 9102,
+        "name": "Tomás Vidal",
+        "character": "León",
+        "profile_path": "/tomas-vidal.jpg",
+        "order": 0
+      },
+      {
+        "id": 9103,
+        "name": "Luz Acosta",
+        "character": "Inés",
+        "profile_path": null,
+        "order": 4
+      },
+      {
+        "id": 9104,
+        "name": "Bruno Serra",
+        "character": "Darío",
+        "profile_path": "/bruno-serra.jpg",
+        "order": 2
+      },
+      {
+        "id": 9105,
+        "name": "Camila Ferrer",
+        "character": "Ada",
+        "profile_path": "/camila-ferrer.jpg",
+        "order": 1
+      },
+      {
+        "id": 9106,
+        "name": "Nicolás Prado",
+        "character": "Iván",
+        "profile_path": null,
+        "order": 3
+      },
+      {
+        "id": 9107,
+        "name": "Mara Quiroga",
+        "character": "Nora",
+        "profile_path": "/mara-quiroga.jpg",
+        "order": 5
+      },
+      {
+        "id": 9108,
+        "name": "Julián Lagos",
+        "character": "Santiago",
+        "profile_path": "/julian-lagos.jpg",
+        "order": 6
+      },
+      {
+        "id": 9109,
+        "name": "Paula Neri",
+        "character": "Eva",
+        "profile_path": null,
+        "order": 7
+      },
+      {
+        "id": 9110,
+        "name": "Diego Alba",
+        "character": "Ramiro",
+        "profile_path": "/diego-alba.jpg",
+        "order": 9
+      },
+      {
+        "id": 9111,
+        "name": "Sofía Beltrán",
+        "character": "Julia",
+        "profile_path": "/sofia-beltran.jpg",
+        "order": 10
+      },
+      {
+        "id": 9112,
+        "name": "Mateo Cid",
+        "character": "Simón",
+        "profile_path": null,
+        "order": 11
+      },
+      {
+        "id": 9113,
+        "name": "Valeria Doval",
+        "character": "Clara",
+        "profile_path": "/valeria-doval.jpg",
+        "order": 12
+      },
+      {
+        "id": 9114,
+        "name": "Andrés Esteve",
+        "character": "Hugo",
+        "profile_path": "/andres-esteve.jpg",
+        "order": 13
+      },
+      {
+        "id": 9115,
+        "name": "Noelia Funes",
+        "character": "Vera",
+        "profile_path": null,
+        "order": 14
+      },
+      {
+        "id": 9116,
+        "name": "Martín Gil",
+        "character": "Teo",
+        "profile_path": "/martin-gil.jpg",
+        "order": 15
+      },
+      {
+        "id": 9117,
+        "name": "Abril Heredia",
+        "character": "Olivia",
+        "profile_path": "/abril-heredia.jpg",
+        "order": 16
+      },
+      {
+        "id": 9118,
+        "name": "Ramón Ibarra",
+        "character": "Gael",
+        "profile_path": null,
+        "order": 17
+      },
+      {
+        "id": 9119,
+        "name": "Irene Juárez",
+        "character": "Alma",
+        "profile_path": "/irene-juarez.jpg",
+        "order": 18
+      },
+      {
+        "id": 9120,
+        "name": "Federico Klein",
+        "character": "Elías",
+        "profile_path": "/federico-klein.jpg",
+        "order": 19
+      },
+      {
+        "id": 9121,
+        "name": "Malena Luna",
+        "character": "Paz",
+        "profile_path": null,
+        "order": 20
+      },
+      {
+        "id": 9122,
+        "name": "Renzo Mena",
+        "character": "Saúl",
+        "profile_path": "/renzo-mena.jpg",
+        "order": 21
+      }
+    ],
+    "crew": [
+      {
+        "id": 9201,
+        "name": "Eva Montes",
+        "job": "Producer",
+        "profile_path": "/eva-montes.jpg"
+      },
+      {
+        "id": 9202,
+        "name": "Ana Paredes",
+        "job": "Director",
+        "profile_path": "/ana-paredes.jpg"
+      },
+      {
+        "id": 9203,
+        "name": "César Robles",
+        "job": "Director",
+        "profile_path": null
+      },
+      {
+        "id": 9204,
+        "name": "Laura Suárez",
+        "job": "Writer",
+        "profile_path": "/laura-suarez.jpg"
+      }
+    ]
+  },
+  "keywords": {
+    "keywords": [
+      { "id": 10001, "name": "archivo" },
+      { "id": 10002, "name": "mapa" },
+      { "id": 10003, "name": "ciudad" },
+      { "id": 10004, "name": "vidrio" },
+      { "id": 10005, "name": "memoria" },
+      { "id": 10006, "name": "laberinto" },
+      { "id": 10007, "name": "subsuelo" },
+      { "id": 10008, "name": "misterio" },
+      { "id": 10009, "name": "amistad" },
+      { "id": 10010, "name": "secreto" },
+      { "id": 10011, "name": "arquitectura" },
+      { "id": 10012, "name": "reflejo" },
+      { "id": 10013, "name": "familia" },
+      { "id": 10014, "name": "investigación" },
+      { "id": 10015, "name": "biblioteca" },
+      { "id": 10016, "name": "pasadizo" },
+      { "id": 10017, "name": "fotografía" },
+      { "id": 10018, "name": "desaparición" },
+      { "id": 10019, "name": "barrio" },
+      { "id": 10020, "name": "noche" },
+      { "id": 10021, "name": "lluvia" },
+      { "id": 10022, "name": "código" },
+      { "id": 10023, "name": "puerta" },
+      { "id": 10024, "name": "espejo" },
+      { "id": 10025, "name": "torre" },
+      { "id": 10026, "name": "río" },
+      { "id": 10027, "name": "estación" },
+      { "id": 10028, "name": "reloj" },
+      { "id": 10029, "name": "cuaderno" },
+      { "id": 10030, "name": "símbolo" },
+      { "id": 10031, "name": "viaje" },
+      { "id": 10032, "name": "herencia" },
+      { "id": 10033, "name": "identidad" },
+      { "id": 10034, "name": "promesa" },
+      { "id": 10035, "name": "sociedad secreta" },
+      { "id": 10036, "name": "manuscrito" },
+      { "id": 10037, "name": "túnel" },
+      { "id": 10038, "name": "azotea" },
+      { "id": 10039, "name": "mercado" },
+      { "id": 10040, "name": "museo" },
+      { "id": 10041, "name": "restauración" },
+      { "id": 10042, "name": "periodista" },
+      { "id": 10043, "name": "persecución" },
+      { "id": 10044, "name": "engaño" },
+      { "id": 10045, "name": "reencuentro" },
+      { "id": 10046, "name": "leyenda" },
+      { "id": 10047, "name": "observatorio" },
+      { "id": 10048, "name": "constelación" },
+      { "id": 10049, "name": "mensaje" },
+      { "id": 10050, "name": "decisión" },
+      { "id": 10051, "name": "amanecer" },
+      { "id": 10052, "name": "epílogo" }
+    ]
+  },
+  "videos": {
+    "results": [
+      {
+        "name": "Entrevista",
+        "site": "YouTube",
+        "type": "Featurette",
+        "official": true,
+        "iso_639_1": "es",
+        "key": "featurette-es"
+      },
+      {
+        "name": "Tráiler Vimeo oficial",
+        "site": "Vimeo",
+        "type": "Trailer",
+        "official": true,
+        "iso_639_1": "es",
+        "key": "vimeo-official-es"
+      },
+      {
+        "name": "Official trailer",
+        "site": "YouTube",
+        "type": "Trailer",
+        "official": true,
+        "iso_639_1": "en",
+        "key": "youtube-official-en"
+      },
+      {
+        "name": "Tráiler oficial",
+        "site": "YouTube",
+        "type": "Trailer",
+        "official": true,
+        "iso_639_1": "es",
+        "key": "youtube-official-es"
+      },
+      {
+        "name": "Tráiler alternativo",
+        "site": "YouTube",
+        "type": "Trailer",
+        "official": false,
+        "iso_639_1": "es",
+        "key": "youtube-unofficial-es"
+      },
+      {
+        "name": "Vimeo fan trailer",
+        "site": "Vimeo",
+        "type": "Trailer",
+        "official": false,
+        "iso_639_1": "en",
+        "key": "vimeo-unofficial-en"
+      }
+    ]
+  }
+}

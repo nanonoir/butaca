@@ -1,26 +1,273 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #070811;
+  --foreground: #efeff6;
+  --surface: #14151f;
+  --surface-muted: #12131d;
+  --surface-elevated: #101220;
+  --primary: #b9a5ff;
+  --primary-hover: #cbbbff;
+  --primary-foreground: #0a0b14;
+  --secondary: rgba(255, 255, 255, 0.05);
+  --muted: #8a8aa2;
+  --muted-foreground: #6c6c84;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.11);
+  --ring: #b9a5ff;
+  --overlay: rgba(10, 11, 13, 0.72);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
+  --font-display: var(--font-bricolage);
+  --font-sans: var(--font-instrument);
+  --font-mono: var(--font-space-mono);
+  --radius-sm: 0.625rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.375rem;
+  --radius-shell: 1.75rem;
+  --radius-full: 9999px;
+  --shadow-primary: 0 12px 30px -10px rgba(185, 165, 255, 0.6);
+  --shadow-floating: 0 16px 40px -24px rgba(0, 0, 0, 0.7);
+  --ease-ui: cubic-bezier(0.23, 1, 0.32, 1);
+  --motion-fast: 120ms;
+  --motion-ui: 160ms;
+  --motion-enter: 240ms;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@utility duration-fast {
+  transition-duration: var(--motion-fast);
+}
+
+@utility duration-ui {
+  transition-duration: var(--motion-ui);
+}
+
+@utility duration-enter {
+  transition-duration: var(--motion-enter);
+}
+
+.desktop-navigation-label {
+  opacity: 0;
+  transform: translateX(-0.25rem);
+  transform-origin: left center;
+  transition:
+    opacity var(--motion-ui) var(--ease-ui),
+    transform var(--motion-ui) var(--ease-ui);
+}
+
+.desktop-navigation-item:focus-visible .desktop-navigation-label {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .desktop-navigation-item:hover .desktop-navigation-label {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
+* {
+  border-color: var(--border);
+}
+
 body {
+  min-height: 100%;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-instrument), system-ui, sans-serif;
+}
+
+.buti-character {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.buti-eyes {
+  animation: buti-blink 4.2s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.buti-mascot[data-activity="jumping"] .buti-character {
+  animation: buti-jump 680ms var(--ease-ui) both;
+}
+
+.buti-mascot[data-activity="talking"] .buti-character {
+  animation: buti-talk 420ms ease-in-out infinite alternate;
+}
+
+.buti-mouth-talking {
+  animation: buti-mouth-talk 220ms ease-in-out infinite alternate;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.buti-grain {
+  --buti-grain-x: 0rem;
+  --buti-grain-y: 0rem;
+  position: absolute;
+  top: 48%;
+  left: 50%;
+  width: 0.45rem;
+  height: 0.65rem;
+  border-radius: 60% 40% 55% 45%;
+  background: #f6edcf;
+  opacity: 0;
+}
+
+.buti-grain-one {
+  --buti-grain-x: -2.7rem;
+  --buti-grain-y: -2.1rem;
+}
+
+.buti-grain-two {
+  --buti-grain-x: 0.25rem;
+  --buti-grain-y: -3rem;
+}
+
+.buti-grain-three {
+  --buti-grain-x: 2.8rem;
+  --buti-grain-y: -1.65rem;
+}
+
+.buti-mascot[data-activity="jumping"] .buti-grain {
+  animation: buti-grain-burst 560ms var(--ease-ui) 120ms both;
+}
+
+@keyframes buti-blink {
+  0%,
+  44%,
+  48%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  46% {
+    transform: scaleY(0.08);
+  }
+}
+
+@keyframes buti-jump {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+
+  18% {
+    transform: translateY(0.15rem) scaleX(1.12) scaleY(0.82);
+  }
+
+  48% {
+    transform: translateY(-0.8rem) scaleX(0.92) scaleY(1.12);
+  }
+
+  72% {
+    transform: translateY(0.08rem) scaleX(1.08) scaleY(0.9);
+  }
+
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes buti-grain-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.45) rotate(0deg);
+  }
+
+  30% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(
+        calc(-50% + var(--buti-grain-x)),
+        calc(-50% + var(--buti-grain-y))
+      )
+      scale(1) rotate(160deg);
+  }
+}
+
+@keyframes buti-talk {
+  from {
+    transform: rotate(-2.5deg) translateY(0);
+  }
+
+  to {
+    transform: rotate(2.5deg) translateY(-0.12rem);
+  }
+}
+
+@keyframes buti-mouth-talk {
+  from {
+    transform: scaleY(0.55);
+  }
+
+  to {
+    transform: scaleY(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+
+  [data-motion-transform] {
+    transition-property: opacity, background-color, color !important;
+    transform: none !important;
+  }
+
+  [data-motion-ambient] {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .desktop-navigation-label {
+    transition-property: opacity, background-color, color;
+    transform: none;
+  }
+
+  .buti-character,
+  .buti-eyes,
+  .buti-mouth-talking {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .buti-grain {
+    display: none;
+  }
+}
+
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  .forced-colors-boundary {
+    border: 1px solid ButtonText;
+  }
 }

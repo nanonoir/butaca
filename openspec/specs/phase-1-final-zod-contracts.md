@@ -120,7 +120,7 @@ MovieReaction
 
 ## 2.6 watchedAt
 
-`watchedAt` es independiente de que la reacción sea positiva o negativa.
+`watchedAt` es independiente de que exista una reacción y, si existe, de que sea positiva o negativa.
 
 Son estados válidos:
 
@@ -130,6 +130,8 @@ LIKE + watchedAt = null
 
 DISLIKE + watchedAt
 DISLIKE + watchedAt = null
+
+reaction = null + watchedAt
 ```
 
 Esto permite representar:
@@ -150,13 +152,7 @@ DISLIKE → LIKE
 
 **preserva `watchedAt`.**
 
-Si se elimina completamente la reacción, se elimina también el estado asociado y:
-
-```text
-watchedAt → null
-```
-
-La película vuelve a ser neutral y puede volver a aparecer en Discover.
+Si se elimina completamente la reacción, `watchedAt` se preserva. La película vuelve a ser neutral respecto del gusto y puede volver a aparecer en Discover aunque siga marcada como vista.
 
 ---
 
@@ -823,28 +819,14 @@ export const MovieReactionSchema = z.enum([
   "DISLIKE",
 ])
 
-export const ViewerMovieStateSchema = z
-  .object({
-    reaction: MovieReactionSchema.nullable(),
-    watchedAt: IsoDateTimeSchema.nullable(),
-  })
-  .superRefine((value, ctx) => {
-    if (
-      value.reaction === null &&
-      value.watchedAt !== null
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["watchedAt"],
-        message:
-          "watchedAt cannot exist without a reaction",
-      })
-    }
-  })
+export const ViewerMovieStateSchema = z.object({
+  reaction: MovieReactionSchema.nullable(),
+  watchedAt: IsoDateTimeSchema.nullable(),
+})
 
 export const SetMovieReactionRequestSchema =
   z.object({
-    reaction: MovieReactionSchema,
+    reaction: MovieReactionSchema.nullable(),
   })
 
 export const MovieInteractionStateSchema =
@@ -856,7 +838,9 @@ export const MovieInteractionStateSchema =
 
 export const SetMovieReactionResponseSchema =
   apiDataResponseSchema(
-    MovieInteractionStateSchema,
+    MovieInteractionStateSchema.extend({
+      reaction: MovieReactionSchema,
+    }),
   )
 
 export const SetWatchedRequestSchema = z.object({
@@ -873,7 +857,7 @@ export const DeleteMovieReactionResponseSchema =
     z.object({
       movieId: TmdbMovieIdSchema,
       reaction: z.null(),
-      watchedAt: z.null(),
+      watchedAt: IsoDateTimeSchema.nullable(),
     }),
   )
 
@@ -946,13 +930,13 @@ LIKE + watchedAt 2026-08-17...
 DELETE /api/me/movies/:movieId/reaction
 ```
 
-Elimina completamente el estado de reacción.
+Elimina el estado de reacción y preserva el estado de vista.
 
 Resultado:
 
 ```text
 reaction = null
-watchedAt = null
+watchedAt = valor anterior
 ```
 
 La película:
@@ -1003,19 +987,7 @@ watchedAt = null
 
 ### Regla
 
-Debe existir previamente:
-
-```text
-LIKE
-o
-DISLIKE
-```
-
-Si no existe reacción:
-
-```text
-409 REACTION_REQUIRED
-```
+No requiere una reacción previa. Si no existe una interacción, marcar vista crea una fila con `reaction = null`; marcar no vista elimina esa fila vacía.
 
 ---
 
@@ -2345,12 +2317,13 @@ updated_at
 id uuid PK
 user_id FK
 movie_id integer
-reaction LIKE | DISLIKE
+reaction LIKE | DISLIKE | null
 watched_at timestamptz null
 created_at
 updated_at
 
 UNIQUE(user_id, movie_id)
+CHECK(reaction IS NOT NULL OR watched_at IS NOT NULL)
 ```
 
 ## reviews
@@ -2451,18 +2424,16 @@ Al ejecutar:
 DELETE /api/me/movies/:movieId/reaction
 ```
 
-se elimina la fila completa.
+se elimina `reaction` y se preserva `watchedAt`.
 
-Por lo tanto desaparecen juntos:
+Si `watchedAt` es nulo, la fila queda vacía y se elimina. Si tiene valor, la fila permanece como:
 
 ```text
-reaction
-watchedAt
+reaction = null
+watchedAt = valor anterior
 ```
 
-Esto responde a la regla acordada:
-
-> watchedAt existe mientras exista LIKE o DISLIKE.
+Esto mantiene ambos estados independientes.
 
 ---
 
@@ -2846,7 +2817,7 @@ La Fase 1 de contratos se considera terminada cuando:
 - [ ] Onboarding respeta 2 géneros + 3 películas.
 - [ ] Onboarding crea LIKE + watchedAt.
 - [ ] LIKE y DISLIKE preservan watchedAt al cambiar.
-- [ ] DELETE reaction elimina watchedAt.
+- [ ] DELETE reaction preserva watchedAt.
 - [ ] Likes list deriva de `reaction = LIKE`.
 - [ ] Filtro watched funciona.
 - [ ] Review valida 3–30 / 10–400.
