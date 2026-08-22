@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { MovieReaction, ViewerMovieState } from "@/contracts/interactions";
+import type { RecommendedMovie } from "@/contracts/discover";
 import type { MovieSummary } from "@/contracts/movies";
 import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
@@ -40,7 +41,7 @@ import { resolveSwipeIntent, SWIPE_INTENT } from "./resolve-swipe-intent";
 const REFILL_THRESHOLD = 5;
 
 interface DiscoverScreenProps {
-  movies: MovieSummary[];
+  movies: RecommendedMovie[];
 }
 
 interface DiscoverMovieCardProps {
@@ -430,8 +431,9 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   const [lastAction, setLastAction] = useState("");
   const assistantTrigger = useRef<HTMLButtonElement | null>(null);
   const searchDetailTrigger = useRef<HTMLElement | null>(null);
-  const currentMovie = deck[currentIndex];
-  const nextMovie = deck[currentIndex + 1];
+  const current = deck[currentIndex];
+  const currentMovie = current?.movie;
+  const nextMovie = deck[currentIndex + 1]?.movie;
   const detailExperience = detailMovie
     ? getMovieDetailExperienceFixture(detailMovie)
     : null;
@@ -465,7 +467,7 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
 
     loadingRef.current = true;
 
-    void fetchDiscoverBatch(deck.map((movie) => movie.id))
+    void fetchDiscoverBatch(deck.map((entry) => entry.movie.id))
       .then((batch) => {
         if (batch.movies.length === 0) {
           setExhausted(true);
@@ -663,6 +665,7 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
 
                   <ButiMobileRecommendation
                     movie={currentMovie}
+                    insight={current!.insight}
                     onOpenAssistant={openAssistant}
                   />
 
@@ -690,6 +693,7 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
             {currentMovie ? (
               <ButiRecommendation
                 movie={currentMovie}
+                insight={current!.insight}
                 onOpenAssistant={openAssistant}
               />
             ) : (
@@ -709,8 +713,10 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
           <ButiAssistantDrawer
             key={`buti-drawer-${currentMovie.id}`}
             movie={currentMovie}
+            insight={current!.insight}
             onClose={() => setAssistantOpen(false)}
             recommendations={deck
+              .map((entry) => entry.movie)
               .filter((movie) => movie.id !== currentMovie.id)
               .slice(0, 3)}
           />

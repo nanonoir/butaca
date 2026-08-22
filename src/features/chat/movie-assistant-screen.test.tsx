@@ -47,7 +47,9 @@ vi.mock("@/features/interactions/interaction-client", () => ({
   setMovieWatched: vi.fn().mockResolvedValue(undefined),
 }));
 
-const MOVIES = DISCOVER_MOVIES_FIXTURE.data.movies.slice(0, 3);
+const MOVIES = DISCOVER_MOVIES_FIXTURE.data.movies
+  .slice(0, 3)
+  .map(({ movie }) => movie);
 
 function userMessage(id: string, text: string) {
   return { id, role: "user", parts: [{ type: "text", text }] };

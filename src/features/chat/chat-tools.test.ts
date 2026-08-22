@@ -26,7 +26,10 @@ function createMovie(id: number, title: string): MovieSummary {
 function createRecommendations(movies: MovieSummary[] = []) {
   return {
     getDiscoverBatch: vi.fn().mockResolvedValue({
-      movies,
+      movies: movies.map((movie) => ({
+        movie,
+        insight: { tier: "high", matchedGenres: [], clashingGenres: [] },
+      })),
       batchSize: 10,
       returned: movies.length,
     }),

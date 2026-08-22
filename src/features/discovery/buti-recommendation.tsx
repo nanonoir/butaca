@@ -4,6 +4,7 @@ import {
   ButiMascot,
   type ButiMatch,
 } from "@/components/shared/buti-mascot";
+import type { MatchInsight, MatchTier } from "@/contracts/discover";
 import type { MovieSummary } from "@/contracts/movies";
 
 export interface ButiInsight {
@@ -11,36 +12,103 @@ export interface ButiInsight {
   opinion: string;
 }
 
-const BUTI_INSIGHTS: Readonly<Record<number, ButiInsight>> = {
-  129: {
-    match: BUTI_MATCH.LOW,
-    opinion:
-      "Esta aventura queda fuera de tus géneros habituales, pero su fantasía y emoción pueden ser una buena sorpresa.",
-  },
-  329865: {
-    match: BUTI_MATCH.MEDIUM,
-    opinion:
-      "Otra historia de Denis Villeneuve: ciencia ficción íntima, misterio y una duración más contenida para seguir en ese tono.",
-  },
-  335984: {
-    match: BUTI_MATCH.HIGH,
-    opinion:
-      "Esta ya dialoga con tus gustos: ciencia ficción, atmósfera noir y el pulso visual de Denis Villeneuve.",
-  },
-  438631: {
-    match: BUTI_MATCH.HIGH,
-    opinion:
-      "Denis Villeneuve otra vez: te gustó Blade Runner 2049 y acá vuelve el mismo pulso, con 2 h 35 min de duración.",
-  },
-  545611: {
-    match: BUTI_MATCH.MEDIUM,
-    opinion:
-      "Acción, ciencia ficción y una historia familiar muy distinta: buena opción si hoy querés algo intenso y sorprendente.",
-  },
+const MATCH_BY_TIER: Readonly<Record<MatchTier, ButiMatch>> = {
+  high: BUTI_MATCH.HIGH,
+  medium: BUTI_MATCH.MEDIUM,
+  low: BUTI_MATCH.LOW,
 };
+
+function joinGenres(genres: string[]): string {
+  const [first, second] = genres;
+
+  return second ? `${first} y ${second}` : (first ?? "");
+}
+
+/** Several phrasings per case, picked by movie id. Almost every candidate
+ * matches two of the viewer's genres, so a single template made the whole deck
+ * read the same; the id keeps a given movie's line stable while it is on
+ * screen. */
+const MATCHED_PHRASES: Readonly<Record<"high" | "medium", readonly string[]>> =
+  {
+    high: [
+      "{genres}: justo lo que venís marcando.",
+      "Da en el clavo con {genres}, tus dos fuertes.",
+      "{genres}, y de lo mejor que encontré para vos hoy.",
+    ],
+    medium: [
+      "{genres}, aunque hoy encontré cosas que te pegan más.",
+      "Va por {genres}, sin ser lo más redondo de la tanda.",
+      "{genres}: entra, pero no es la que más te representa.",
+    ],
+  };
+
+const SINGLE_GENRE_PHRASES = [
+  "{genres} es de lo que más mirás, y puntúa {rating} en TMDB.",
+  "Tira para {genres}, con {rating} en TMDB.",
+] as const;
+
+const OFF_PROFILE_PHRASES = [
+  "Se sale de tus géneros habituales, pero puntúa {rating} en TMDB.",
+  "Nada que ver con lo que venís viendo; va por su {rating} en TMDB.",
+] as const;
+
+function pick(phrases: readonly string[], movieId: number): string {
+  return phrases[movieId % phrases.length] ?? phrases[0]!;
+}
+
+function fill(phrase: string, genres: string, rating: string): string {
+  return phrase.replace("{genres}", genres).replace("{rating}", rating);
+}
+
+/** Says why the recommender picked the movie, using the genres it actually
+ * weighed. It used to read a table keyed by five fixture ids, so once Discover
+ * started serving real recommendations almost every card fell through to the
+ * same sentence. */
+export function getButiInsight(
+  movie: MovieSummary,
+  insight: MatchInsight,
+): ButiInsight {
+  const match = MATCH_BY_TIER[insight.tier];
+  const matched = joinGenres(insight.matchedGenres);
+  const clashing = joinGenres(insight.clashingGenres);
+  const rating = movie.tmdbRating.toFixed(1);
+
+  if (clashing) {
+    return {
+      match,
+      opinion: matched
+        ? `${matched} van con lo tuyo, aunque ${clashing.toLowerCase()} es lo que venís descartando.`
+        : `Se apoya en ${clashing.toLowerCase()}, que venís descartando, pero puntúa ${rating} en TMDB.`,
+    };
+  }
+
+  if (insight.matchedGenres.length > 1 && insight.tier !== "low") {
+    return {
+      match,
+      opinion: fill(
+        pick(MATCHED_PHRASES[insight.tier], movie.id),
+        matched,
+        rating,
+      ),
+    };
+  }
+
+  if (matched) {
+    return {
+      match,
+      opinion: fill(pick(SINGLE_GENRE_PHRASES, movie.id), matched, rating),
+    };
+  }
+
+  return {
+    match,
+    opinion: fill(pick(OFF_PROFILE_PHRASES, movie.id), matched, rating),
+  };
+}
 
 interface ButiRecommendationProps {
   movie: MovieSummary;
+  insight: MatchInsight;
   onOpenAssistant: (trigger: HTMLButtonElement) => void;
 }
 
@@ -48,20 +116,12 @@ function getButiActivity(match: ButiMatch) {
   return match === BUTI_MATCH.HIGH ? BUTI_ACTIVITY.JUMPING : BUTI_ACTIVITY.IDLE;
 }
 
-export function getButiInsight(movie: MovieSummary): ButiInsight {
-  return (
-    BUTI_INSIGHTS[movie.id] ?? {
-      match: BUTI_MATCH.MEDIUM,
-      opinion: `${movie.title} encaja con lo que venís viendo y tiene ${movie.tmdbRating.toFixed(1)} en TMDB.`,
-    }
-  );
-}
-
 export function ButiMobileRecommendation({
   movie,
+  insight,
   onOpenAssistant,
 }: ButiRecommendationProps) {
-  const insight = getButiInsight(movie);
+  const butiInsight = getButiInsight(movie, insight);
 
   return (
     <button
@@ -71,13 +131,13 @@ export function ButiMobileRecommendation({
       type="button"
     >
       <ButiMascot
-        activity={getButiActivity(insight.match)}
+        activity={getButiActivity(butiInsight.match)}
         className="size-12"
         key={movie.id}
-        match={insight.match}
+        match={butiInsight.match}
       />
       <span className="line-clamp-2 min-w-0 flex-1 text-sm leading-5 text-foreground/85">
-        {insight.opinion}
+        {butiInsight.opinion}
       </span>
       <span
         aria-hidden="true"
@@ -91,9 +151,10 @@ export function ButiMobileRecommendation({
 
 export function ButiRecommendation({
   movie,
+  insight,
   onOpenAssistant,
 }: ButiRecommendationProps) {
-  const insight = getButiInsight(movie);
+  const butiInsight = getButiInsight(movie, insight);
 
   return (
     <aside
@@ -109,7 +170,7 @@ export function ButiRecommendation({
           Buti opina
         </p>
         <p className="mt-3 text-sm leading-6 text-foreground/90">
-          {insight.opinion}
+          {butiInsight.opinion}
         </p>
         <span
           aria-hidden="true"
@@ -120,10 +181,10 @@ export function ButiRecommendation({
       <div className="mt-4 flex items-center gap-3 px-1">
         <div className="relative shrink-0">
           <ButiMascot
-            activity={getButiActivity(insight.match)}
+            activity={getButiActivity(butiInsight.match)}
             className="size-[4.75rem]"
             key={movie.id}
-            match={insight.match}
+            match={butiInsight.match}
           />
           <button
             aria-label={`Abrir asistente de Buti sobre ${movie.title}`}

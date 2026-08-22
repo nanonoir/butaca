@@ -2,9 +2,11 @@ import "server-only";
 
 import {
   DISCOVER_BATCH_SIZE,
+  type Genre,
   type MovieDetail,
   type MovieSummary,
   type RecommendationFilters,
+  type RecommendedMovie,
 } from "@/contracts";
 
 import type {
@@ -14,6 +16,7 @@ import type {
 import type { UserMovieInteractionRecord } from "../../db/schema/user-movie-interactions";
 import type { TmdbAdapter, TmdbDiscoverOptions } from "../../integrations/tmdb";
 
+import { buildMatchInsight } from "./match-insight";
 import { excludeMovies, rankMovies } from "./ranking";
 import { buildTasteProfile, type TasteProfile } from "./taste-profile";
 
@@ -38,7 +41,10 @@ type InteractionsPort = Pick<
   "findLikesByUser" | "findDislikesByUser" | "findReactedMovieIds"
 >;
 
-type CatalogPort = Pick<TmdbAdapter, "getMovieDetail" | "discoverMovies">;
+type CatalogPort = Pick<
+  TmdbAdapter,
+  "getMovieDetail" | "discoverMovies" | "getGenres"
+>;
 
 export type DiscoverBatchOptions = {
   /** Movies still sitting in the viewer's deck. They are not reacted to yet, so
@@ -50,7 +56,7 @@ export type DiscoverBatchOptions = {
 };
 
 export type DiscoverBatch = {
-  movies: MovieSummary[];
+  movies: RecommendedMovie[];
   batchSize: typeof DISCOVER_BATCH_SIZE;
   returned: number;
 };
@@ -82,7 +88,7 @@ export class RecommendationService {
       disliked: dislikedDetails,
     });
     const candidates = await this.generateCandidates(profile, options.filters);
-    const movies = rankMovies(
+    const ranked = rankMovies(
       excludeMovies(candidates, [
         ...reactedMovieIds,
         ...(options.excludeMovieIds ?? []),
@@ -90,12 +96,35 @@ export class RecommendationService {
       profile,
       options.limit ?? DISCOVER_BATCH_SIZE,
     );
+    // Genre names only matter for the batch that survived the ranking, and the
+    // list is small enough to fetch once per request.
+    const genres = ranked.length > 0 ? await this.resolveGenres() : [];
+    const movies = ranked.map<RecommendedMovie>((movie, position) => ({
+      movie,
+      insight: buildMatchInsight(
+        movie,
+        profile,
+        genres,
+        position,
+        ranked.length,
+      ),
+    }));
 
     return {
       movies,
       batchSize: DISCOVER_BATCH_SIZE,
       returned: movies.length,
     };
+  }
+
+  /** A catalog outage must not cost the whole batch: without names the insight
+   * degrades to a tier with no genres, and the deck still renders. */
+  private async resolveGenres(): Promise<Genre[]> {
+    try {
+      return await this.catalog.getGenres();
+    } catch {
+      return [];
+    }
   }
 
   /** Detail lookups are served from the movie cache after the first read. One

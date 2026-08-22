@@ -98,9 +98,7 @@ describe("DiscoverScreen", () => {
 
     expect(within(buti).getByText("Buti opina")).toBeInTheDocument();
     expect(
-      within(buti).getByText(
-        /Denis Villeneuve otra vez: te gustó Blade Runner 2049/i,
-      ),
+      within(buti).getByText(/Ciencia ficción y Aventura/i),
     ).toBeInTheDocument();
     expect(
       within(buti).getByRole("img", {
@@ -147,7 +145,7 @@ describe("DiscoverScreen", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      within(mobileCard).getByText(/Denis Villeneuve otra vez/i),
+      within(mobileCard).getByText(/Ciencia ficción y Aventura/i),
     ).toBeInTheDocument();
     expect(within(mobileCard).getByText("›")).toBeInTheDocument();
 
@@ -467,9 +465,7 @@ describe("DiscoverScreen", () => {
     const buti = screen.getByRole("complementary", {
       name: "Buti opina sobre La llegada",
     });
-    expect(
-      within(buti).getByText(/otra historia de Denis Villeneuve/i),
-    ).toBeInTheDocument();
+    expect(within(buti).getByText(/Ciencia ficción/i)).toBeInTheDocument();
     expect(
       within(buti).getByRole("img", {
         name: "Buti atento, match medio",
@@ -754,7 +750,7 @@ describe("DiscoverScreen reactions", () => {
 
     await waitFor(() => {
       expect(vi.mocked(setMovieReaction)).toHaveBeenCalledWith(
-        movies[0]!.id,
+        movies[0]!.movie.id,
         "LIKE",
       );
     });
@@ -768,7 +764,7 @@ describe("DiscoverScreen reactions", () => {
 
     await waitFor(() => {
       expect(vi.mocked(setMovieReaction)).toHaveBeenCalledWith(
-        movies[0]!.id,
+        movies[0]!.movie.id,
         "DISLIKE",
       );
     });
@@ -783,7 +779,7 @@ describe("DiscoverScreen reactions", () => {
 
     expect(
       await screen.findByText(
-        `No pudimos guardar tu reacción sobre ${movies[0]!.title}.`,
+        `No pudimos guardar tu reacción sobre ${movies[0]!.movie.title}.`,
       ),
     ).toBeInTheDocument();
   });
@@ -813,14 +809,19 @@ describe("DiscoverScreen refill", () => {
 
     await waitFor(() => {
       expect(vi.mocked(fetchDiscoverBatch)).toHaveBeenCalledWith(
-        movies.map((movie) => movie.id),
+        movies.map(({ movie }) => movie.id),
       );
     });
   });
 
   it("appends the new batch so swiping can continue", async () => {
     vi.mocked(fetchDiscoverBatch).mockResolvedValueOnce({
-      movies: [extraMovie(9_001)],
+      movies: [
+        {
+          movie: extraMovie(9_001),
+          insight: { tier: "medium", matchedGenres: [], clashingGenres: [] },
+        },
+      ],
       batchSize: 10,
       returned: 1,
     });

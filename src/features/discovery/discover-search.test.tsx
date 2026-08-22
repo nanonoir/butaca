@@ -37,7 +37,7 @@ const MOVIES = DISCOVER_MOVIES_FIXTURE.data.movies.slice(0, 2);
 
 function createResults(page = 1) {
   return {
-    data: [MOVIES[0]],
+    data: [MOVIES[0].movie],
     meta: {
       page,
       pageSize: 20 as const,
@@ -174,7 +174,7 @@ describe("DiscoverScreen search", () => {
 
   it("opens real detail data, restores focus, and clears back to Discover", async () => {
     clientMocks.fetchSearchMovies.mockResolvedValue(createResults());
-    const detail = getMovieDetailExperienceFixture(MOVIES[0]);
+    const detail = getMovieDetailExperienceFixture(MOVIES[0].movie);
     clientMocks.fetchMovieDetail.mockResolvedValue(detail.pageData);
     clientMocks.fetchMovieReviews.mockResolvedValue({
       data: detail.publicReviews,
@@ -200,7 +200,9 @@ describe("DiscoverScreen search", () => {
     trigger.focus();
     fireEvent.click(trigger);
     await screen.findByRole("dialog", { name: "Detalle de Dune" });
-    expect(clientMocks.fetchMovieDetail).toHaveBeenCalledWith(MOVIES[0].id);
+    expect(clientMocks.fetchMovieDetail).toHaveBeenCalledWith(
+      MOVIES[0].movie.id,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Cerrar detalle" }));
     await waitFor(() => expect(trigger).toHaveFocus());

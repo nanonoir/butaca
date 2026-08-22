@@ -1,0 +1,116 @@
+import { describe, expect, it } from "vitest";
+
+import type { Genre, MovieSummary } from "@/contracts";
+
+import { buildMatchInsight, MATCH_TIER } from "./match-insight";
+import type { TasteProfile } from "./taste-profile";
+
+const GENRES: Genre[] = [
+  { id: 878, name: "Ciencia ficción" },
+  { id: 18, name: "Drama" },
+  { id: 27, name: "Terror" },
+  { id: 35, name: "Comedia" },
+];
+
+const BATCH_SIZE = 9;
+const TOP_POSITION = 0;
+const LOWER_POSITION = 5;
+
+function createMovie(genreIds: number[]): MovieSummary {
+  return {
+    id: 1,
+    title: "Película",
+    originalTitle: "Película",
+    overview: "",
+    posterPath: null,
+    backdropPath: null,
+    genreIds,
+    releaseDate: "2020-01-01",
+    originalLanguage: "en",
+    tmdbRating: 8,
+    tmdbVoteCount: 2_000,
+  };
+}
+
+function createProfile(genreWeights: Record<number, number>): TasteProfile {
+  return {
+    genreWeights,
+    preferredGenreIds: [],
+    excludedGenreIds: [],
+    keywordIds: [],
+    castIds: [],
+    crewIds: [],
+  };
+}
+
+function insightAt(
+  genreIds: number[],
+  genreWeights: Record<number, number>,
+  position: number,
+) {
+  return buildMatchInsight(
+    createMovie(genreIds),
+    createProfile(genreWeights),
+    GENRES,
+    position,
+    BATCH_SIZE,
+  );
+}
+
+describe("buildMatchInsight", () => {
+  it("names the genres the movie shares with the profile", () => {
+    const insight = insightAt([878, 18], { 878: 3, 18: 2 }, TOP_POSITION);
+
+    expect(insight.matchedGenres).toEqual(["Ciencia ficción", "Drama"]);
+  });
+
+  it("orders the matched genres by how much the viewer likes them", () => {
+    const insight = insightAt([18, 878], { 878: 5, 18: 1 }, TOP_POSITION);
+
+    expect(insight.matchedGenres).toEqual(["Ciencia ficción", "Drama"]);
+  });
+
+  it("keeps the enthusiastic face for the top of the batch", () => {
+    expect(insightAt([878, 18], { 878: 3, 18: 2 }, TOP_POSITION).tier).toBe(
+      MATCH_TIER.HIGH,
+    );
+  });
+
+  /** Candidates are generated from the viewer's own genres, so counting matches
+   * alone made every card a high match. */
+  it("cools down further along the batch even when the genres still match", () => {
+    expect(insightAt([878, 18], { 878: 3, 18: 2 }, LOWER_POSITION).tier).toBe(
+      MATCH_TIER.MEDIUM,
+    );
+  });
+
+  it("treats a rejected genre as doubtful wherever it ranked", () => {
+    const insight = insightAt([878, 27], { 878: 3, 27: -3 }, TOP_POSITION);
+
+    expect(insight.tier).toBe(MATCH_TIER.LOW);
+    expect(insight.clashingGenres).toEqual(["Terror"]);
+    expect(insight.matchedGenres).toEqual(["Ciencia ficción"]);
+  });
+
+  it("calls a movie with nothing in common a low match", () => {
+    const insight = insightAt([35], { 878: 3 }, TOP_POSITION);
+
+    expect(insight.tier).toBe(MATCH_TIER.LOW);
+    expect(insight.matchedGenres).toEqual([]);
+  });
+
+  it("skips a genre the catalog cannot name", () => {
+    const insight = insightAt([878, 9_999], { 878: 3, 9_999: 2 }, TOP_POSITION);
+
+    expect(insight.matchedGenres).toEqual(["Ciencia ficción"]);
+  });
+
+  it("spreads the tiers across a whole batch instead of one face", () => {
+    const tiers = Array.from({ length: BATCH_SIZE }, (_unused, position) =>
+      insightAt([878, 18], { 878: 3, 18: 2 }, position),
+    ).map(({ tier }) => tier);
+
+    expect(new Set(tiers).size).toBeGreaterThan(1);
+    expect(tiers.filter((tier) => tier === MATCH_TIER.HIGH)).toHaveLength(3);
+  });
+});
