@@ -61,6 +61,14 @@ function createEmptyResults() {
   };
 }
 
+function openSearch() {
+  fireEvent.click(
+    screen.getByRole("button", { name: "Abrir buscador de películas" }),
+  );
+
+  return screen.getByLabelText("Buscar películas");
+}
+
 afterEach(cleanup);
 
 beforeEach(() => {
@@ -81,10 +89,29 @@ beforeEach(() => {
 });
 
 describe("DiscoverScreen search", () => {
+  it("starts compact and expands the search without replacing the swipe", () => {
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    const trigger = screen.getByRole("button", {
+      name: "Abrir buscador de películas",
+    });
+
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("search")).not.toBeInTheDocument();
+    expect(screen.getByTestId("movie-stack-column")).toBeInTheDocument();
+
+    fireEvent.click(trigger);
+
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("search")).toBeInTheDocument();
+    expect(screen.getByLabelText("Buscar películas")).toHaveFocus();
+    expect(screen.getByTestId("movie-stack-column")).toBeInTheDocument();
+  });
+
   it("keeps typing and blank submission local to the search form", () => {
     render(<DiscoverScreen movies={MOVIES} />);
 
-    const input = screen.getByLabelText("Buscar películas");
+    const input = openSearch();
     fireEvent.change(input, { target: { value: " dune " } });
 
     expect(clientMocks.fetchSearchMovies).not.toHaveBeenCalled();
@@ -99,7 +126,7 @@ describe("DiscoverScreen search", () => {
     clientMocks.fetchSearchMovies.mockResolvedValue(createResults());
     render(<DiscoverScreen movies={MOVIES} />);
 
-    fireEvent.change(screen.getByLabelText("Buscar películas"), {
+    fireEvent.change(openSearch(), {
       target: { value: " dune " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Buscar" }));
@@ -124,7 +151,7 @@ describe("DiscoverScreen search", () => {
       .mockResolvedValueOnce(createResults(2));
     render(<DiscoverScreen movies={MOVIES} />);
 
-    const input = screen.getByLabelText("Buscar películas");
+    const input = openSearch();
     fireEvent.change(input, { target: { value: "dune" } });
     fireEvent.submit(screen.getByRole("search"));
     fireEvent.change(input, { target: { value: "arrival" } });
@@ -154,7 +181,7 @@ describe("DiscoverScreen search", () => {
       .mockResolvedValueOnce(createResults());
     render(<DiscoverScreen movies={MOVIES} />);
 
-    fireEvent.change(screen.getByLabelText("Buscar películas"), {
+    fireEvent.change(openSearch(), {
       target: { value: "no-result" },
     });
     fireEvent.submit(screen.getByRole("search"));
@@ -188,7 +215,7 @@ describe("DiscoverScreen search", () => {
     });
     render(<DiscoverScreen movies={MOVIES} />);
 
-    fireEvent.change(screen.getByLabelText("Buscar películas"), {
+    fireEvent.change(openSearch(), {
       target: { value: "dune" },
     });
     fireEvent.submit(screen.getByRole("search"));
@@ -211,5 +238,23 @@ describe("DiscoverScreen search", () => {
     fireEvent.click(screen.getByRole("button", { name: "Limpiar búsqueda" }));
     expect(screen.getByTestId("movie-stack-column")).toBeInTheDocument();
     expect(screen.getByLabelText("Buscar películas")).toHaveValue("");
+  });
+
+  it("closes an active search and restores the swipe", async () => {
+    clientMocks.fetchSearchMovies.mockResolvedValue(createResults());
+    render(<DiscoverScreen movies={MOVIES} />);
+
+    const trigger = screen.getByRole("button", {
+      name: "Abrir buscador de películas",
+    });
+    fireEvent.change(openSearch(), { target: { value: "dune" } });
+    fireEvent.submit(screen.getByRole("search"));
+    await screen.findByRole("heading", { name: "Resultados para “dune”" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar búsqueda" }));
+
+    expect(screen.getByTestId("movie-stack-column")).toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 });
