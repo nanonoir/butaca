@@ -22,7 +22,11 @@ Se usan dos archivos locales, ambos ignorados por Git (`.gitignore` cubre `.env.
 | `DATABASE_MIGRATION_URL`               | Supabase → Connect → conexión **directa / session mode**      | Solo `drizzle.config.ts`              |
 | `TMDB_ACCESS_TOKEN`                    | TMDB → Settings → API → _API Read Access Token_               | Solo `TmdbClient`                     |
 
-`AI_GATEWAY_API_KEY` ya existe en `.env.example` para módulos futuros; la Foundation no la lee.
+`GOOGLE_GENERATIVE_AI_API_KEY` alimenta al asistente y la lee únicamente
+[`src/lib/env/ai.ts`](../src/lib/env/ai.ts). Se obtiene en Google AI Studio →
+_Get API key_, no requiere tarjeta y se valida por separado a propósito: si
+falta, falla el chat y no el resto de la aplicación, que comparte
+`getServerEnv()`.
 
 ### `.env.integration.local`
 
@@ -41,6 +45,7 @@ La validación está separada a propósito, de modo que cada capa solo puede ver
 | [`src/lib/env/public.ts`](../src/lib/env/public.ts)       | Las dos variables `NEXT_PUBLIC_*`                   | Único parser que puede correr en el browser                       |
 | [`src/lib/env/server.ts`](../src/lib/env/server.ts)       | Las públicas + `DATABASE_URL` + `TMDB_ACCESS_TOKEN` | `server-only`; `getServerEnv()` cachea y lanza si `window` existe |
 | [`src/lib/env/migration.ts`](../src/lib/env/migration.ts) | Solo `DATABASE_MIGRATION_URL`                       | Lo usa Drizzle Kit, no el runtime                                 |
+| [`src/lib/env/ai.ts`](../src/lib/env/ai.ts)               | Solo `GOOGLE_GENERATIVE_AI_API_KEY`                 | `server-only`; separado para que su ausencia no frene la app      |
 
 Los tres construyen el mensaje de error con `formatInvalidKeys`, que enumera **únicamente los nombres** de las claves inválidas. Un valor de credencial nunca llega al mensaje de excepción ni a un log.
 
