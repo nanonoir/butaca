@@ -1,18 +1,18 @@
-import { google } from "@ai-sdk/google";
-import { stepCountIs, streamText, type ModelMessage } from "ai";
+import { APICallError, stepCountIs, streamText, type ModelMessage } from "ai";
 
 import { ChatRequestSchema } from "@/contracts";
+import {
+  createChatModelChain,
+  type ChatModelChain,
+} from "@/features/chat/chat-model";
 import { createChatTools } from "@/features/chat/chat-tools";
 import { getRecommendationService } from "@/features/recommendations/recommendation-factory";
 import { getAiEnv } from "@/lib/env/ai";
 import { readJsonBody, requireViewer, runApiRoute } from "@/lib/api/route";
 
-/** Pinned rather than an alias like `gemini-flash-latest`: a floating alias
- * swaps the model underneath, and tool calling is the fragile part here. */
-const CHAT_MODEL = "gemini-3.6-flash";
-
 /** Enough turns for the model to call the tool and then talk about what came
- * back, without letting it loop. */
+ * back, without letting it loop. Worth reading next to the daily budgets in
+ * `chat-model`: one message from a viewer spends up to this many requests. */
 const MAX_STEPS = 4;
 
 const SYSTEM_PROMPT = [
@@ -22,6 +22,24 @@ const SYSTEM_PROMPT = [
   "Si la herramienta no devuelve nada, decilo con honestidad y ofrecé cambiar de criterio.",
   "No pidas ni menciones datos personales del usuario.",
 ].join(" ");
+
+/** Logged in production on purpose, unlike the development-only auth reporter:
+ * a spent model is the only warning that the daily budget is running out, and
+ * it is rare enough not to be noise. Model ids and status codes only -- nothing
+ * the viewer said. */
+function reportSpentModels({ attempts }: ChatModelChain): void {
+  if (attempts.length === 0) {
+    return;
+  }
+
+  console.warn(
+    "[chat] Fell through to another model",
+    attempts.map(({ modelId, error }) => ({
+      modelId,
+      status: APICallError.isInstance(error) ? error.statusCode : undefined,
+    })),
+  );
+}
 
 function toModelMessages(
   messages: { role: "user" | "assistant"; content: string }[],
@@ -38,12 +56,18 @@ export async function POST(request: Request): Promise<Response> {
     // surfacing a provider error mid-stream.
     getAiEnv();
 
+    const chain = createChatModelChain();
     const result = streamText({
-      model: google(CHAT_MODEL),
+      model: chain.model,
       system: SYSTEM_PROMPT,
       messages: toModelMessages(messages),
       stopWhen: stepCountIs(MAX_STEPS),
       tools: createChatTools(getRecommendationService(), viewer.id),
+      // The chain is the retry strategy. Leaving the default in place would
+      // re-run the whole chain instead, spending every model twice over.
+      maxRetries: 0,
+      onFinish: () => reportSpentModels(chain),
+      onError: () => reportSpentModels(chain),
     });
 
     return result.toUIMessageStreamResponse();
