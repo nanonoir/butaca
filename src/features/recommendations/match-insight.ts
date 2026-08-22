@@ -20,8 +20,27 @@ export const MATCH_TIER = {
  * the top still means something. */
 const HIGH_TIER_SHARE = 3 / 5;
 
+/** And a share at the other end that earns the doubtful one. Without it a deck
+ * of well ranked movies never shows Buti's third face at all, because a genuine
+ * mismatch is rare once the recommender has done its work.
+ *
+ * Deliberately fixed rather than derived from the scores: the split is the same
+ * six, three and one in every batch. Predictable beats clever until there is a
+ * reason to calibrate a threshold. */
+const LOW_TIER_SHARE = 1 / 10;
+
 function weightOf(profile: TasteProfile, genreId: number): number {
   return profile.genreWeights[genreId] ?? 0;
+}
+
+function tierForPosition(position: number, batchSize: number): MatchInsight["tier"] {
+  if (position < Math.ceil(batchSize * HIGH_TIER_SHARE)) {
+    return MATCH_TIER.HIGH;
+  }
+
+  const lowCount = Math.ceil(batchSize * LOW_TIER_SHARE);
+
+  return position >= batchSize - lowCount ? MATCH_TIER.LOW : MATCH_TIER.MEDIUM;
 }
 
 function sumWeights(
@@ -84,10 +103,8 @@ export function buildMatchInsight(
 
   // Relative enthusiasm, not a verdict: everything here matched the profile,
   // and the ranking is what says which ones matched hardest.
-  const isTopOfBatch = position < Math.ceil(batchSize * HIGH_TIER_SHARE);
-
   return {
-    tier: isTopOfBatch ? MATCH_TIER.HIGH : MATCH_TIER.MEDIUM,
+    tier: tierForPosition(position, batchSize),
     matchedGenres,
     clashingGenres,
   };

@@ -43,18 +43,24 @@ const PHRASES: Readonly<Record<MatchTier, readonly string[]>> = {
     "Va por {genres}, sin ser lo más redondo de la tanda.",
     "{genres}: entra, pero no es la que más te representa.",
   ],
-  // The low lines lean on {reason} rather than {genres}: a movie lands here
-  // either because it carries a genre the viewer rejects or because it matches
-  // nothing at all, and those are two different things to say.
+  // The low lines lean on a reason rather than a genre list, because a movie
+  // lands here three different ways: carrying a genre the viewer rejects,
+  // matching nothing at all, or simply closing a batch that was good
+  // throughout. The reason is a clause so one table covers all three; {Reason}
+  // is the same text capitalised for the start of a sentence.
   low: [
-    "Se apoya en {reason}. La traigo por su {rating} en TMDB.",
-    "Puntúa {rating} en TMDB, pero se apoya en {reason}.",
-    "No es lo tuyo: {reason}. Igual tiene {rating} en TMDB.",
+    "{Reason}. Igual puntúa {rating} en TMDB.",
+    "Puntúa {rating} en TMDB, pero {reason}.",
+    "Ojo con esta: {reason}. Puntúa {rating} en TMDB.",
   ],
 };
 
 function pick(phrases: readonly string[], movieId: number): string {
   return phrases[movieId % phrases.length] ?? phrases[0]!;
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function fill(
@@ -63,8 +69,24 @@ function fill(
 ): string {
   return phrase
     .replace("{genres}", slots.genres)
+    .replace("{Reason}", capitalize(slots.reason))
     .replace("{reason}", slots.reason)
-    .replace("{rating}", slots.rating);
+    .replaceAll("{rating}", slots.rating);
+}
+
+/** Why a movie is a doubtful pick, phrased as a clause the low lines can carry.
+ * The last card of a batch reads as doubtful too, and saying it touches none of
+ * the viewer's genres would simply be untrue of a movie that matched two. */
+function buildLowReason(insight: MatchInsight, genres: string): string {
+  const clashing = joinGenres(insight.clashingGenres);
+
+  if (clashing) {
+    return `se apoya en ${clashing.toLowerCase()}, que venís descartando`;
+  }
+
+  return genres
+    ? `es lo más flojo que encontré con ${genres}`
+    : "no toca ninguno de tus géneros";
 }
 
 /** Says why the recommender picked the movie, using the genres it actually
@@ -75,17 +97,15 @@ export function getButiInsight(
   movie: MovieSummary,
   insight: MatchInsight,
 ): ButiInsight {
-  const clashing = joinGenres(insight.clashingGenres);
+  const genres = joinGenres(insight.matchedGenres);
   const slots = {
-    genres: joinGenres(insight.matchedGenres),
-    reason: clashing
-      ? `${clashing.toLowerCase()}, que venís descartando`
-      : "géneros que no venís mirando",
+    genres,
+    reason: buildLowReason(insight, genres),
     rating: movie.tmdbRating.toFixed(1),
   };
   // A tier with nothing to name would leave a phrase with an empty slot, and
   // the low lines never need one.
-  const tier: MatchTier = slots.genres ? insight.tier : "low";
+  const tier: MatchTier = genres ? insight.tier : "low";
 
   return {
     match: MATCH_BY_TIER[tier],

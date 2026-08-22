@@ -96,7 +96,35 @@ describe("getButiInsight", () => {
 
     expect(new Set(opinions).size).toBe(3);
     for (const opinion of opinions) {
-      expect(opinion).toContain("géneros que no venís mirando");
+      expect(opinion).toMatch(/no toca ninguno de tus géneros/i);
+    }
+  });
+
+  /** The last card of a batch reads as doubtful by position alone. Telling the
+   * viewer it touches none of their genres would be a plain lie about a movie
+   * that matched two of them. */
+  it("does not claim a movie missed when it closed a batch that matched", () => {
+    const opinions = opinionsFor(
+      createInsight("low", ["Ciencia ficción", "Drama"]),
+    );
+
+    expect(new Set(opinions).size).toBe(3);
+    for (const opinion of opinions) {
+      expect(opinion).toContain("Ciencia ficción y Drama");
+      expect(opinion).not.toMatch(/no toca ninguno/i);
+      expect(opinion).not.toContain("descartando");
+    }
+  });
+
+  it("starts its sentence with a capital letter whichever reason it carries", () => {
+    for (const insight of [
+      createInsight("low", []),
+      createInsight("low", ["Drama"]),
+      createInsight("low", ["Drama"], ["Terror"]),
+    ]) {
+      for (const opinion of opinionsFor(insight)) {
+        expect(opinion.charAt(0)).toBe(opinion.charAt(0).toUpperCase());
+      }
     }
   });
 
@@ -149,6 +177,6 @@ describe("getButiInsight", () => {
     );
 
     expect(insight.match).toBe(BUTI_MATCH.LOW);
-    expect(insight.opinion).toContain("géneros que no venís mirando");
+    expect(insight.opinion).toMatch(/no toca ninguno de tus géneros/i);
   });
 });
