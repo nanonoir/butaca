@@ -1,11 +1,29 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { getDatabase } from "@/db";
+import { UserRepository } from "@/db/repositories";
 import { resolveRouteGuard } from "@/features/auth/route-guard";
 import { updateSession } from "@/integrations/supabase/proxy";
 
 export async function proxy(request: NextRequest) {
-  const { response, isAuthenticated } = await updateSession(request);
-  const decision = resolveRouteGuard(request.nextUrl.pathname, isAuthenticated);
+  const { response, isAuthenticated, userId } = await updateSession(request);
+  let onboardingCompletedAt: Date | null | undefined = null;
+
+  if (userId) {
+    try {
+      const user = await new UserRepository(getDatabase()).findById(userId);
+      onboardingCompletedAt = user?.onboardingCompletedAt;
+    } catch {
+      // A profile lookup failure must never unlock product routes.
+      onboardingCompletedAt = null;
+    }
+  }
+
+  const decision = resolveRouteGuard(
+    request.nextUrl.pathname,
+    isAuthenticated,
+    onboardingCompletedAt,
+  );
 
   if (decision.type === "continue") {
     return response;

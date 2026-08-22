@@ -174,7 +174,7 @@ describe("RegisterForm", () => {
     submitRegisterForm();
 
     await waitFor(() =>
-      expect(routerPush).toHaveBeenCalledWith("/"),
+      expect(routerPush).toHaveBeenCalledWith("/onboarding"),
     );
     expect(routerPush).toHaveBeenCalledTimes(1);
     expect(

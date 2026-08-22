@@ -16,13 +16,13 @@ import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { MovieReaction, ViewerMovieState } from "@/contracts/interactions";
-import type { PaginationMeta } from "@/contracts/common";
 import type { MovieSummary } from "@/contracts/movies";
 import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
 import { SearchGrid } from "@/features/movies/components/search-grid";
 import { fetchSearchMovies } from "@/features/movies/movie-catalog-client";
+import { useMovieSearch } from "@/features/movies/hooks/use-movie-search";
 import { fetchMovieReviews } from "@/features/reviews/review-client";
 
 import { ButiAssistantDrawer } from "./buti-assistant-drawer";
@@ -41,11 +41,6 @@ interface DiscoverMovieCardProps {
   exitReaction: MovieReaction | null;
   onOpenDetail: () => void;
   onReact: (reaction: MovieReaction) => void;
-}
-
-interface SearchResults {
-  data: MovieSummary[];
-  meta: PaginationMeta;
 }
 
 interface SearchDetailExperience {
@@ -418,54 +413,18 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [detailMovie, setDetailMovie] = useState<MovieSummary | null>(null);
-  const [searchDraft, setSearchDraft] = useState("");
-  const [submittedSearch, setSubmittedSearch] = useState<string | null>(null);
-  const [searchResults, setSearchResults] = useState<SearchResults | null>(
-    null,
-  );
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState(false);
+  const movieSearch = useMovieSearch(fetchSearchMovies);
   const [searchDetail, setSearchDetail] =
     useState<SearchDetailExperience | null>(null);
   const [exitReaction, setExitReaction] = useState<MovieReaction | null>(null);
   const [lastAction, setLastAction] = useState("");
   const assistantTrigger = useRef<HTMLButtonElement | null>(null);
   const searchDetailTrigger = useRef<HTMLElement | null>(null);
-  const searchRequestId = useRef(0);
   const currentMovie = movies[currentIndex];
   const nextMovie = movies[currentIndex + 1];
   const detailExperience = detailMovie
     ? getMovieDetailExperienceFixture(detailMovie)
     : null;
-
-  function loadSearch(query: string, page: number) {
-    const requestId = ++searchRequestId.current;
-    setSearchLoading(true);
-    setSearchError(false);
-
-    void fetchSearchMovies(query, page)
-      .then(
-        (results) => {
-          if (requestId !== searchRequestId.current) {
-            return;
-          }
-
-          setSearchResults(results);
-        },
-        () => {
-          if (requestId !== searchRequestId.current) {
-            return;
-          }
-
-          setSearchError(true);
-        },
-      )
-      .finally(() => {
-        if (requestId === searchRequestId.current) {
-          setSearchLoading(false);
-        }
-      });
-  }
 
   useEffect(() => {
     if (!assistantOpen) {
@@ -492,40 +451,19 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
 
   function handleSearchSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const query = searchDraft.trim();
-
-    if (!query) {
-      return;
-    }
-
-    setSubmittedSearch(query);
-    setSearchResults(null);
-    loadSearch(query, 1);
+    movieSearch.submit();
   }
 
   function handleSearchPageChange(page: number) {
-    if (!submittedSearch) {
-      return;
-    }
-
-    loadSearch(submittedSearch, page);
+    movieSearch.changePage(page);
   }
 
   function clearSearch() {
-    searchRequestId.current += 1;
-    setSearchDraft("");
-    setSubmittedSearch(null);
-    setSearchResults(null);
-    setSearchLoading(false);
-    setSearchError(false);
+    movieSearch.clear();
   }
 
   function retrySearch() {
-    if (!submittedSearch) {
-      return;
-    }
-
-    loadSearch(submittedSearch, searchResults?.meta.page ?? 1);
+    movieSearch.retry();
   }
 
   function openSearchDetail(movie: MovieSummary) {
@@ -542,7 +480,8 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
         setSearchDetail({ pageData, publicReviews: reviews.data });
       },
       () => {
-        setSearchError(true);
+        // Search detail errors are intentionally kept local to the existing
+        // search presentation instead of discarding search state.
       },
     );
   }
@@ -598,18 +537,18 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
             <Input
               aria-describedby="discover-search-helper"
               label="Buscar películas"
-              onChange={(event) => setSearchDraft(event.target.value)}
-              value={searchDraft}
+              onChange={(event) => movieSearch.setDraft(event.target.value)}
+              value={movieSearch.draft}
             />
             <p className="mt-2 text-sm text-muted" id="discover-search-helper">
               Buscá por título y presioná Enter para ver resultados.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button disabled={searchLoading} type="submit">
+            <Button disabled={movieSearch.isLoading} type="submit">
               Buscar
             </Button>
-            {submittedSearch ? (
+            {movieSearch.submittedQuery ? (
               <Button
                 onClick={clearSearch}
                 type="button"
@@ -625,15 +564,15 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
           {lastAction}
         </p>
 
-        {submittedSearch ? (
+        {movieSearch.submittedQuery ? (
           <SearchGrid
-            error={searchError}
-            isLoading={searchLoading}
+            error={movieSearch.hasError}
+            isLoading={movieSearch.isLoading}
             onPageChange={handleSearchPageChange}
             onRetry={retrySearch}
             onSelectMovie={openSearchDetail}
-            query={submittedSearch}
-            results={searchResults}
+            query={movieSearch.submittedQuery}
+            results={movieSearch.results}
           />
         ) : (
           <section
