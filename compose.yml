@@ -1,0 +1,44 @@
+# Runs the app against the managed Supabase project and TMDB. There is no
+# database service here on purpose: Auth and Postgres are the same Supabase
+# project, so a Postgres container would give the app a database its sessions
+# know nothing about.
+#
+#   cp .env.example .env          # then fill it in
+#   docker compose up -d --build
+#
+# `.env`, not the `.env.local` the rest of the project uses. Compose
+# interpolates the ${...} below from `.env` only, and pointing it elsewhere
+# needs `--env-file` on *every* command afterwards -- `ps`, `logs`, `exec` and
+# `down` all fail interpolation without it, not just `up`. A deployment host
+# runs nothing that wants `.env.local`, so it gets the name Compose expects.
+
+services:
+  web:
+    build:
+      context: .
+      # Inlined into the client bundle while building, not read at runtime.
+      # See the Dockerfile. The :? form fails the build with this message
+      # instead of quietly producing an image that cannot reach Supabase.
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?missing from .env, and the client bundle is built with it}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:?missing from .env, and the client bundle is built with it}
+    image: butaca:latest
+    env_file:
+      - .env
+    environment:
+      # Bound to the interface Docker publishes; the standalone server defaults
+      # to localhost, which from outside the container answers nothing.
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    ports:
+      # Bound to the loopback address. Put a reverse proxy in front on the
+      # Ubuntu host and let it hold the certificate, rather than exposing the
+      # Node server to the internet directly.
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
