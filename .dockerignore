@@ -1,0 +1,43 @@
+# Everything the build does not need, and a few things it must never see.
+#
+# The env files are the ones that matter: without this file they would be sent
+# to the daemon and baked into a layer, and `.env.local` holds the real Supabase,
+# TMDB and Google keys.
+.env
+.env.*
+!.env.example
+
+# Reinstalled inside the image against the lockfile, and a host build of them is
+# the wrong platform anyway.
+node_modules
+.next
+out
+build
+
+# Local git worktrees live here, each with its own node_modules and .env.local.
+.worktrees
+
+.git
+.github
+.vscode
+.idea
+
+# Test output and local scratch.
+coverage
+test-results
+playwright-report
+blob-report
+*.log
+*.tsbuildinfo
+
+# Nothing the running server reads.
+README.md
+AGENTS.md
+CLAUDE.md
+openspec
+docs
+tests
+*.md
+
+.DS_Store
+Thumbs.db
