@@ -241,7 +241,7 @@ describe("MovieDetailScreen similar movies", () => {
       <MovieDetailScreen
         onClose={onClose}
         pageData={INITIAL.pageData}
-        persistence={persistence}
+        createPersistence={() => persistence}
         publicReviews={INITIAL.publicReviews}
       />,
     );

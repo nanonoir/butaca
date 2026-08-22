@@ -11,10 +11,44 @@ import {
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { setMovieReaction } from "@/features/interactions/interaction-client";
 import { DISCOVER_MOVIES_FIXTURE } from "@/fixtures/discover-movies";
 
 import { DiscoverScreen } from "./discover-screen";
 import { resolveSwipeIntent } from "./resolve-swipe-intent";
+
+/** The screen now persists by default, so the writes are stubbed here instead
+ * of reaching the network. */
+vi.mock("@/features/interactions/interaction-client", () => ({
+  setMovieReaction: vi.fn().mockResolvedValue(undefined),
+  removeMovieReaction: vi.fn().mockResolvedValue(undefined),
+  setMovieWatched: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/features/reviews/review-client", () => ({
+  fetchMovieReviews: vi.fn().mockResolvedValue({
+    data: [],
+    meta: {
+      page: 1,
+      pageSize: 20,
+      totalPages: 0,
+      totalResults: 0,
+      hasNextPage: false,
+    },
+  }),
+  upsertMovieReview: vi.fn((_movieId: number, draft: unknown) =>
+    Promise.resolve({
+      id: "20000000-0000-4000-8000-000000000001",
+      movieId: 1,
+      author: { displayName: "Tú", avatarUrl: null },
+      isMine: true,
+      createdAt: "2026-08-20T12:00:00.000Z",
+      updatedAt: "2026-08-20T12:00:00.000Z",
+      ...(draft as Record<string, unknown>),
+    }),
+  ),
+  deleteMovieReview: vi.fn().mockResolvedValue(undefined),
+}));
 
 afterEach(cleanup);
 
@@ -695,5 +729,49 @@ describe("resolveSwipeIntent", () => {
         velocityY: -150,
       }),
     ).toBeNull();
+  });
+});
+
+describe("DiscoverScreen reactions", () => {
+  it("persists a swipe reaction against the movie on screen", async () => {
+    const movies = DISCOVER_MOVIES_FIXTURE.data.movies;
+
+    render(<DiscoverScreen movies={movies} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Me gusta" })[0]!);
+
+    await waitFor(() => {
+      expect(vi.mocked(setMovieReaction)).toHaveBeenCalledWith(
+        movies[0]!.id,
+        "LIKE",
+      );
+    });
+  });
+
+  it("persists a dislike and moves on to the next movie", async () => {
+    const movies = DISCOVER_MOVIES_FIXTURE.data.movies;
+
+    render(<DiscoverScreen movies={movies} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "No me gusta" })[0]!);
+
+    await waitFor(() => {
+      expect(vi.mocked(setMovieReaction)).toHaveBeenCalledWith(
+        movies[0]!.id,
+        "DISLIKE",
+      );
+    });
+  });
+
+  it("reports a rejected write instead of losing it silently", async () => {
+    vi.mocked(setMovieReaction).mockRejectedValueOnce(new Error("offline"));
+    const movies = DISCOVER_MOVIES_FIXTURE.data.movies;
+
+    render(<DiscoverScreen movies={movies} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Me gusta" })[0]!);
+
+    expect(
+      await screen.findByText(
+        `No pudimos guardar tu reacción sobre ${movies[0]!.title}.`,
+      ),
+    ).toBeInTheDocument();
   });
 });

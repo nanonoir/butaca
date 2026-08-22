@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { MovieArtwork } from "@/components/shared/movie-artwork";
@@ -11,26 +11,24 @@ import type { MovieReaction, ViewerMovieState } from "@/contracts/interactions";
 import type { MovieSummary } from "@/contracts/movies";
 import type { Review, UpsertReviewRequest } from "@/contracts/reviews";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
+import {
+  createMoviePersistence,
+  type CreateMoviePersistence,
+} from "@/features/movie-detail/movie-persistence";
 import { SimilarMoviesSection } from "@/features/movies/components/similar-movies-section";
 import { fetchMovieReviews } from "@/features/reviews/review-client";
 
 import { MovieReviews, type ReviewEditorMode } from "./movie-reviews";
 
-/** Optional so the screen can still be rendered against fixtures. When it is
- * provided the optimistic update is rolled back if the write fails. */
-export interface MovieDetailPersistence {
-  setReaction: (reaction: MovieReaction) => Promise<unknown>;
-  clearReaction: () => Promise<unknown>;
-  setWatched: (watched: boolean) => Promise<unknown>;
-  saveReview: (draft: UpsertReviewRequest) => Promise<Review>;
-  deleteReview: () => Promise<unknown>;
-}
+export type { MovieDetailPersistence } from "./movie-persistence";
 
 interface MovieDetailScreenProps {
   pageData: MovieDetailPageData;
   publicReviews: Review[];
   onClose: (viewerState: ViewerMovieState) => void;
-  persistence?: MovieDetailPersistence;
+  /** Overridable only so tests can inject a double. Every screen persists by
+   * default, which is what keeps a new call site from silently losing writes. */
+  createPersistence?: CreateMoviePersistence;
 }
 
 interface ActiveDetail {
@@ -349,7 +347,7 @@ export function MovieDetailScreen({
   pageData,
   publicReviews,
   onClose,
-  persistence,
+  createPersistence = createMoviePersistence,
 }: MovieDetailScreenProps) {
   const shouldReduceMotion = useReducedMotion();
   const [activeDetail, setActiveDetail] = useState<ActiveDetail>({
@@ -375,7 +373,12 @@ export function MovieDetailScreen({
   const reaction = viewerState.reaction;
   const watched = viewerState.watchedAt !== null;
   const isOriginalMovie = movie.id === originalMovieId;
-  const activePersistence = isOriginalMovie ? persistence : undefined;
+  // Bound to the movie on screen, so browsing to a similar one keeps writing to
+  // the right record instead of disabling itself.
+  const activePersistence = useMemo(
+    () => createPersistence(movie.id),
+    [createPersistence, movie.id],
+  );
 
   useEffect(() => {
     document
@@ -444,9 +447,7 @@ export function MovieDetailScreen({
       nextReaction === "LIKE" ? "Marcaste Me gusta" : "Marcaste No me gusta",
     );
     persistViewerState(
-      activePersistence
-        ? () => activePersistence.setReaction(nextReaction)
-        : null,
+      () => activePersistence.setReaction(nextReaction),
       previousState,
       "No pudimos guardar tu reacción.",
     );
@@ -462,7 +463,7 @@ export function MovieDetailScreen({
     }
     setStatusMessage("Eliminaste tu reacción. El estado Vista no cambió.");
     persistViewerState(
-      activePersistence ? () => activePersistence.clearReaction() : null,
+      () => activePersistence.clearReaction(),
       previousState,
       "No pudimos eliminar tu reacción.",
     );
@@ -487,9 +488,7 @@ export function MovieDetailScreen({
         : "Marcaste la película como No vista",
     );
     persistViewerState(
-      activePersistence
-        ? () => activePersistence.setWatched(nextWatched)
-        : null,
+      () => activePersistence.setWatched(nextWatched),
       previousState,
       "No pudimos guardar el estado Vista.",
     );
@@ -503,7 +502,7 @@ export function MovieDetailScreen({
 
     // With persistence the stored review is awaited instead of guessed: the
     // author and identifiers belong to the server, not to this screen.
-    if (activePersistence) {
+    {
       void (async () => activePersistence.saveReview(draft))().then(
         (savedReview) => {
           setMyReview(savedReview);
@@ -539,10 +538,6 @@ export function MovieDetailScreen({
 
     setMyReview(null);
     setStatusMessage("Reseña eliminada");
-
-    if (!activePersistence) {
-      return;
-    }
 
     void (async () => activePersistence.deleteReview())().catch(() => {
       setMyReview(previousReview);

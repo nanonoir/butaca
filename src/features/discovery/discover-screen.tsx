@@ -30,6 +30,8 @@ import {
   ButiMobileRecommendation,
   ButiRecommendation,
 } from "./buti-recommendation";
+import { setMovieReaction } from "@/features/interactions/interaction-client";
+
 import { resolveSwipeIntent, SWIPE_INTENT } from "./resolve-swipe-intent";
 
 interface DiscoverScreenProps {
@@ -442,11 +444,20 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
       return;
     }
 
+    const { id: movieId, title } = currentMovie;
+
     setExitReaction(reaction);
     setLastAction(
-      `${currentMovie.title}: ${reaction === SWIPE_INTENT.LIKE ? "Me gusta" : "Paso"}`,
+      `${title}: ${reaction === SWIPE_INTENT.LIKE ? "Me gusta" : "Paso"}`,
     );
     setCurrentIndex((index) => index + 1);
+
+    // The card advances immediately because holding it back would stall the
+    // swipe. A rejected write is announced instead of rolled back: putting a
+    // dismissed card back on the stack is more disorienting than reporting it.
+    void (async () => setMovieReaction(movieId, reaction))().catch(() => {
+      setLastAction(`No pudimos guardar tu reacción sobre ${title}.`);
+    });
   }
 
   function handleSearchSubmit(event: React.FormEvent<HTMLFormElement>) {

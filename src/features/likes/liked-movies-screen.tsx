@@ -12,15 +12,6 @@ import type { MovieDetailPageData } from "@/contracts/movie-detail";
 import type { Review } from "@/contracts/reviews";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
 import { fetchMovieReviews } from "@/features/reviews/review-client";
-import {
-  deleteMovieReview,
-  upsertMovieReview,
-} from "@/features/reviews/review-client";
-import {
-  removeMovieReaction,
-  setMovieReaction,
-  setMovieWatched,
-} from "@/features/interactions/interaction-client";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
 
 const FILTER_OPTIONS: readonly {
@@ -153,18 +144,6 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
     }
   }
 
-  function createPersistence(movieId: number) {
-    return {
-      setReaction: (reaction: Parameters<typeof setMovieReaction>[1]) =>
-        setMovieReaction(movieId, reaction),
-      clearReaction: () => removeMovieReaction(movieId),
-      setWatched: (watched: boolean) => setMovieWatched(movieId, watched),
-      saveReview: (draft: Parameters<typeof upsertMovieReview>[1]) =>
-        upsertMovieReview(movieId, draft),
-      deleteReview: () => deleteMovieReview(movieId),
-    };
-  }
-
   function handleDetailClose(viewerState: ViewerMovieState) {
     if (!selectedItem) {
       return;
@@ -263,7 +242,6 @@ export function LikedMoviesScreen({ items }: LikedMoviesScreenProps) {
             // The viewer state now comes from the server with the rest of the
             // page instead of being inferred from the list row.
             pageData={detailExperience.pageData}
-            persistence={createPersistence(selectedItem.movie.id)}
             publicReviews={detailExperience.publicReviews}
           />
         ) : null}
