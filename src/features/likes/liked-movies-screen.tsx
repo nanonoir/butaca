@@ -110,11 +110,6 @@ function LikedPoster({ movie, watched }: LikedPosterProps) {
   return (
     <div className="relative size-full">
       <MovieArtwork className="size-full" movie={movie} />
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-transparent transition-colors duration-fast ease-ui group-hover:bg-primary/5"
-        data-liked-poster-hover
-      />
       {watched ? (
         <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-border bg-background/90 px-2.5 py-1.5 font-mono text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-primary shadow-floating backdrop-blur-sm">
           <EyeIcon />
@@ -294,10 +289,7 @@ export function LikedMoviesScreen({
               const year = item.movie.releaseDate?.slice(0, 4);
 
               return (
-                <li
-                  key={item.movie.id}
-                  className="min-w-0 [&>article>button:hover]:bg-transparent!"
-                >
+                <li className="min-w-0" key={item.movie.id}>
                   <MoviePosterCard
                     actionLabel={`Ver detalle de ${item.movie.title}`}
                     onSelect={() => void handleSelectItem(item)}

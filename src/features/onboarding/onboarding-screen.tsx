@@ -17,9 +17,25 @@ import { useMovieSearch } from "@/features/movies/hooks/use-movie-search";
 
 import { completeOnboarding } from "./onboarding-client";
 
-const MIN_GENRES = 2;
-const MIN_MOVIES = 3;
 const MAX_SELECTIONS = 8;
+
+interface SelectionStep {
+  minimum: number;
+  plural: string;
+  chosen: string;
+}
+
+const GENRE_STEP: SelectionStep = {
+  minimum: 2,
+  plural: "géneros",
+  chosen: "elegidos",
+};
+
+const MOVIE_STEP: SelectionStep = {
+  minimum: 3,
+  plural: "películas",
+  chosen: "elegidas",
+};
 
 function isTransient(error: unknown) {
   return (
@@ -28,8 +44,25 @@ function isTransient(error: unknown) {
   );
 }
 
-function selectionStatus(selected: number, minimum: number, noun: string) {
-  return `${selected} de ${MAX_SELECTIONS} ${noun} seleccionados. Selecciona al menos ${minimum}.`;
+/** One number at a time. The old line read "8 de 8 películas seleccionados.
+ * Selecciona al menos 3.", which put the count, the ceiling and the floor in
+ * front of the viewer at once and made the requirement impossible to read. */
+function selectionStatus(selected: number, step: SelectionStep) {
+  const { minimum, plural, chosen } = step;
+
+  if (selected === 0) {
+    return `Elegí al menos ${minimum} ${plural} para continuar.`;
+  }
+
+  if (selected < minimum) {
+    return `Llevás ${selected}. Elegí ${minimum - selected} más para continuar.`;
+  }
+
+  if (selected === MAX_SELECTIONS) {
+    return `Llegaste al máximo de ${MAX_SELECTIONS} ${plural}.`;
+  }
+
+  return `${selected} ${plural} ${chosen}. Podés sumar hasta ${MAX_SELECTIONS}.`;
 }
 
 export function OnboardingScreen() {
@@ -103,7 +136,13 @@ export function OnboardingScreen() {
         preferredGenreIds: selectedGenreIds,
         likedMovieIds: selectedMovies.map((movie) => movie.id),
       });
+      // The shell prefetches "/" while onboarding is still open, and the proxy
+      // answers that prefetch by sending an unfinished profile back here. That
+      // cached redirect is what a plain replace would follow, so the cache has
+      // to go first.
+      router.refresh();
       router.replace("/");
+      return;
     } catch (error) {
       if (attempt === 0 && isTransient(error)) {
         submitting.current = false;
@@ -113,9 +152,8 @@ export function OnboardingScreen() {
       setSubmissionError(
         isTransient(error)
           ? "No pudimos completar tu perfil. Conservamos tus selecciones para que reintentes."
-          : "Revisa tus selecciones e intenta nuevamente.",
+          : "Revisá tus selecciones e intentá nuevamente.",
       );
-    } finally {
       submitting.current = false;
       setIsSubmitting(false);
     }
@@ -136,7 +174,7 @@ export function OnboardingScreen() {
               Elegí tus géneros favoritos
             </h2>
             <p aria-live="polite" className="mt-2 text-sm text-muted" role="status">
-              {selectionStatus(selectedGenreIds.length, MIN_GENRES, "géneros")}
+              {selectionStatus(selectedGenreIds.length, GENRE_STEP)}
             </p>
           </div>
           {isLoadingGenres ? <p role="status">Cargando géneros…</p> : null}
@@ -167,7 +205,7 @@ export function OnboardingScreen() {
             </div>
           ) : null}
           <Button
-            disabled={selectedGenreIds.length < MIN_GENRES}
+            disabled={selectedGenreIds.length < GENRE_STEP.minimum}
             onClick={() => setStep("movies")}
           >
             Continuar con películas
@@ -180,7 +218,7 @@ export function OnboardingScreen() {
               Películas que ya viste y te gustaron
             </h2>
             <p aria-live="polite" className="mt-2 text-sm text-muted" role="status">
-              {selectionStatus(selectedMovies.length, MIN_MOVIES, "películas")}
+              {selectionStatus(selectedMovies.length, MOVIE_STEP)}
             </p>
           </div>
           <form aria-label="Búsqueda de películas para onboarding" className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={(event) => { event.preventDefault(); movieSearch.submit(); }} role="search">
@@ -214,7 +252,7 @@ export function OnboardingScreen() {
           {submissionError ? <p role="alert" className="text-primary">{submissionError}</p> : null}
           <div className="flex flex-wrap gap-3">
             <Button onClick={() => setStep("genres")} variant={BUTTON_VARIANT.OUTLINE}>Volver a géneros</Button>
-            <Button disabled={selectedMovies.length < MIN_MOVIES || isSubmitting} onClick={() => void submit()}>{isSubmitting ? "Guardando…" : submissionError ? "Reintentar" : "Completar perfil"}</Button>
+            <Button disabled={selectedMovies.length < MOVIE_STEP.minimum || isSubmitting} onClick={() => void submit()}>{isSubmitting ? "Guardando…" : submissionError ? "Reintentar" : "Completar perfil"}</Button>
           </div>
         </section>
       )}
