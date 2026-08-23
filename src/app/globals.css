@@ -261,6 +261,76 @@ body {
   }
 }
 
+@media (max-height: 700px) {
+  .discover-screen {
+    gap: 1rem;
+    padding-block: 0;
+  }
+
+  .discover-screen .discover-header > header {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding-bottom: 1rem;
+  }
+
+  .discover-screen .discover-header > header > div:first-child > p {
+    display: none;
+  }
+
+  .discover-screen .discover-header > header > div:last-child,
+  .discover-screen .discover-header > header > div:last-child > div {
+    width: auto;
+  }
+
+  .discover-screen .discover-header > header #discover-search-trigger {
+    width: auto;
+  }
+
+  .discover-screen .discover-header > header form[role="search"] {
+    width: min(46vw, 14rem);
+  }
+
+  .discover-screen .discover-mobile-buti,
+  .discover-screen .discover-mobile-hint {
+    display: none;
+  }
+
+  .discover-screen .discover-stack-column {
+    gap: 0.25rem;
+  }
+
+  .discover-screen .discover-reaction-controls {
+    position: relative;
+    z-index: 20;
+    grid-template-columns: auto auto auto;
+    justify-content: center;
+    gap: 0.25rem;
+    margin-top: -0.5rem;
+  }
+
+  .discover-screen .discover-reaction-controls > div {
+    gap: 0;
+  }
+
+  .discover-screen .discover-reaction-controls > div > button {
+    width: 3.5rem;
+    height: 3.5rem;
+  }
+
+  .discover-screen .discover-reaction-controls > button {
+    margin-top: 0;
+  }
+}
+
+@media (max-height: 700px) and (max-width: 979px) {
+  main:has(.discover-screen) {
+    padding-top: 0.75rem;
+    padding-bottom: 4.5rem;
+  }
+}
+
 @media (forced-colors: active) {
   :focus-visible {
     outline: 2px solid Highlight;
