@@ -10,6 +10,9 @@ import { apiRequest } from "@/lib/api/client";
 const SimilarMoviesResponseSchema = apiDataResponseSchema(
   paginatedResponseSchema(MovieSummarySchema),
 );
+const PopularMoviesResponseSchema = apiDataResponseSchema(
+  paginatedResponseSchema(MovieSummarySchema),
+);
 const SearchMoviesApiResponseSchema = apiDataResponseSchema(
   SearchMoviesResponseSchema,
 );
@@ -28,6 +31,15 @@ export async function fetchSearchMovies(query: string, page: number) {
   const { data } = await apiRequest(
     `/api/movies/search?${searchParams}`,
     SearchMoviesApiResponseSchema,
+  );
+
+  return data;
+}
+
+export async function fetchPopularMovies(page: number) {
+  const { data } = await apiRequest(
+    `/api/movies/popular?page=${page}`,
+    PopularMoviesResponseSchema,
   );
 
   return data;

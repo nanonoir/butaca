@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const clientMocks = vi.hoisted(() => ({
@@ -27,6 +28,14 @@ vi.mock("@/features/movie-detail/movie-detail-client", () => ({
 vi.mock("@/features/reviews/review-client", () => ({
   fetchMovieReviews: clientMocks.fetchMovieReviews,
 }));
+vi.mock("motion/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("motion/react")>();
+
+  return {
+    ...actual,
+    AnimatePresence: ({ children }: { children: ReactNode }) => children,
+  };
+});
 
 import { DISCOVER_MOVIES_FIXTURE } from "@/fixtures/discover-movies";
 import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
@@ -66,7 +75,7 @@ function openSearch() {
     screen.getByRole("button", { name: "Abrir buscador de películas" }),
   );
 
-  return screen.getByLabelText("Buscar películas");
+  return screen.getByRole("textbox", { name: "Buscar películas" });
 }
 
 afterEach(cleanup);
@@ -102,9 +111,12 @@ describe("DiscoverScreen search", () => {
 
     fireEvent.click(trigger);
 
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("search")).toBeInTheDocument();
-    expect(screen.getByLabelText("Buscar películas")).toHaveFocus();
+    expect(
+      screen.getByRole("textbox", { name: "Buscar películas" }),
+    ).toHaveFocus();
+    expect(screen.getByRole("search")).not.toHaveClass("absolute");
+    expect(screen.queryByText("Afinado hoy")).not.toBeInTheDocument();
     expect(screen.getByTestId("movie-stack-column")).toBeInTheDocument();
   });
 
@@ -129,7 +141,7 @@ describe("DiscoverScreen search", () => {
     fireEvent.change(openSearch(), {
       target: { value: " dune " },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Buscar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Buscar películas" }));
 
     await screen.findByRole("heading", { name: "Resultados para “dune”" });
     expect(clientMocks.fetchSearchMovies).toHaveBeenCalledTimes(1);
@@ -137,16 +149,9 @@ describe("DiscoverScreen search", () => {
     expect(screen.queryByTestId("movie-stack-column")).not.toBeInTheDocument();
   });
 
-  it("keeps only the latest query response and requests numbered pages explicitly", async () => {
-    let resolveFirstSearch:
-      ((value: ReturnType<typeof createResults>) => void) | undefined;
+  it("submits sequential queries and requests numbered pages explicitly", async () => {
     clientMocks.fetchSearchMovies
-      .mockImplementationOnce(
-        () =>
-          new Promise<ReturnType<typeof createResults>>((resolve) => {
-            resolveFirstSearch = resolve;
-          }),
-      )
+      .mockResolvedValueOnce(createResults())
       .mockResolvedValueOnce(createResults())
       .mockResolvedValueOnce(createResults(2));
     render(<DiscoverScreen movies={MOVIES} />);
@@ -154,16 +159,11 @@ describe("DiscoverScreen search", () => {
     const input = openSearch();
     fireEvent.change(input, { target: { value: "dune" } });
     fireEvent.submit(screen.getByRole("search"));
+    await screen.findByRole("heading", { name: "Resultados para “dune”" });
     fireEvent.change(input, { target: { value: "arrival" } });
     fireEvent.submit(screen.getByRole("search"));
 
     await screen.findByRole("heading", { name: "Resultados para “arrival”" });
-    resolveFirstSearch?.(createResults());
-    await waitFor(() => {
-      expect(
-        screen.getByRole("heading", { name: "Resultados para “arrival”" }),
-      ).toBeInTheDocument();
-    });
 
     fireEvent.click(screen.getByRole("button", { name: "Página 2" }));
     await waitFor(() => {
@@ -187,9 +187,12 @@ describe("DiscoverScreen search", () => {
     fireEvent.submit(screen.getByRole("search"));
     await screen.findByRole("heading", { name: "No encontramos películas" });
 
-    fireEvent.change(screen.getByLabelText("Buscar películas"), {
-      target: { value: "dune" },
-    });
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Buscar películas" }),
+      {
+        target: { value: "dune" },
+      },
+    );
     fireEvent.submit(screen.getByRole("search"));
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
@@ -237,26 +240,36 @@ describe("DiscoverScreen search", () => {
       screen.getByRole("heading", { name: "Resultados para “dune”" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Limpiar búsqueda" }));
+    fireEvent.click(screen.getByRole("button", { name: "Volver a descubrir" }));
     expect(screen.getByTestId("movie-stack-column")).toBeInTheDocument();
-    expect(screen.getByLabelText("Buscar películas")).toHaveValue("");
+    await waitFor(() =>
+      expect(screen.queryByRole("search")).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Abrir buscador de películas" }),
+      ).toHaveFocus(),
+    );
   });
 
   it("closes an active search and restores the swipe", async () => {
     clientMocks.fetchSearchMovies.mockResolvedValue(createResults());
     render(<DiscoverScreen movies={MOVIES} />);
 
-    const trigger = screen.getByRole("button", {
-      name: "Abrir buscador de películas",
-    });
     fireEvent.change(openSearch(), { target: { value: "dune" } });
     fireEvent.submit(screen.getByRole("search"));
     await screen.findByRole("heading", { name: "Resultados para “dune”" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Cerrar búsqueda" }));
+    fireEvent.click(screen.getByRole("button", { name: "Volver a descubrir" }));
 
     expect(screen.getByTestId("movie-stack-column")).toBeInTheDocument();
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
-    await waitFor(() => expect(trigger).toHaveFocus());
+    await waitFor(() =>
+      expect(screen.queryByRole("search")).not.toBeInTheDocument(),
+    );
+    const restoredTrigger = screen.getByRole("button", {
+      name: "Abrir buscador de películas",
+    });
+    expect(restoredTrigger).toHaveAttribute("aria-expanded", "false");
+    await waitFor(() => expect(restoredTrigger).toHaveFocus());
   });
 });

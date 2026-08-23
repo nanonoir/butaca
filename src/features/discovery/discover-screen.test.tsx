@@ -197,10 +197,12 @@ describe("DiscoverScreen", () => {
       name: "Abrir asistente de Buti sobre Dune desde el resumen",
     });
 
+    expect(mobileCard.parentElement).toHaveClass("discover-mobile-buti");
     expect(mobileCard).toHaveClass("w-full", "min-[980px]:hidden");
-    expect(screen.getByTestId("movie-stack-column")).toContainElement(
-      mobileCard,
+    expect(screen.getByTestId("movie-stack-column")).toHaveClass(
+      "discover-stack-column",
     );
+    expect(screen.getByTestId("movie-stack-column")).toContainElement(mobileCard);
     expect(
       within(mobileCard).getByRole("img", {
         name: "Buti feliz, match alto",
@@ -210,6 +212,12 @@ describe("DiscoverScreen", () => {
       within(mobileCard).getByText(/Ciencia ficción y Aventura/i),
     ).toBeInTheDocument();
     expect(within(mobileCard).getByText("›")).toBeInTheDocument();
+    expect(
+      screen.getByText("Deslizá la card o usá los controles"),
+    ).toHaveClass("discover-mobile-hint");
+    expect(
+      screen.getByRole("group", { name: "Acciones de la película" }),
+    ).toHaveClass("discover-reaction-controls");
 
     fireEvent.click(mobileCard);
 
@@ -223,9 +231,9 @@ describe("DiscoverScreen", () => {
 
     expect(screen.getByTestId("discover-poster-frame")).toHaveClass(
       "aspect-[2/3]",
-      "h-[min(52svh,38rem)]",
+      "h-full",
+      "min-h-0",
       "max-h-[38rem]",
-      "min-[980px]:h-[min(66svh,42rem)]",
       "min-[980px]:max-h-[42rem]",
     );
   });

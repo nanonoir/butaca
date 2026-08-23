@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -35,9 +36,17 @@ describe("MainSurface", () => {
     expect(surface?.textContent).toContain("Route content");
     expect(surface?.classList).toContain("rounded-shell");
     expect(surface?.classList).toContain("border");
+    expect(surface?.classList).toContain("flex");
+    expect(surface?.classList).toContain("flex-col");
     expect(surface?.classList).not.toContain("shadow-floating");
     expect(surface?.querySelector("nav")).toBeTruthy();
     expect(surface?.querySelector("main")).toBeTruthy();
     expect(surface?.querySelector("main")?.parentElement).toBe(surface);
+    expect(screen.getByRole("main")).toHaveClass(
+      "flex",
+      "flex-1",
+      "min-h-0",
+      "flex-col",
+    );
   });
 });

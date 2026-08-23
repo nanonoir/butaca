@@ -10,7 +10,7 @@ import {
 
 type MovieCatalogPort = Pick<
   TmdbAdapter,
-  "getGenres" | "searchMovies" | "getSimilarMovies"
+  "getGenres" | "getPopularMovies" | "searchMovies" | "getSimilarMovies"
 >;
 
 /** Thin catalog boundary for public, normalized TMDB list reads. */
@@ -19,6 +19,10 @@ export class MovieCatalogService {
 
   searchMovies(input: SearchMoviesQuery): Promise<PaginatedMovies> {
     return this.catalog.searchMovies(input);
+  }
+
+  getPopularMovies(page: number): Promise<PaginatedMovies> {
+    return this.catalog.getPopularMovies(page);
   }
 
   getGenres(): Promise<Genre[]> {
