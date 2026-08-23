@@ -1,14 +1,24 @@
 import type { MovieDetail } from "@/contracts";
 
-/** Weight given to a genre the viewer chose during onboarding. Stated
- * preferences outrank a single like but not a consistent pattern of them. */
-const PREFERRED_GENRE_WEIGHT = 3;
-const LIKED_GENRE_WEIGHT = 1;
-const DISLIKED_GENRE_WEIGHT = -1.5;
+/** What the viewer picked during onboarding is a starting tendency, not a
+ * verdict. It has to mean something on an empty profile and then get out of the
+ * way, so it is worth two likes rather than three -- at three it stayed the
+ * loudest single term in the profile forever. */
+const PREFERRED_GENRE_WEIGHT = 2;
 
-/** A genre is only excluded once dislikes outweigh everything positive about
- * it, so one bad science-fiction movie does not bury the whole genre. */
-const EXCLUSION_THRESHOLD = -2;
+/** Symmetric on purpose. A dislike used to weigh 1.5 against a like's 1, so any
+ * genre appearing in both drifted negative however often it was liked: this
+ * project's own account ended up rejecting Drama while every one of its twenty
+ * most recent likes was a drama. */
+const LIKED_GENRE_WEIGHT = 1;
+const DISLIKED_GENRE_WEIGHT = -1;
+
+/** Exclusion is a pattern, not a sum. A genre has to have been turned down
+ * repeatedly *and* clearly more often than it was chosen. A scalar threshold
+ * buried genres the viewer kept liking, because a dislike sprays across every
+ * genre a movie carries and most carry three. */
+const MIN_DISLIKES_TO_EXCLUDE = 3;
+const EXCLUSION_RATIO = 2;
 
 const MAX_KEYWORDS = 12;
 const MAX_PEOPLE = 8;
@@ -111,20 +121,34 @@ export function buildTasteProfile(input: TasteProfileInput): TasteProfile {
     addWeight(genreWeights, genreOrder, genreId, PREFERRED_GENRE_WEIGHT);
   }
 
+  // Counted as well as weighed. The weight orders the genres; deciding one is
+  // rejected needs to know how often it was chosen, which a sum cannot say.
+  const likedCount: Record<number, number> = {};
+  const dislikedCount: Record<number, number> = {};
+
   for (const movie of input.liked) {
     for (const genre of movie.genres) {
       addWeight(genreWeights, genreOrder, genre.id, LIKED_GENRE_WEIGHT);
+      likedCount[genre.id] = (likedCount[genre.id] ?? 0) + 1;
     }
   }
 
   for (const movie of input.disliked) {
     for (const genre of movie.genres) {
       addWeight(genreWeights, genreOrder, genre.id, DISLIKED_GENRE_WEIGHT);
+      dislikedCount[genre.id] = (dislikedCount[genre.id] ?? 0) + 1;
     }
   }
 
+  /** Turned down repeatedly, and clearly more often than it was chosen. A genre
+   * somebody keeps liking is a genre they like, whatever the arithmetic of a
+   * dislike spraying across the three genres every movie carries. */
+  const isRejected = (genreId: number) =>
+    (dislikedCount[genreId] ?? 0) >= MIN_DISLIKES_TO_EXCLUDE &&
+    (dislikedCount[genreId] ?? 0) >= (likedCount[genreId] ?? 0) * EXCLUSION_RATIO;
+
   const excludedGenreIds = genreOrder
-    .filter((id) => (genreWeights[id] ?? 0) <= EXCLUSION_THRESHOLD)
+    .filter(isRejected)
     .sort((left, right) => left - right);
 
   return {
