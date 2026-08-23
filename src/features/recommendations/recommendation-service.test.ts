@@ -95,6 +95,28 @@ function interaction(movieId: number): UserMovieInteractionRecord {
   };
 }
 
+function likedMovie(id: number, title: string, director: string) {
+  return {
+    ...summary(id),
+    title,
+    genres: [{ id: 878, name: "Ciencia ficción" }],
+    runtime: 120,
+    tagline: null,
+    director: { id: id + 1000, name: director, profilePath: null },
+    cast: [
+      {
+        id: id + 2000,
+        name: `Actor ${id}`,
+        character: "",
+        profilePath: null,
+        order: 0,
+      },
+    ],
+    keywords: [],
+    trailer: null,
+  };
+}
+
 describe("getDiscoverBatch", () => {
   it("returns a batch the discover contract accepts", async () => {
     const deps = createDependencies();
@@ -715,82 +737,54 @@ describe("getDiscoverBatch rotation", () => {
     );
   }
 
-  function likedMovie(id: number, title: string, director: string) {
-    return {
-      ...summary(id),
-      title,
-      genres: [{ id: 878, name: "Ciencia ficción" }],
-      runtime: 120,
-      tagline: null,
-      director: { id: id + 1000, name: director, profilePath: null },
-      cast: [
-        {
-          id: id + 2000,
-          name: `Actor ${id}`,
-          character: "",
-          profilePath: null,
-          order: 0,
-        },
-      ],
-      keywords: [],
-      trailer: null,
-    };
-  }
 
-  /** The profile keeps eight directors and six recent likes, and the deck used
-   * to ask about the first of each every time -- so every batch came back with
-   * the same director and the same film to resemble. */
-  it("leans on a different signal as the viewer works through the deck", async () => {
+  /** The deck used to ask about the first director and the first recent like
+   * every time, so every batch named the same two things. */
+  it("leans on different signals as the viewer works through the deck", async () => {
     const deps = createDependencies();
-    deps.interactions.findLikesByUser.mockResolvedValue([
-      { movieId: 1 },
-      { movieId: 2 },
-    ]);
+    const titles = ["Blade Runner", "Origen", "Alien", "Dunkerque"];
+    deps.interactions.findLikesByUser.mockResolvedValue(
+      titles.map((_unused, index) => ({ movieId: index + 1 })),
+    );
     deps.catalog.getMovieDetail.mockImplementation(async (id: number) =>
-      id === 1
-        ? likedMovie(1, "Blade Runner", "Ridley Scott")
-        : likedMovie(2, "Origen", "Christopher Nolan"),
+      likedMovie(id, titles[id - 1]!, `Director ${id}`),
     );
     deps.catalog.getMovieRecommendations.mockResolvedValue(paginated([]));
     deps.catalog.discoverMovies.mockResolvedValue(paginated([]));
 
+    const seedsOf = (calls: unknown[][]) =>
+      calls.map(([input]) => (input as { movieId: number }).movieId).sort();
+
     await service(deps).getDiscoverBatch(USER_ID);
-    const firstSeed = deps.catalog.getMovieRecommendations.mock.calls[0]?.[0];
+    const first = seedsOf(deps.catalog.getMovieRecommendations.mock.calls);
 
     deps.catalog.getMovieRecommendations.mockClear();
-    await service(deps).getDiscoverBatch(USER_ID, { excludeMovieIds: [99] });
-    const secondSeed = deps.catalog.getMovieRecommendations.mock.calls[0]?.[0];
+    await service(deps).getDiscoverBatch(USER_ID, { excludeMovieIds: [98, 99] });
+    const second = seedsOf(deps.catalog.getMovieRecommendations.mock.calls);
 
-    expect(firstSeed?.movieId).not.toBe(secondSeed?.movieId);
+    expect(first).not.toEqual(second);
   });
 
-  it("asks about a different director on the next batch", async () => {
+  /** A deck that asked about one director could only ever mention one. */
+  it("asks about more than one director in the same batch", async () => {
     const deps = createDependencies();
-    deps.interactions.findLikesByUser.mockResolvedValue([
-      { movieId: 1 },
-      { movieId: 2 },
-    ]);
+    const titles = ["Blade Runner", "Origen", "Alien", "Dunkerque"];
+    deps.interactions.findLikesByUser.mockResolvedValue(
+      titles.map((_unused, index) => ({ movieId: index + 1 })),
+    );
     deps.catalog.getMovieDetail.mockImplementation(async (id: number) =>
-      id === 1
-        ? likedMovie(1, "Blade Runner", "Ridley Scott")
-        : likedMovie(2, "Origen", "Christopher Nolan"),
+      likedMovie(id, titles[id - 1]!, `Director ${id}`),
     );
     deps.catalog.getMovieRecommendations.mockResolvedValue(paginated([]));
     deps.catalog.discoverMovies.mockResolvedValue(paginated([]));
 
-    const crewOf = (calls: unknown[][]) =>
-      calls.flatMap(
-        ([query]) => (query as { crewIds?: number[] }).crewIds ?? [],
-      );
-
     await service(deps).getDiscoverBatch(USER_ID);
-    const first = crewOf(deps.catalog.discoverMovies.mock.calls);
 
-    deps.catalog.discoverMovies.mockClear();
-    await service(deps).getDiscoverBatch(USER_ID, { excludeMovieIds: [99] });
-    const second = crewOf(deps.catalog.discoverMovies.mock.calls);
+    const crewIds = deps.catalog.discoverMovies.mock.calls.flatMap(
+      ([query]) => (query as { crewIds?: number[] }).crewIds ?? [],
+    );
 
-    expect(first).not.toEqual(second);
+    expect(new Set(crewIds).size).toBeGreaterThan(1);
   });
 
   /** Rotating at random would make the same request answer differently twice. */
@@ -813,5 +807,82 @@ describe("getDiscoverBatch rotation", () => {
     );
 
     expect(second).toEqual(first);
+  });
+});
+
+describe("getDiscoverBatch composition", () => {
+  function service(deps: ReturnType<typeof createDependencies>) {
+    return new RecommendationService(
+      deps.preferences,
+      deps.interactions,
+      deps.catalog,
+    );
+  }
+
+  /** Scoring alone never let a weak signal speak. Asking what goes with a war
+   * film somebody liked returns war films, and a profile built on drama scores
+   * those below everything else -- so the source existed and was never seen. */
+  it("opens a seat for every signal before the ranking spends the rest", async () => {
+    const deps = createDependencies();
+    deps.preferences.findByUserId.mockResolvedValue({
+      preferredGenreIds: [878],
+    });
+    deps.interactions.findLikesByUser.mockResolvedValue([{ movieId: 1 }]);
+    deps.catalog.getMovieDetail.mockResolvedValue(
+      likedMovie(1, "1917", "Sam Mendes"),
+    );
+    // Everything the genre query finds outranks everything the seed does.
+    deps.catalog.discoverMovies.mockResolvedValue(
+      paginated(
+        Array.from({ length: 20 }, (_unused, index) => ({
+          ...summary(index + 100),
+          genreIds: [878],
+        })),
+      ),
+    );
+    deps.catalog.getMovieRecommendations.mockResolvedValue(
+      paginated([{ ...summary(500), genreIds: [10_752] }]),
+    );
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID);
+
+    expect(batch.movies.map(({ movie }) => movie.id)).toContain(500);
+  });
+
+  /** One seat, not a share. The rest of the deck still goes to whatever the
+   * ranking put on top. */
+  it("gives a weak signal one card and no more", async () => {
+    const deps = createDependencies();
+    deps.preferences.findByUserId.mockResolvedValue({
+      preferredGenreIds: [878],
+    });
+    deps.interactions.findLikesByUser.mockResolvedValue([{ movieId: 1 }]);
+    deps.catalog.getMovieDetail.mockResolvedValue(
+      likedMovie(1, "1917", "Sam Mendes"),
+    );
+    deps.catalog.discoverMovies.mockResolvedValue(
+      paginated(
+        Array.from({ length: 20 }, (_unused, index) => ({
+          ...summary(index + 100),
+          genreIds: [878],
+        })),
+      ),
+    );
+    deps.catalog.getMovieRecommendations.mockResolvedValue(
+      paginated(
+        Array.from({ length: 10 }, (_unused, index) => ({
+          ...summary(index + 500),
+          genreIds: [10_752],
+        })),
+      ),
+    );
+
+    const batch = await service(deps).getDiscoverBatch(USER_ID);
+    const fromSeed = batch.movies.filter(
+      ({ insight }) => insight.reason.kind === "similar",
+    );
+
+    expect(fromSeed.length).toBeGreaterThan(0);
+    expect(fromSeed.length).toBeLessThanOrEqual(3);
   });
 });

@@ -43,7 +43,13 @@ const GENRE_ROTATION_POOL = 5;
  * director" for "a different director nobody has seen twice", and person-backed
  * cards went from nine in thirty to two. The head of the list is where the
  * signal is. */
-const SIGNAL_ROTATION_POOL = 3;
+const SIGNAL_ROTATION_POOL = 4;
+
+/** How many of each signal a single batch asks about. One director and one
+ * actor meant a whole deck could only ever mention one of each, and the reasons
+ * read as though the viewer had exactly one favourite. Asking about two brings
+ * two names into the same ten cards. */
+const SIGNALS_PER_BATCH = 2;
 
 /** Keeps obscure entries with a handful of votes out of the candidate pool
  * before ranking even starts. */
@@ -116,19 +122,14 @@ function intersectById(
   return left.filter((movie) => rightIds.has(movie.id));
 }
 
-/** Which of the viewer's signals this batch leans on. The profile keeps eight
+/** Which of the viewer's signals a batch leans on. The profile keeps eight
  * directors, eight actors, twelve keywords and six recent likes, and the deck
- * used to ask about the first of each every single time -- so every batch came
- * back with the same director, the same actor and the same film to resemble.
+ * used to ask about the first of each every single time -- same director, same
+ * actor, same film to resemble, batch after batch.
  *
- * Advancing with the deck rather than at random keeps a request reproducible
- * while making successive batches reach for something else. */
-function rotate<T>(items: readonly T[], offset: number): T | undefined {
-  return items.length === 0
-    ? undefined
-    : items[Math.abs(offset) % items.length];
-}
-
+ * The window advances with the deck rather than at random, so a request stays
+ * reproducible while successive batches reach for something else.
+ */
 /** The same idea for a window rather than a single pick, so the genres a batch
  * asks about move across everything the viewer likes instead of pinning to the
  * three heaviest forever. */
@@ -148,7 +149,8 @@ function rotateWindow<T>(
 }
 
 /** A ceiling on how much of a batch one signal may take, not a floor under
- * every signal. Three genre queries bring sixty candidates and the other
+ * every signal. Counted per signal rather than per kind, so two directors are
+ * two allowances and both get named. Three genre queries bring sixty candidates and the other
  * signals a handful each, so scoring alone handed whole decks to whichever
  * genre the rotation had landed on -- ten musicals in a row, every card saying
  * the same thing.
@@ -157,7 +159,7 @@ function rotateWindow<T>(
  * whatever a thin source had left, and half the deck came back explaining that
  * the movie was not really the viewer's thing. A cap keeps the ranking in
  * charge and only stops one source from owning the screen. */
-const MAX_SOURCE_SHARE = 0.4;
+const MAX_SOURCE_SHARE = 0.3;
 
 function capBySource(
   ranked: MovieSummary[],
@@ -169,20 +171,51 @@ function capBySource(
   const batch: MovieSummary[] = [];
   const overflow: MovieSummary[] = [];
 
+  // One seat for the best thing each signal found, before the ranking spends
+  // the rest. Without it a signal whose candidates score low never appears at
+  // all: asking what goes with a war film the viewer liked returns war films,
+  // and a profile built on drama and animation scores those below everything
+  // else. The card is a weaker pick and it is the only one -- nine of ten still
+  // go to whatever ranked highest.
+  const opened = new Set<string>();
+
   for (const movie of ranked) {
     if (batch.length === limit) {
       break;
     }
 
-    const kind = sourceById.get(movie.id)?.kind ?? "genre";
-    const count = taken.get(kind) ?? 0;
+    const source = sourceById.get(movie.id);
+    const key = `${source?.kind ?? "genre"}:${source?.name ?? ""}`;
+
+    if (!opened.has(key)) {
+      opened.add(key);
+      taken.set(key, 1);
+      batch.push(movie);
+    }
+  }
+
+  for (const movie of ranked) {
+    if (batch.includes(movie)) {
+      continue;
+    }
+
+    if (batch.length === limit) {
+      break;
+    }
+
+    const source = sourceById.get(movie.id);
+    // Keyed on the name as well as the kind. Grouping every director together
+    // let the strongest one take the whole crew allowance, and a deck that
+    // asked about two directors still only ever mentioned one.
+    const key = `${source?.kind ?? "genre"}:${source?.name ?? ""}`;
+    const count = taken.get(key) ?? 0;
 
     if (count >= quota) {
       overflow.push(movie);
       continue;
     }
 
-    taken.set(kind, count + 1);
+    taken.set(key, count + 1);
     batch.push(movie);
   }
 
@@ -420,37 +453,33 @@ export class RecommendationService {
         query: { ...shared, genreIds: [genreId] },
       source: { kind: "genre", name: null } as const,
     }));
-    const topKeywordId = rotate(
-      profile.keywordIds.slice(0, SIGNAL_ROTATION_POOL),
-      rotation,
-    );
-    const topDirector = rotate(
-      profile.crew.slice(0, SIGNAL_ROTATION_POOL),
-      rotation,
-    );
-    const topCast = rotate(
-      profile.cast.slice(0, SIGNAL_ROTATION_POOL),
-      rotation,
-    );
+    const signals = <T,>(items: readonly T[]) =>
+      subject
+        ? []
+        : rotateWindow(
+            items.slice(0, SIGNAL_ROTATION_POOL),
+            rotation,
+            SIGNALS_PER_BATCH,
+          );
 
-    if (!subject && topKeywordId !== undefined) {
+    for (const keywordId of signals(profile.keywordIds)) {
       queries.push({
-        query: { ...shared, keywordIds: [topKeywordId] },
+        query: { ...shared, keywordIds: [keywordId] },
         source: { kind: "keyword", name: null },
       });
     }
 
-    if (!subject && topDirector) {
+    for (const director of signals(profile.crew)) {
       queries.push({
-        query: { ...shared, crewIds: [topDirector.id] },
-        source: { kind: "crew", name: topDirector.name },
+        query: { ...shared, crewIds: [director.id] },
+        source: { kind: "crew", name: director.name },
       });
     }
 
-    if (!subject && topCast) {
+    for (const person of signals(profile.cast)) {
       queries.push({
-        query: { ...shared, castIds: [topCast.id] },
-        source: { kind: "cast", name: topCast.name },
+        query: { ...shared, castIds: [person.id] },
+        source: { kind: "cast", name: person.name },
       });
     }
 
@@ -482,11 +511,7 @@ export class RecommendationService {
     // person -- and never from a film the viewer actually liked. This asks what
     // goes with their most recent one, which widens the pool and is the only
     // signal that can be named back as a movie.
-    const seed = subject
-      ? undefined
-      : rotate(profile.seeds.slice(0, SIGNAL_ROTATION_POOL), rotation);
-
-    if (seed) {
+    for (const seed of signals(profile.seeds)) {
       const { movieId, title } = seed;
 
       requests.push(
