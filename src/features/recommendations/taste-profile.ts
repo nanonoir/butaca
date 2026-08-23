@@ -24,6 +24,10 @@ export type TastePerson = { id: number; name: string };
  * movie rather than as a trait. */
 export type TasteSeed = { movieId: number; title: string };
 
+/** How many recent likes can seed a batch. One would pin every deck to the same
+ * film until the viewer liked something new. */
+const MAX_SEEDS = 6;
+
 export type TasteProfile = {
   genreWeights: Record<number, number>;
   preferredGenreIds: number[];
@@ -31,7 +35,7 @@ export type TasteProfile = {
   keywordIds: number[];
   cast: TastePerson[];
   crew: TastePerson[];
-  seed: TasteSeed | null;
+  seeds: TasteSeed[];
 };
 
 export type TasteProfileInput = {
@@ -119,6 +123,10 @@ export function buildTasteProfile(input: TasteProfileInput): TasteProfile {
     }
   }
 
+  const excludedGenreIds = genreOrder
+    .filter((id) => (genreWeights[id] ?? 0) <= EXCLUSION_THRESHOLD)
+    .sort((left, right) => left - right);
+
   return {
     genreWeights,
     // Sort is stable, so genres of equal weight keep the order the viewer gave
@@ -128,9 +136,7 @@ export function buildTasteProfile(input: TasteProfileInput): TasteProfile {
       .sort(
         (left, right) => (genreWeights[right] ?? 0) - (genreWeights[left] ?? 0),
       ),
-    excludedGenreIds: genreOrder
-      .filter((id) => (genreWeights[id] ?? 0) <= EXCLUSION_THRESHOLD)
-      .sort((left, right) => left - right),
+    excludedGenreIds,
     keywordIds: topByFrequency(
       input.liked.flatMap((movie) => movie.keywords.map(({ id }) => id)),
       MAX_KEYWORDS,
@@ -149,9 +155,19 @@ export function buildTasteProfile(input: TasteProfileInput): TasteProfile {
       ),
       MAX_PEOPLE,
     ),
-    // The list arrives newest first, so the head is the most recent like.
-    seed: input.liked[0]
-      ? { movieId: input.liked[0].id, title: input.liked[0].title }
-      : null,
+    // Newest first, so the head is the most recent like and the tail is still
+    // recent enough to be worth asking about.
+    //
+    // A like sitting in a genre the profile now rejects is skipped. Tastes
+    // move, and asking what goes with a drama somebody liked months ago fills
+    // the deck with more of a genre they have since turned against -- every one
+    // of those cards arriving with an explanation of why it is not their thing.
+    seeds: input.liked
+      .filter(
+        (movie) =>
+          !movie.genres.some(({ id }) => excludedGenreIds.includes(id)),
+      )
+      .slice(0, MAX_SEEDS)
+      .map((movie) => ({ movieId: movie.id, title: movie.title })),
   };
 }

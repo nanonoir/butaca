@@ -30,7 +30,7 @@ function createProfile(overrides: Partial<TasteProfile> = {}): TasteProfile {
     keywordIds: [],
     cast: [],
     crew: [],
-    seed: null,
+    seeds: [],
     ...overrides,
   };
 }

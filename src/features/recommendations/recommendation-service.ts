@@ -30,6 +30,21 @@ import { buildTasteProfile, type TasteProfile } from "./taste-profile";
  * the union we actually want. */
 const CANDIDATE_GENRE_COUNT = 3;
 
+/** How deep into the viewer's genres the rotation is allowed to reach. Every
+ * genre with any positive weight counts as preferred, and a single liked movie
+ * is enough to put one there -- rotating across all of them sent whole batches
+ * to a genre the viewer had brushed against once, and the deck came back as ten
+ * musicals. The top few are the ones they actually watch. */
+const GENRE_ROTATION_POOL = 5;
+
+/** And how far down the people and keywords. The profile keeps eight of each,
+ * ordered by how often they show up in what the viewer liked, and the tail is
+ * thin by construction: rotating across all eight traded "always the same
+ * director" for "a different director nobody has seen twice", and person-backed
+ * cards went from nine in thirty to two. The head of the list is where the
+ * signal is. */
+const SIGNAL_ROTATION_POOL = 3;
+
 /** Keeps obscure entries with a handful of votes out of the candidate pool
  * before ranking even starts. */
 const MIN_CANDIDATE_VOTE_COUNT = 200;
@@ -101,6 +116,81 @@ function intersectById(
   return left.filter((movie) => rightIds.has(movie.id));
 }
 
+/** Which of the viewer's signals this batch leans on. The profile keeps eight
+ * directors, eight actors, twelve keywords and six recent likes, and the deck
+ * used to ask about the first of each every single time -- so every batch came
+ * back with the same director, the same actor and the same film to resemble.
+ *
+ * Advancing with the deck rather than at random keeps a request reproducible
+ * while making successive batches reach for something else. */
+function rotate<T>(items: readonly T[], offset: number): T | undefined {
+  return items.length === 0
+    ? undefined
+    : items[Math.abs(offset) % items.length];
+}
+
+/** The same idea for a window rather than a single pick, so the genres a batch
+ * asks about move across everything the viewer likes instead of pinning to the
+ * three heaviest forever. */
+function rotateWindow<T>(
+  items: readonly T[],
+  offset: number,
+  size: number,
+): T[] {
+  if (items.length <= size) {
+    return [...items];
+  }
+
+  return Array.from(
+    { length: size },
+    (_unused, index) => items[(Math.abs(offset) + index) % items.length]!,
+  );
+}
+
+/** A ceiling on how much of a batch one signal may take, not a floor under
+ * every signal. Three genre queries bring sixty candidates and the other
+ * signals a handful each, so scoring alone handed whole decks to whichever
+ * genre the rotation had landed on -- ten musicals in a row, every card saying
+ * the same thing.
+ *
+ * Reserving a seat per source was the first fix and it was worse: it promoted
+ * whatever a thin source had left, and half the deck came back explaining that
+ * the movie was not really the viewer's thing. A cap keeps the ranking in
+ * charge and only stops one source from owning the screen. */
+const MAX_SOURCE_SHARE = 0.4;
+
+function capBySource(
+  ranked: MovieSummary[],
+  sourceById: Map<number, MatchReason>,
+  limit: number,
+): MovieSummary[] {
+  const quota = Math.max(1, Math.ceil(limit * MAX_SOURCE_SHARE));
+  const taken = new Map<string, number>();
+  const batch: MovieSummary[] = [];
+  const overflow: MovieSummary[] = [];
+
+  for (const movie of ranked) {
+    if (batch.length === limit) {
+      break;
+    }
+
+    const kind = sourceById.get(movie.id)?.kind ?? "genre";
+    const count = taken.get(kind) ?? 0;
+
+    if (count >= quota) {
+      overflow.push(movie);
+      continue;
+    }
+
+    taken.set(kind, count + 1);
+    batch.push(movie);
+  }
+
+  // A viewer whose profile only has one signal still gets a full deck: the cap
+  // yields rather than leaving the screen short.
+  return [...batch, ...overflow].slice(0, limit);
+}
+
 type SourcedQuery = { query: TmdbDiscoverOptions; source: MatchReason };
 type SourcedMovies = { movies: MovieSummary[]; source: MatchReason };
 
@@ -161,19 +251,32 @@ export class RecommendationService {
       liked: likedDetails,
       disliked: dislikedDetails,
     });
-    const candidates = await this.generateCandidates(profile, options.filters);
+    const candidates = await this.generateCandidates(
+      profile,
+      options.filters,
+      // Grows as the viewer works through the deck, so a refill leans on a
+      // different signal than the batch before it.
+      reactedMovieIds.length + (options.excludeMovieIds?.length ?? 0),
+    );
     // The ranking works on movies; the reason each one is here travels beside
     // it, keyed by id, so ranking and scoring stay untouched.
     const sourceById = new Map(
       candidates.map(({ movie, source }) => [movie.id, source]),
     );
-    const ranked = rankMovies(
-      excludeMovies(
-        candidates.map(({ movie }) => movie),
-        [...reactedMovieIds, ...(options.excludeMovieIds ?? [])],
+    const limit = options.limit ?? DISCOVER_BATCH_SIZE;
+    const ranked = capBySource(
+      rankMovies(
+        excludeMovies(
+          candidates.map(({ movie }) => movie),
+          [...reactedMovieIds, ...(options.excludeMovieIds ?? [])],
+        ),
+        profile,
+        // Ranked in full first: the interleave needs every source's best
+        // picks in order, not just the top of the pool.
+        candidates.length,
       ),
-      profile,
-      options.limit ?? DISCOVER_BATCH_SIZE,
+      sourceById,
+      limit,
     );
     // Genre names only matter for the batch that survived the ranking, and the
     // list is small enough to fetch once per request.
@@ -259,6 +362,7 @@ export class RecommendationService {
   private async generateCandidates(
     profile: TasteProfile,
     filters: RecommendationFilters = {},
+    rotation = 0,
   ): Promise<Candidate[]> {
     // Caller filters are extra constraints on top of the profile, never a
     // replacement for it: an explicit request narrows the pool, it does not
@@ -308,15 +412,26 @@ export class RecommendationService {
       : (filters.genreIds ?? profile.preferredGenreIds);
     // Each query carries the reason it exists, so a card can say why it is
     // there without anyone guessing afterwards.
-    const queries: SourcedQuery[] = requestedGenreIds
-      .slice(0, CANDIDATE_GENRE_COUNT)
-      .map((genreId) => ({
+    const queries: SourcedQuery[] = rotateWindow(
+      requestedGenreIds.slice(0, GENRE_ROTATION_POOL),
+      rotation,
+      CANDIDATE_GENRE_COUNT,
+    ).map((genreId) => ({
         query: { ...shared, genreIds: [genreId] },
-        source: { kind: "genre", name: null } as const,
-      }));
-    const [topKeywordId] = profile.keywordIds;
-    const [topDirector] = profile.crew;
-    const [topCast] = profile.cast;
+      source: { kind: "genre", name: null } as const,
+    }));
+    const topKeywordId = rotate(
+      profile.keywordIds.slice(0, SIGNAL_ROTATION_POOL),
+      rotation,
+    );
+    const topDirector = rotate(
+      profile.crew.slice(0, SIGNAL_ROTATION_POOL),
+      rotation,
+    );
+    const topCast = rotate(
+      profile.cast.slice(0, SIGNAL_ROTATION_POOL),
+      rotation,
+    );
 
     if (!subject && topKeywordId !== undefined) {
       queries.push({
@@ -367,15 +482,30 @@ export class RecommendationService {
     // person -- and never from a film the viewer actually liked. This asks what
     // goes with their most recent one, which widens the pool and is the only
     // signal that can be named back as a movie.
-    if (!subject && profile.seed) {
-      const { movieId, title } = profile.seed;
+    const seed = subject
+      ? undefined
+      : rotate(profile.seeds.slice(0, SIGNAL_ROTATION_POOL), rotation);
+
+    if (seed) {
+      const { movieId, title } = seed;
 
       requests.push(
         this.catalog
           .getMovieRecommendations({ movieId, page: 1 })
           .then(({ data }) => ({
             source: { kind: "similar" as const, name: title },
-            movies: data,
+            // The discover queries drop the viewer's rejected genres through
+            // `without_genres`; this endpoint takes no such parameter, and
+            // leaving it unfiltered showed. A film they liked long enough ago
+            // can sit in a genre they have since turned against, and its
+            // recommendations came back as a third of the deck explaining that
+            // it was not really their thing.
+            movies: data.filter(
+              (movie) =>
+                !movie.genreIds.some((genreId) =>
+                  profile.excludedGenreIds.includes(genreId),
+                ),
+            ),
           })),
       );
     }

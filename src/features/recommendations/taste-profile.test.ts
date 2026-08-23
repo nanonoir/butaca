@@ -156,7 +156,7 @@ describe("buildTasteProfile", () => {
       keywordIds: [],
       cast: [],
       crew: [],
-      seed: null,
+      seeds: [],
     });
   });
 });

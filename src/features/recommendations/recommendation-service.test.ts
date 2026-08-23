@@ -705,3 +705,113 @@ describe("getDiscoverBatch reasons", () => {
     });
   });
 });
+
+describe("getDiscoverBatch rotation", () => {
+  function service(deps: ReturnType<typeof createDependencies>) {
+    return new RecommendationService(
+      deps.preferences,
+      deps.interactions,
+      deps.catalog,
+    );
+  }
+
+  function likedMovie(id: number, title: string, director: string) {
+    return {
+      ...summary(id),
+      title,
+      genres: [{ id: 878, name: "Ciencia ficción" }],
+      runtime: 120,
+      tagline: null,
+      director: { id: id + 1000, name: director, profilePath: null },
+      cast: [
+        {
+          id: id + 2000,
+          name: `Actor ${id}`,
+          character: "",
+          profilePath: null,
+          order: 0,
+        },
+      ],
+      keywords: [],
+      trailer: null,
+    };
+  }
+
+  /** The profile keeps eight directors and six recent likes, and the deck used
+   * to ask about the first of each every time -- so every batch came back with
+   * the same director and the same film to resemble. */
+  it("leans on a different signal as the viewer works through the deck", async () => {
+    const deps = createDependencies();
+    deps.interactions.findLikesByUser.mockResolvedValue([
+      { movieId: 1 },
+      { movieId: 2 },
+    ]);
+    deps.catalog.getMovieDetail.mockImplementation(async (id: number) =>
+      id === 1
+        ? likedMovie(1, "Blade Runner", "Ridley Scott")
+        : likedMovie(2, "Origen", "Christopher Nolan"),
+    );
+    deps.catalog.getMovieRecommendations.mockResolvedValue(paginated([]));
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([]));
+
+    await service(deps).getDiscoverBatch(USER_ID);
+    const firstSeed = deps.catalog.getMovieRecommendations.mock.calls[0]?.[0];
+
+    deps.catalog.getMovieRecommendations.mockClear();
+    await service(deps).getDiscoverBatch(USER_ID, { excludeMovieIds: [99] });
+    const secondSeed = deps.catalog.getMovieRecommendations.mock.calls[0]?.[0];
+
+    expect(firstSeed?.movieId).not.toBe(secondSeed?.movieId);
+  });
+
+  it("asks about a different director on the next batch", async () => {
+    const deps = createDependencies();
+    deps.interactions.findLikesByUser.mockResolvedValue([
+      { movieId: 1 },
+      { movieId: 2 },
+    ]);
+    deps.catalog.getMovieDetail.mockImplementation(async (id: number) =>
+      id === 1
+        ? likedMovie(1, "Blade Runner", "Ridley Scott")
+        : likedMovie(2, "Origen", "Christopher Nolan"),
+    );
+    deps.catalog.getMovieRecommendations.mockResolvedValue(paginated([]));
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([]));
+
+    const crewOf = (calls: unknown[][]) =>
+      calls.flatMap(
+        ([query]) => (query as { crewIds?: number[] }).crewIds ?? [],
+      );
+
+    await service(deps).getDiscoverBatch(USER_ID);
+    const first = crewOf(deps.catalog.discoverMovies.mock.calls);
+
+    deps.catalog.discoverMovies.mockClear();
+    await service(deps).getDiscoverBatch(USER_ID, { excludeMovieIds: [99] });
+    const second = crewOf(deps.catalog.discoverMovies.mock.calls);
+
+    expect(first).not.toEqual(second);
+  });
+
+  /** Rotating at random would make the same request answer differently twice. */
+  it("answers an identical request identically", async () => {
+    const deps = createDependencies();
+    deps.preferences.findByUserId.mockResolvedValue({
+      preferredGenreIds: [878, 18, 27, 35],
+    });
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([]));
+
+    await service(deps).getDiscoverBatch(USER_ID);
+    const first = deps.catalog.discoverMovies.mock.calls.map(
+      ([query]) => query.genreIds,
+    );
+
+    deps.catalog.discoverMovies.mockClear();
+    await service(deps).getDiscoverBatch(USER_ID);
+    const second = deps.catalog.discoverMovies.mock.calls.map(
+      ([query]) => query.genreIds,
+    );
+
+    expect(second).toEqual(first);
+  });
+});

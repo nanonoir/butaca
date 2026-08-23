@@ -40,7 +40,7 @@ function createProfile(genreWeights: Record<number, number>): TasteProfile {
     keywordIds: [],
     cast: [],
     crew: [],
-    seed: null,
+    seeds: [],
   };
 }
 
