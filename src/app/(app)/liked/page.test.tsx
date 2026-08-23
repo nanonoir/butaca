@@ -162,4 +162,26 @@ describe("LikedMoviesPage", () => {
     expect(redirect).toHaveBeenCalledWith("/login");
     expect(listLikedMovies).not.toHaveBeenCalled();
   });
+
+  it("asks the database for the term in the URL", async () => {
+    stubLikes([]);
+
+    render(await renderPage({ search: "matrix" }));
+
+    expect(listLikedMovies).toHaveBeenCalledWith(VIEWER.id, {
+      page: 1,
+      watched: "all",
+      search: "matrix",
+    });
+  });
+
+  it("hands the screen back the term it searched for", async () => {
+    stubLikes([]);
+
+    render(await renderPage({ search: "matrix" }));
+
+    expect(
+      screen.getByRole("textbox", { name: /Buscar en mis películas/i }),
+    ).toHaveValue("matrix");
+  });
 });

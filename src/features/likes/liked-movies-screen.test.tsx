@@ -128,11 +128,13 @@ function renderScreen(options?: {
   items?: LikedMovieItem[];
   meta?: Partial<PaginationMeta>;
   watched?: LikesWatchedFilter;
+  search?: string;
 }) {
   return render(
     <LikedMoviesScreen
       items={options?.items ?? ITEMS}
       meta={createMeta(options?.meta)}
+      search={options?.search}
       watched={options?.watched ?? "all"}
     />,
   );
@@ -407,5 +409,99 @@ describe("LikedMoviesScreen posters", () => {
     });
 
     expect(poster.getAttribute("style")).toContain("repeating-linear-gradient");
+  });
+});
+
+describe("LikedMoviesScreen search", () => {
+  function openSearch() {
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Abrir buscador de la biblioteca",
+      }),
+    );
+  }
+
+  it("keeps the box out of the way until it is asked for", () => {
+    renderScreen();
+
+    expect(screen.queryByRole("search")).not.toBeInTheDocument();
+
+    openSearch();
+
+    expect(
+      screen.getByRole("search", { name: "Búsqueda en la biblioteca" }),
+    ).toBeInTheDocument();
+  });
+
+  /** A different term is a different library, so it cannot land on an offset
+   * that belonged to the previous one. */
+  it("searches from the first page and keeps the active filter", () => {
+    renderScreen({
+      meta: { page: 4, totalPages: 7, totalResults: 133 },
+      watched: "watched",
+    });
+    openSearch();
+
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /Buscar en mis películas/i }),
+      { target: { value: "  matrix  " } },
+    );
+    fireEvent.submit(screen.getByRole("search"));
+
+    expect(push).toHaveBeenLastCalledWith("/liked?search=matrix&watched=watched");
+  });
+
+  it("opens already showing the term that produced the list", () => {
+    renderScreen({ search: "matrix" });
+
+    expect(
+      screen.getByRole("textbox", { name: /Buscar en mis películas/i }),
+    ).toHaveValue("matrix");
+  });
+
+  it("carries the term into the next page", () => {
+    renderScreen({
+      meta: { page: 1, totalPages: 2, totalResults: 25, hasNextPage: true },
+      search: "matrix",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }));
+
+    expect(push).toHaveBeenLastCalledWith("/liked?search=matrix&page=2");
+  });
+
+  it("drops the term when the search is cleared", () => {
+    renderScreen({ search: "matrix" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Limpiar búsqueda" }));
+
+    expect(push).toHaveBeenLastCalledWith("/liked");
+  });
+
+  it("says which term found nothing", () => {
+    renderScreen({
+      items: [],
+      meta: { totalPages: 0, totalResults: 0 },
+      search: "zzzz",
+    });
+
+    expect(
+      screen.getByRole("heading", {
+        name: 'Nada en tu biblioteca para "zzzz"',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("submits nothing when the box holds only spaces", () => {
+    renderScreen();
+    openSearch();
+
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /Buscar en mis películas/i }),
+      { target: { value: "   " } },
+    );
+    fireEvent.submit(screen.getByRole("search"));
+
+    expect(push).toHaveBeenLastCalledWith("/liked");
   });
 });

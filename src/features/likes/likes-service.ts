@@ -59,8 +59,13 @@ export class LikesService {
     query: LikesQuery,
   ): Promise<PaginatedLikes> {
     const [interactions, totalResults] = await Promise.all([
-      this.interactions.findLikesByUser(userId, query.page, query.watched),
-      this.interactions.countLikesByUser(userId, query.watched),
+      this.interactions.findLikesByUser(
+        userId,
+        query.page,
+        query.watched,
+        query.search,
+      ),
+      this.interactions.countLikesByUser(userId, query.watched, query.search),
     ]);
     const items = await this.resolveMovies(interactions);
     const totalPages = Math.ceil(totalResults / PAGE_SIZE);

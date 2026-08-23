@@ -12,6 +12,7 @@ import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { MovieDetailPageData } from "@/contracts/movie-detail";
 import type { Review } from "@/contracts/reviews";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
@@ -57,6 +58,24 @@ interface LikedMoviesScreenProps {
   items: LikedMovieItem[];
   meta: PaginationMeta;
   watched: LikesWatchedFilter;
+  search?: string;
+}
+
+function SearchIcon({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24">
+      <circle cx="10.75" cy="10.75" r="5.75" stroke="currentColor" strokeWidth="1.8" />
+      <path d="m15.5 15.5 3.5 3.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function CrossIcon({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24">
+      <path d="m6.5 6.5 11 11m0-11-11 11" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
 }
 
 function EyeIcon() {
@@ -137,8 +156,16 @@ function applyLocalEdits(
 
 /** The library spans more than one page, so the URL carries which slice the
  * viewer is on. Defaults stay out of it to keep `/liked` clean. */
-function buildLikedHref(page: number, watched: LikesWatchedFilter) {
+function buildLikedHref(
+  page: number,
+  watched: LikesWatchedFilter,
+  search?: string,
+) {
   const params = new URLSearchParams();
+
+  if (search) {
+    params.set("search", search);
+  }
 
   if (watched !== "all") {
     params.set("watched", watched);
@@ -161,9 +188,14 @@ export function LikedMoviesScreen({
   items,
   meta,
   watched,
+  search,
 }: LikedMoviesScreenProps) {
   const router = useRouter();
   const [isNavigating, startNavigation] = useTransition();
+  // Open when a search is already running, so a reload or a shared link lands
+  // on the box that produced what is on screen rather than hiding it.
+  const [searchOpen, setSearchOpen] = useState(Boolean(search));
+  const [draft, setDraft] = useState(search ?? "");
   const [edits, setEdits] = useState<ReadonlyMap<number, LocalEdit>>(
     () => new Map(),
   );
@@ -176,12 +208,37 @@ export function LikedMoviesScreen({
   // Only movies unliked on this very page are missing from the server count:
   // once the viewer moves on, the next query already leaves them out.
   const totalResults = meta.totalResults - (items.length - visibleItems.length);
-  const emptyState = EMPTY_STATES[watched];
+  const emptyState = search
+    ? {
+        title: `Nada en tu biblioteca para "${search}"`,
+        hint: "Buscá otro título, o quitá la búsqueda para ver todo de nuevo.",
+      }
+    : EMPTY_STATES[watched];
 
-  function goTo(page: number, nextWatched: LikesWatchedFilter) {
+  /** Every caller states the term. A default of `search` would have made
+   * clearing impossible: passing undefined to a defaulted parameter is what
+   * asks for the default, so "limpiar búsqueda" kept the term it was clearing. */
+  function goTo(
+    page: number,
+    nextWatched: LikesWatchedFilter,
+    nextSearch: string | undefined,
+  ) {
     startNavigation(() => {
-      router.push(buildLikedHref(page, nextWatched));
+      router.push(buildLikedHref(page, nextWatched, nextSearch));
     });
+  }
+
+  /** A different term is a different library, so it starts at the first page
+   * rather than at an offset that belonged to the previous one. */
+  function submitSearch() {
+    const term = draft.trim();
+
+    goTo(1, watched, term || undefined);
+  }
+
+  function clearSearch() {
+    setDraft("");
+    goTo(1, watched, undefined);
   }
 
   /** The overlay loads on demand: the list only carries a summary per movie,
@@ -229,17 +286,98 @@ export function LikedMoviesScreen({
         eyebrow="Tu biblioteca"
         title="Mis películas"
         action={
-          <p
-            aria-live="polite"
-            className="font-mono text-xs tracking-[0.08em] text-muted"
-          >
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              aria-controls="liked-search-panel"
+              aria-expanded={searchOpen}
+              aria-label={
+                searchOpen
+                  ? "Cerrar buscador de la biblioteca"
+                  : "Abrir buscador de la biblioteca"
+              }
+              className="rounded-full border-primary/25 bg-primary/5 px-4 text-primary hover:border-primary/45 hover:bg-primary/10 aria-expanded:border-primary/45 aria-expanded:bg-primary/15"
+              onClick={() => setSearchOpen((open) => !open)}
+              variant={BUTTON_VARIANT.OUTLINE}
+            >
+              <SearchIcon className="size-4" />
+              Buscar
+            </Button>
+            <p
+              aria-live="polite"
+              className="font-mono text-xs tracking-[0.08em] text-muted"
+            >
             {getMovieCountLabel(totalResults)}
-            {meta.totalPages > 1
-              ? ` · Página ${meta.page} de ${meta.totalPages}`
-              : null}
-          </p>
+              {meta.totalPages > 1
+                ? ` · Página ${meta.page} de ${meta.totalPages}`
+                : null}
+            </p>
+          </div>
         }
       />
+
+      {searchOpen ? (
+        <form
+          aria-label="Búsqueda en la biblioteca"
+          className="rounded-xl border border-border bg-surface-elevated/75 p-4 shadow-floating backdrop-blur-sm"
+          id="liked-search-panel"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitSearch();
+          }}
+          role="search"
+        >
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <label
+              className="text-sm font-semibold text-foreground"
+              htmlFor="liked-search-input"
+            >
+              Buscar en mis películas
+            </label>
+            <Button
+              aria-label="Cerrar búsqueda"
+              className="rounded-full text-muted hover:text-foreground"
+              onClick={() => setSearchOpen(false)}
+              variant={BUTTON_VARIANT.ICON}
+            >
+              <CrossIcon className="size-5" />
+            </Button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <Input
+              aria-describedby="liked-search-helper"
+              autoFocus
+              id="liked-search-input"
+              maxLength={80}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Escribí un título"
+              value={draft}
+            />
+            <Button
+              className="w-full sm:w-auto sm:min-w-28"
+              disabled={isNavigating}
+              type="submit"
+            >
+              <SearchIcon className="size-4" />
+              Buscar
+            </Button>
+          </div>
+
+          <div className="mt-2 flex min-h-8 flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted" id="liked-search-helper">
+              Busca solamente entre las películas que ya guardaste.
+            </p>
+            {search ? (
+              <Button
+                onClick={clearSearch}
+                variant={BUTTON_VARIANT.OUTLINE}
+              >
+                Limpiar búsqueda
+              </Button>
+            ) : null}
+          </div>
+        </form>
+      ) : null}
 
       <section aria-labelledby="liked-movies-title" className="space-y-7">
         <h2 id="liked-movies-title" className="sr-only">
@@ -262,7 +400,7 @@ export function LikedMoviesScreen({
                 // A filter changes how many movies there are, so it lands back
                 // on the first page instead of an offset that may not exist
                 // under the new count.
-                onClick={() => goTo(1, option.value)}
+                onClick={() => goTo(1, option.value, search)}
                 variant={
                   active ? BUTTON_VARIANT.PRIMARY : BUTTON_VARIANT.OUTLINE
                 }
@@ -309,7 +447,7 @@ export function LikedMoviesScreen({
         <Pagination
           disabled={isNavigating}
           hasNextPage={meta.hasNextPage}
-          onPageChange={(page) => goTo(page, watched)}
+          onPageChange={(page) => goTo(page, watched, search)}
           page={meta.page}
           totalPages={meta.totalPages}
         />

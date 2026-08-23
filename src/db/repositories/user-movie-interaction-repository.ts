@@ -1,11 +1,21 @@
 import "server-only";
 
-import { and, count, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  exists,
+  isNotNull,
+  isNull,
+  sql,
+} from "drizzle-orm";
 
 import { PAGE_SIZE } from "../../contracts/common";
 import type { LikesWatchedFilter } from "../../contracts/likes";
 import type { MovieReaction } from "../../contracts/interactions";
 import type { DbExecutor } from "../client";
+import { movieCache } from "../schema/movie-cache";
 import {
   type UserMovieInteractionRecord,
   userMovieInteractions,
@@ -47,7 +57,34 @@ export class UserMovieInteractionRepository {
 
   /** The watched filter is part of the same WHERE as the ownership scope, so a
    * filtered list can never widen past the owner's rows. */
-  private likedWhere(userId: string, watched: LikesWatchedFilter) {
+  /** The library stores movie ids and nothing a person could read, so matching
+   * a title means reaching into the cached payload the catalog already wrote
+   * for every movie the viewer has seen on screen. Original title counts too:
+   * somebody who typed "Die Hard" should find "La jungla de cristal". */
+  private titleMatches(term: string) {
+    // ILIKE reads % and _ as wildcards, so a viewer typing one has to get the
+    // character rather than a match on everything.
+    const escaped = term.replace(/[%_\\]/g, (character) => `\\${character}`);
+    const pattern = `%${escaped}%`;
+
+    return exists(
+      this.db
+        .select({ matched: sql`1` })
+        .from(movieCache)
+        .where(
+          and(
+            eq(movieCache.movieId, userMovieInteractions.movieId),
+            sql`(${movieCache.payload} ->> 'title' ILIKE ${pattern} OR ${movieCache.payload} ->> 'original_title' ILIKE ${pattern})`,
+          ),
+        ),
+    );
+  }
+
+  private likedWhere(
+    userId: string,
+    watched: LikesWatchedFilter,
+    search?: string,
+  ) {
     const watchedCondition =
       watched === "watched"
         ? isNotNull(userMovieInteractions.watchedAt)
@@ -59,17 +96,19 @@ export class UserMovieInteractionRepository {
       eq(userMovieInteractions.userId, userId),
       eq(userMovieInteractions.reaction, "LIKE"),
       watchedCondition,
+      search ? this.titleMatches(search) : undefined,
     );
   }
 
   async countLikesByUser(
     userId: string,
     watched: LikesWatchedFilter = "all",
+    search?: string,
   ): Promise<number> {
     const [total] = await this.db
       .select({ total: count() })
       .from(userMovieInteractions)
-      .where(this.likedWhere(userId, watched));
+      .where(this.likedWhere(userId, watched, search));
 
     return total?.total ?? 0;
   }
@@ -78,11 +117,12 @@ export class UserMovieInteractionRepository {
     userId: string,
     page = 1,
     watched: LikesWatchedFilter = "all",
+    search?: string,
   ): Promise<UserMovieInteractionRecord[]> {
     return this.db
       .select()
       .from(userMovieInteractions)
-      .where(this.likedWhere(userId, watched))
+      .where(this.likedWhere(userId, watched, search))
       .orderBy(desc(userMovieInteractions.updatedAt))
       .limit(PAGE_SIZE)
       .offset((page - 1) * PAGE_SIZE);
