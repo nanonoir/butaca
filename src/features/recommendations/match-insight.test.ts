@@ -38,8 +38,9 @@ function createProfile(genreWeights: Record<number, number>): TasteProfile {
     preferredGenreIds: [],
     excludedGenreIds: [],
     keywordIds: [],
-    castIds: [],
-    crewIds: [],
+    cast: [],
+    crew: [],
+    seeds: [],
   };
 }
 
@@ -59,6 +60,7 @@ function insightAt(
     createProfile(genreWeights),
     GENRES,
     position,
+    { kind: "genre", name: null },
   );
 }
 

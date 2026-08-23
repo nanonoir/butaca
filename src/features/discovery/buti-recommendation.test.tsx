@@ -29,8 +29,9 @@ function createInsight(
   tier: MatchTier,
   matchedGenres: string[],
   clashingGenres: string[] = [],
+  reason: MatchInsight["reason"] = { kind: "genre", name: null },
 ): MatchInsight {
-  return { tier, matchedGenres, clashingGenres };
+  return { tier, matchedGenres, clashingGenres, reason };
 }
 
 function opinionsFor(insight: MatchInsight): string[] {
@@ -178,5 +179,90 @@ describe("getButiInsight", () => {
 
     expect(insight.match).toBe(BUTI_MATCH.LOW);
     expect(insight.opinion).toMatch(/no toca ninguno de tus géneros/i);
+  });
+});
+
+describe("getButiInsight reasons", () => {
+  /** A genre is the least it can say. When the deck knows the card came from a
+   * director the viewer keeps watching, it says that instead. */
+  it("names the director when that is why the movie is here", () => {
+    const opinions = opinionsFor(
+      createInsight("high", ["Ciencia ficción"], [], {
+        kind: "crew",
+        name: "Christopher Nolan",
+      }),
+    );
+
+    expect(new Set(opinions).size).toBe(3);
+    for (const opinion of opinions) {
+      expect(opinion).toContain("Christopher Nolan");
+    }
+  });
+
+  it("names the actor when that is why the movie is here", () => {
+    const opinions = opinionsFor(
+      createInsight("medium", ["Drama"], [], {
+        kind: "cast",
+        name: "Leonardo DiCaprio",
+      }),
+    );
+
+    expect(new Set(opinions).size).toBe(3);
+    for (const opinion of opinions) {
+      expect(opinion).toContain("Leonardo DiCaprio");
+    }
+  });
+
+  it("names the movie a similar pick came from", () => {
+    const opinions = opinionsFor(
+      createInsight("high", ["Ciencia ficción"], [], {
+        kind: "similar",
+        name: "Interstellar",
+      }),
+    );
+
+    expect(new Set(opinions).size).toBe(3);
+    for (const opinion of opinions) {
+      expect(opinion).toContain("Interstellar");
+    }
+  });
+
+  /** A doubtful card has something more useful to say than which director it
+   * came from. */
+  it("keeps the doubtful lines for a doubtful card", () => {
+    const opinion = getButiInsight(
+      createMovie(300),
+      createInsight("low", ["Drama"], ["Terror"], {
+        kind: "crew",
+        name: "Christopher Nolan",
+      }),
+    ).opinion;
+
+    expect(opinion).not.toContain("Christopher Nolan");
+    expect(opinion).toContain("terror, que venís descartando");
+  });
+
+  it("falls back to the genre lines when the reason has nothing to name", () => {
+    const opinions = opinionsFor(
+      createInsight("high", ["Ciencia ficción", "Drama"], [], {
+        kind: "keyword",
+        name: null,
+      }),
+    );
+
+    for (const opinion of opinions) {
+      expect(opinion).toContain("Ciencia ficción y Drama");
+      expect(opinion).not.toMatch(/\{name\}/);
+    }
+  });
+
+  it("never leaves the name slot unfilled", () => {
+    for (const kind of ["crew", "cast", "similar"] as const) {
+      for (const opinion of opinionsFor(
+        createInsight("high", ["Drama"], [], { kind, name: "Alguien" }),
+      )) {
+        expect(opinion).not.toMatch(/\{(name|genres|reason|rating)\}/);
+      }
+    }
   });
 });

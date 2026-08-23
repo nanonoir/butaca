@@ -64,7 +64,12 @@ describe("DiscoverPage", () => {
       movies: [createMovie(1, "Interstellar"), createMovie(2, "Dune")].map(
         (movie) => ({
           movie,
-          insight: { tier: "high", matchedGenres: [], clashingGenres: [] },
+          insight: {
+            tier: "high",
+            matchedGenres: [],
+            clashingGenres: [],
+            reason: { kind: "genre", name: null },
+          },
         }),
       ),
       batchSize: 20,
