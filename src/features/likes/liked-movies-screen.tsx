@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AnimatePresence } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import type { PaginationMeta } from "@/contracts/common";
 import type { LikedMovieItem, LikesWatchedFilter } from "@/contracts/likes";
@@ -18,7 +18,11 @@ import {
   setMovieWatched,
 } from "@/features/interactions/interaction-client";
 
-import { LikedMovieMenu } from "./liked-movie-menu";
+import {
+  type LikedMovieMenuAction,
+  LikedMovieMenuPanel,
+  LikedMovieMenuTrigger,
+} from "./liked-movie-menu";
 import type { MovieDetailPageData } from "@/contracts/movie-detail";
 import type { Review } from "@/contracts/reviews";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
@@ -57,8 +61,7 @@ const EMPTY_STATES: Record<
  * `items` instead of copied over them: the list is server rendered per page, so
  * a copy taken on mount would survive into the next page and freeze it. */
 type LocalEdit =
-  | { removed: true }
-  | { removed: false; watchedAt: string | null };
+  { removed: true } | { removed: false; watchedAt: string | null };
 
 interface LikedMoviesScreenProps {
   items: LikedMovieItem[];
@@ -69,17 +72,43 @@ interface LikedMoviesScreenProps {
 
 function SearchIcon({ className }: { className?: string }) {
   return (
-    <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24">
-      <circle cx="10.75" cy="10.75" r="5.75" stroke="currentColor" strokeWidth="1.8" />
-      <path d="m15.5 15.5 3.5 3.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        cx="10.75"
+        cy="10.75"
+        r="5.75"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="m15.5 15.5 3.5 3.5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
     </svg>
   );
 }
 
 function CrossIcon({ className }: { className?: string }) {
   return (
-    <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24">
-      <path d="m6.5 6.5 11 11m0-11-11 11" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="m6.5 6.5 11 11m0-11-11 11"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
     </svg>
   );
 }
@@ -126,7 +155,13 @@ function TrashIcon() {
 function InfoIcon() {
   return (
     <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="8.25" stroke="currentColor" strokeWidth="1.7" />
+      <circle
+        cx="12"
+        cy="12"
+        r="8.25"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
       <path
         d="M12 11v5m0-8.2v.6"
         stroke="currentColor"
@@ -210,6 +245,7 @@ export function LikedMoviesScreen({
   search,
 }: LikedMoviesScreenProps) {
   const router = useRouter();
+  const shouldReduceMotion = useReducedMotion();
   const [isNavigating, startNavigation] = useTransition();
   // Open when a search is already running, so a reload or a shared link lands
   // on the box that produced what is on screen rather than hiding it.
@@ -218,6 +254,9 @@ export function LikedMoviesScreen({
   const [edits, setEdits] = useState<ReadonlyMap<number, LocalEdit>>(
     () => new Map(),
   );
+  // One menu at a time. The state sits here rather than in the card because
+  // the dots and the list they open are two separate slots of it.
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [selectedItem, setSelectedItem] = useState<LikedMovieItem | null>(null);
   const [detailExperience, setDetailExperience] = useState<{
     pageData: MovieDetailPageData;
@@ -233,6 +272,36 @@ export function LikedMoviesScreen({
         hint: "Buscá otro título, o quitá la búsqueda para ver todo de nuevo.",
       }
     : EMPTY_STATES[watched];
+
+  useEffect(() => {
+    if (openMenuId === null) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Element | null;
+
+      if (target?.closest(`[data-liked-menu="${openMenuId}"]`)) {
+        return;
+      }
+
+      setOpenMenuId(null);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenMenuId(null);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openMenuId]);
 
   /** Every caller states the term. A default of `search` would have made
    * clearing impossible: passing undefined to a defaulted parameter is what
@@ -366,7 +435,7 @@ export function LikedMoviesScreen({
               aria-live="polite"
               className="font-mono text-xs tracking-[0.08em] text-muted"
             >
-            {getMovieCountLabel(totalResults)}
+              {getMovieCountLabel(totalResults)}
               {meta.totalPages > 1
                 ? ` · Página ${meta.page} de ${meta.totalPages}`
                 : null}
@@ -375,69 +444,92 @@ export function LikedMoviesScreen({
         }
       />
 
-      {searchOpen ? (
-        <form
-          aria-label="Búsqueda en la biblioteca"
-          className="rounded-xl border border-border bg-surface-elevated/75 p-4 shadow-floating backdrop-blur-sm"
-          id="liked-search-panel"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submitSearch();
-          }}
-          role="search"
-        >
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <label
-              className="text-sm font-semibold text-foreground"
-              htmlFor="liked-search-input"
+      {/* The same unfolding as Discover's, down to the numbers. The two are the
+       * same control on two screens and had no business moving differently. */}
+      <AnimatePresence initial={false} mode="popLayout">
+        {searchOpen ? (
+          <motion.div
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="rounded-xl border border-border bg-surface-elevated/75 p-4 shadow-floating backdrop-blur-sm"
+            exit={
+              shouldReduceMotion
+                ? { opacity: 0 }
+                : { opacity: 0, scale: 0.99, y: -8 }
+            }
+            id="liked-search-panel"
+            initial={
+              shouldReduceMotion
+                ? { opacity: 0 }
+                : { opacity: 0, scale: 0.985, y: -12 }
+            }
+            key="liked-search-panel"
+            transition={{
+              duration: shouldReduceMotion ? 0.01 : 0.3,
+              ease: [0.23, 1, 0.32, 1],
+            }}
+          >
+            <form
+              aria-label="Búsqueda en la biblioteca"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitSearch();
+              }}
+              role="search"
             >
-              Buscar en mis películas
-            </label>
-            <Button
-              aria-label="Cerrar búsqueda"
-              className="rounded-full text-muted hover:text-foreground"
-              onClick={() => setSearchOpen(false)}
-              variant={BUTTON_VARIANT.ICON}
-            >
-              <CrossIcon className="size-5" />
-            </Button>
-          </div>
+              <div className="mb-3 flex items-center justify-between gap-4">
+                <label
+                  className="text-sm font-semibold text-foreground"
+                  htmlFor="liked-search-input"
+                >
+                  Buscar en mis películas
+                </label>
+                <Button
+                  aria-label="Cerrar búsqueda"
+                  className="rounded-full text-muted hover:text-foreground"
+                  onClick={() => setSearchOpen(false)}
+                  variant={BUTTON_VARIANT.ICON}
+                >
+                  <CrossIcon className="size-5" />
+                </Button>
+              </div>
 
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-            <Input
-              aria-describedby="liked-search-helper"
-              autoFocus
-              id="liked-search-input"
-              maxLength={80}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="Escribí un título"
-              value={draft}
-            />
-            <Button
-              className="w-full sm:w-auto sm:min-w-28"
-              disabled={isNavigating}
-              type="submit"
-            >
-              <SearchIcon className="size-4" />
-              Buscar
-            </Button>
-          </div>
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                <Input
+                  aria-describedby="liked-search-helper"
+                  autoFocus
+                  id="liked-search-input"
+                  maxLength={80}
+                  onChange={(event) => setDraft(event.target.value)}
+                  placeholder="Escribí un título"
+                  value={draft}
+                />
+                <Button
+                  className="w-full sm:w-auto sm:min-w-28"
+                  disabled={isNavigating}
+                  type="submit"
+                >
+                  <SearchIcon className="size-4" />
+                  Buscar
+                </Button>
+              </div>
 
-          <div className="mt-2 flex min-h-8 flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-muted" id="liked-search-helper">
-              Busca solamente entre las películas que ya guardaste.
-            </p>
-            {search ? (
-              <Button
-                onClick={clearSearch}
-                variant={BUTTON_VARIANT.OUTLINE}
-              >
-                Limpiar búsqueda
-              </Button>
-            ) : null}
-          </div>
-        </form>
-      ) : null}
+              <div className="mt-2 flex min-h-8 flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted" id="liked-search-helper">
+                  Busca solamente entre las películas que ya guardaste.
+                </p>
+                {search ? (
+                  <Button
+                    onClick={clearSearch}
+                    variant={BUTTON_VARIANT.OUTLINE}
+                  >
+                    Limpiar búsqueda
+                  </Button>
+                ) : null}
+              </div>
+            </form>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <section aria-labelledby="liked-movies-title" className="space-y-7">
         <h2 id="liked-movies-title" className="sr-only">
@@ -485,9 +577,44 @@ export function LikedMoviesScreen({
             {visibleItems.map((item) => {
               const watchedMovie = item.watchedAt !== null;
               const year = item.movie.releaseDate?.slice(0, 4);
+              const movieId = item.movie.id;
+              const open = openMenuId === movieId;
+              // Each one closes the menu on its way out: the list it belongs to
+              // is about to be a different shape.
+              const actions: LikedMovieMenuAction[] = [
+                {
+                  id: "watched",
+                  label: watchedMovie
+                    ? "Marcar como no vista"
+                    : "Marcar como vista",
+                  icon: <EyeIcon />,
+                  onSelect: () => {
+                    setOpenMenuId(null);
+                    void handleToggleWatched(item);
+                  },
+                },
+                {
+                  id: "remove",
+                  label: "Quitar de me gusta",
+                  icon: <TrashIcon />,
+                  onSelect: () => {
+                    setOpenMenuId(null);
+                    void handleRemoveLike(item);
+                  },
+                },
+                {
+                  id: "detail",
+                  label: "Ver detalles",
+                  icon: <InfoIcon />,
+                  onSelect: () => {
+                    setOpenMenuId(null);
+                    void handleSelectItem(item);
+                  },
+                },
+              ];
 
               return (
-                <li className="min-w-0" key={item.movie.id}>
+                <li className="min-w-0" key={movieId}>
                   <MoviePosterCard
                     actionLabel={`Ver detalle de ${item.movie.title}`}
                     onSelect={() => void handleSelectItem(item)}
@@ -497,29 +624,18 @@ export function LikedMoviesScreen({
                       <LikedPoster movie={item.movie} watched={watchedMovie} />
                     }
                     metadataSlot={
-                      <LikedMovieMenu
-                        actions={[
-                          {
-                            id: "watched",
-                            label: watchedMovie
-                              ? "Marcar como no vista"
-                              : "Marcar como vista",
-                            icon: <EyeIcon />,
-                            onSelect: () => void handleToggleWatched(item),
-                          },
-                          {
-                            id: "remove",
-                            label: "Quitar de me gusta",
-                            icon: <TrashIcon />,
-                            onSelect: () => void handleRemoveLike(item),
-                          },
-                          {
-                            id: "detail",
-                            label: "Ver detalles",
-                            icon: <InfoIcon />,
-                            onSelect: () => void handleSelectItem(item),
-                          },
-                        ]}
+                      <LikedMovieMenuTrigger
+                        movieId={movieId}
+                        onToggle={() => setOpenMenuId(open ? null : movieId)}
+                        open={open}
+                        title={item.movie.title}
+                      />
+                    }
+                    expansionSlot={
+                      <LikedMovieMenuPanel
+                        actions={actions}
+                        movieId={movieId}
+                        open={open}
                         title={item.movie.title}
                       />
                     }

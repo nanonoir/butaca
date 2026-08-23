@@ -630,6 +630,38 @@ describe("LikedMoviesScreen card menu", () => {
     ).toBeInTheDocument();
   });
 
+  /** It floated over the tile below at first. Growing the card is the point:
+   * the grid moves down and nothing on it gets covered. */
+  it("unfolds inside the card instead of over the grid", () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+
+    const article = screen
+      .getByRole("button", { name: "Ver detalle de Interstellar" })
+      .closest("article")!;
+    let node: HTMLElement = within(article).getByRole("menu");
+
+    while (node !== article) {
+      expect(node.className).not.toMatch(/absolute/);
+      node = node.parentElement!;
+    }
+  });
+
+  it("keeps a single menu open across the grid", async () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+    openMenu("Parásitos");
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("menu")).toHaveLength(1);
+    });
+    expect(
+      screen.getByRole("menuitem", { name: /Marcar como vista/ }),
+    ).toBeInTheDocument();
+  });
+
   it("folds away on Escape", async () => {
     renderScreen();
 

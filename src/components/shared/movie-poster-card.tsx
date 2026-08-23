@@ -8,6 +8,7 @@ export interface MoviePosterCardProps {
   poster: ReactNode;
   presentationSlot?: ReactNode;
   metadataSlot?: ReactNode;
+  expansionSlot?: ReactNode;
   articleLabel?: string;
   actionLabel?: string;
   pressed?: boolean;
@@ -16,12 +17,7 @@ export interface MoviePosterCardProps {
 
 function CheckIcon() {
   return (
-    <svg
-      aria-hidden="true"
-      className="size-4"
-      fill="none"
-      viewBox="0 0 24 24"
-    >
+    <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
       <path
         d="m5 12.5 4.5 4.5L19 7"
         stroke="currentColor"
@@ -39,6 +35,7 @@ export function MoviePosterCard({
   poster,
   presentationSlot,
   metadataSlot,
+  expansionSlot,
   articleLabel,
   actionLabel,
   pressed,
@@ -106,6 +103,11 @@ export function MoviePosterCard({
           <div className="relative z-20 shrink-0">{metadataSlot}</div>
         ) : null}
       </div>
+      {/* In flow, under the title row: whatever opens here grows the card and
+       * moves the grid down rather than covering the tile below it. */}
+      {expansionSlot ? (
+        <div className="relative z-20">{expansionSlot}</div>
+      ) : null}
       {onSelect ? (
         <button
           aria-label={actionLabel ?? `Ver detalle de ${title}`}
