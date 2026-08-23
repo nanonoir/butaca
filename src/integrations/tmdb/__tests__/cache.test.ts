@@ -18,6 +18,7 @@ import {
   type TmdbMovieDetailResponse,
   type TmdbMovieListResponse,
 } from "../schemas";
+import { TMDB_LANGUAGE } from "../config";
 import type {
   PaginatedMovies,
   TmdbDiscoverOptions as PublicTmdbDiscoverOptions,
@@ -151,7 +152,7 @@ function cloneMovieList(): TmdbMovieListResponse {
 
 function createCacheEntry(
   payload: unknown,
-  language = "es-AR",
+  language = TMDB_LANGUAGE,
 ): MovieCacheRecord {
   return {
     movieId: 8101,
@@ -183,7 +184,7 @@ describe("TmdbAdapter movie detail cache", () => {
 
     expect(() => MovieDetailSchema.parse(result)).not.toThrow();
     expect(result.id).toBe(8101);
-    expect(cache.get).toHaveBeenCalledWith(8101, "es-AR");
+    expect(cache.get).toHaveBeenCalledWith(8101, TMDB_LANGUAGE);
     expect(cache.isExpired).toHaveBeenCalledWith(entry);
     expect(client.getMovieDetail).not.toHaveBeenCalled();
     expect(cache.set).not.toHaveBeenCalled();
@@ -210,7 +211,7 @@ describe("TmdbAdapter movie detail cache", () => {
 
     expect(result.title).toBe("Fresh provider title");
     expect(client.getMovieDetail).toHaveBeenCalledWith(8101);
-    expect(cache.set).toHaveBeenCalledWith(8101, "es-AR", providerRaw);
+    expect(cache.set).toHaveBeenCalledWith(8101, TMDB_LANGUAGE, providerRaw);
     expect(cache.delete).not.toHaveBeenCalled();
   });
 
@@ -231,9 +232,9 @@ describe("TmdbAdapter movie detail cache", () => {
     ).getMovieDetail(8101);
 
     expect(result.id).toBe(8101);
-    expect(cache.delete).toHaveBeenCalledWith(8101, "es-AR");
+    expect(cache.delete).toHaveBeenCalledWith(8101, TMDB_LANGUAGE);
     expect(client.getMovieDetail).toHaveBeenCalledWith(8101);
-    expect(cache.set).toHaveBeenCalledWith(8101, "es-AR", providerRaw);
+    expect(cache.set).toHaveBeenCalledWith(8101, TMDB_LANGUAGE, providerRaw);
   });
 
   it("treats a raw-valid but public-invalid cached detail as corrupt", async () => {
@@ -254,9 +255,9 @@ describe("TmdbAdapter movie detail cache", () => {
     ).getMovieDetail(8101);
 
     expect(result.originalLanguage).toBe("es");
-    expect(cache.delete).toHaveBeenCalledWith(8101, "es-AR");
+    expect(cache.delete).toHaveBeenCalledWith(8101, TMDB_LANGUAGE);
     expect(client.getMovieDetail).toHaveBeenCalledWith(8101);
-    expect(cache.set).toHaveBeenCalledWith(8101, "es-AR", providerRaw);
+    expect(cache.set).toHaveBeenCalledWith(8101, TMDB_LANGUAGE, providerRaw);
   });
 
   it("treats a fresh cached detail for another movie as corrupt", async () => {
@@ -279,9 +280,9 @@ describe("TmdbAdapter movie detail cache", () => {
 
     expect(result.id).toBe(8101);
     expect(cache.isExpired).toHaveBeenCalledWith(cachedEntry);
-    expect(cache.delete).toHaveBeenCalledWith(8101, "es-AR");
+    expect(cache.delete).toHaveBeenCalledWith(8101, TMDB_LANGUAGE);
     expect(client.getMovieDetail).toHaveBeenCalledWith(8101);
-    expect(cache.set).toHaveBeenCalledWith(8101, "es-AR", providerRaw);
+    expect(cache.set).toHaveBeenCalledWith(8101, TMDB_LANGUAGE, providerRaw);
     expect(cache.delete.mock.invocationCallOrder[0]).toBeLessThan(
       client.getMovieDetail.mock.invocationCallOrder[0]!,
     );
@@ -335,9 +336,9 @@ describe("TmdbAdapter movie detail cache", () => {
     await expect(
       new TmdbAdapter(client.client, cache.cache).getMovieDetail(8101),
     ).resolves.toMatchObject({ id: 8101 });
-    expect(cache.delete).toHaveBeenCalledWith(8101, "es-AR");
+    expect(cache.delete).toHaveBeenCalledWith(8101, TMDB_LANGUAGE);
     expect(client.getMovieDetail).toHaveBeenCalledWith(8101);
-    expect(cache.set).toHaveBeenCalledWith(8101, "es-AR", providerRaw);
+    expect(cache.set).toHaveBeenCalledWith(8101, TMDB_LANGUAGE, providerRaw);
   });
 
   it("returns valid provider detail even when best-effort cache writing fails", async () => {
@@ -354,7 +355,7 @@ describe("TmdbAdapter movie detail cache", () => {
     ).getMovieDetail(8101);
 
     expect(() => MovieDetailSchema.parse(result)).not.toThrow();
-    expect(cache.set).toHaveBeenCalledWith(8101, "es-AR", providerRaw);
+    expect(cache.set).toHaveBeenCalledWith(8101, TMDB_LANGUAGE, providerRaw);
     expect(cache.delete).not.toHaveBeenCalled();
   });
 
@@ -369,7 +370,7 @@ describe("TmdbAdapter movie detail cache", () => {
     await expect(
       new TmdbAdapter(client.client, cache.cache).getMovieDetail(8101),
     ).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
-    expect(cache.get).toHaveBeenCalledWith(8101, "es-AR");
+    expect(cache.get).toHaveBeenCalledWith(8101, TMDB_LANGUAGE);
     expect(cache.set).not.toHaveBeenCalled();
   });
 
@@ -507,7 +508,7 @@ describe("TMDB public wiring", () => {
     expect(TmdbClient).toHaveBeenCalledWith(
       expect.objectContaining({
         accessToken: "unit-token",
-        language: "es-AR",
+        language: TMDB_LANGUAGE,
       }),
     );
     expect(MovieCacheRepository).toHaveBeenCalledOnce();
@@ -516,7 +517,7 @@ describe("TMDB public wiring", () => {
     expect(TmdbAdapterMock).toHaveBeenCalledWith(
       clientInstance,
       cacheInstance,
-      "es-AR",
+      TMDB_LANGUAGE,
     );
   });
 
