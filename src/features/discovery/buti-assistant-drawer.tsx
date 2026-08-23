@@ -15,6 +15,7 @@ import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { MatchInsight } from "@/contracts/discover";
+import type { ChatMovie } from "@/contracts/chat";
 import type { MovieSummary } from "@/contracts/movies";
 
 import {
@@ -75,7 +76,7 @@ function ArrowIcon({ className }: { className?: string }) {
   );
 }
 
-function CompactRecommendationRow({ movies }: { movies: MovieSummary[] }) {
+function CompactRecommendationRow({ movies }: { movies: ChatMovie[] }) {
   if (movies.length === 0) {
     return null;
   }
