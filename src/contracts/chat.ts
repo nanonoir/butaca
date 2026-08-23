@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { TmdbMovieIdSchema } from "./common";
+
 import { MovieSummarySchema } from "./movies";
 
 export const ChatRoleSchema = z.enum(["user", "assistant"]);
@@ -13,6 +15,11 @@ export const ChatMessageSchema = z.object({
 export const ChatRequestSchema = z
   .object({
     messages: z.array(ChatMessageSchema).min(1).max(20),
+    /** The movie the viewer has in front of them, when the conversation starts
+     * from a card rather than from an empty assistant screen. Only the id
+     * travels: the server resolves the title itself rather than trusting a
+     * caller with what goes into the model's instructions. */
+    aboutMovieId: TmdbMovieIdSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const lastMessage = value.messages[value.messages.length - 1];

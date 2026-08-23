@@ -1,4 +1,9 @@
-import type { Genre, MatchInsight, MovieSummary } from "@/contracts";
+import type {
+  Genre,
+  MatchInsight,
+  MatchReason,
+  MovieSummary,
+} from "@/contracts";
 
 import type { TasteProfile } from "./taste-profile";
 
@@ -64,6 +69,7 @@ export function buildMatchInsight(
   profile: TasteProfile,
   genres: Genre[],
   position: number,
+  reason: MatchReason,
 ): MatchInsight {
   const scored = movie.genreIds
     .map((genreId) => ({ genreId, weight: weightOf(profile, genreId) }))
@@ -80,7 +86,7 @@ export function buildMatchInsight(
     .filter((name): name is string => name !== null);
 
   if (matchedGenres.length === 0) {
-    return { tier: MATCH_TIER.LOW, matchedGenres, clashingGenres };
+    return { tier: MATCH_TIER.LOW, matchedGenres, clashingGenres, reason };
   }
 
   // A clash used to veto outright, which read as a verdict the ranking never
@@ -96,7 +102,7 @@ export function buildMatchInsight(
   const clashWeight = Math.abs(sumWeights(scored, (weight) => weight < 0));
 
   if (clashWeight >= matchedWeight) {
-    return { tier: MATCH_TIER.LOW, matchedGenres, clashingGenres };
+    return { tier: MATCH_TIER.LOW, matchedGenres, clashingGenres, reason };
   }
 
   // Relative enthusiasm, not a verdict: everything here matched the profile,
@@ -105,5 +111,6 @@ export function buildMatchInsight(
     tier: tierForPosition(position),
     matchedGenres,
     clashingGenres,
+    reason,
   };
 }

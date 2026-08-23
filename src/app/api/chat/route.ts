@@ -16,7 +16,7 @@ import { readJsonBody, requireViewer, runApiRoute } from "@/lib/api/route";
  * `chat-model`: one message from a viewer spends up to this many requests. */
 const MAX_STEPS = 4;
 
-const SYSTEM_PROMPT = [
+const BASE_PROMPT = [
   "Sos Buti, el asistente de cine de Butaca. Respondés en español rioplatense, en tono cercano y breve.",
   "Para hablar de películas concretas SIEMPRE llamás primero a la herramienta recommendMovies.",
   "Nunca inventes títulos, años ni datos: usá solamente lo que devuelve la herramienta.",
@@ -25,6 +25,26 @@ const SYSTEM_PROMPT = [
   "Si la herramienta no devuelve nada, decilo con honestidad y ofrecé cambiar de criterio.",
   "No pidas ni menciones datos personales del usuario.",
 ].join(" ");
+
+/** The card the viewer is looking at, when the conversation started from one.
+ * Resolved here rather than taken from the request: a title is what the model
+ * reads as an instruction, and a caller does not get to write those.
+ *
+ * A movie the catalog cannot answer for costs the context, not the reply. */
+async function describeMovie(movieId: number | undefined): Promise<string> {
+  if (movieId === undefined) {
+    return "";
+  }
+
+  try {
+    const movie = await getTmdb().getMovieDetail(movieId);
+    const year = movie.releaseDate?.slice(0, 4);
+
+    return ` El usuario está mirando "${movie.title}"${year ? ` (${year})` : ""} en Descubrir: si pregunta "por qué esta" o algo parecido, se refiere a esa.`;
+  } catch {
+    return "";
+  }
+}
 
 /** Logged in production on purpose, unlike the development-only auth reporter:
  * a spent model is the only warning that the daily budget is running out, and
@@ -52,7 +72,10 @@ function toModelMessages(
 
 export async function POST(request: Request): Promise<Response> {
   return runApiRoute(async () => {
-    const { messages } = await readJsonBody(request, ChatRequestSchema);
+    const { messages, aboutMovieId } = await readJsonBody(
+      request,
+      ChatRequestSchema,
+    );
     const viewer = await requireViewer();
 
     // Fails here with a clear code when the key is missing, instead of
@@ -62,7 +85,7 @@ export async function POST(request: Request): Promise<Response> {
     const chain = createChatModelChain();
     const result = streamText({
       model: chain.model,
-      system: SYSTEM_PROMPT,
+      system: `${BASE_PROMPT}${await describeMovie(aboutMovieId)}`,
       messages: toModelMessages(messages),
       stopWhen: stepCountIs(MAX_STEPS),
       tools: createChatTools(getRecommendationService(), getTmdb(), viewer.id),

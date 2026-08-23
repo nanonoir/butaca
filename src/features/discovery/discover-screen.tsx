@@ -844,10 +844,6 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
             movie={currentMovie}
             insight={current!.insight}
             onClose={() => setAssistantOpen(false)}
-            recommendations={deck
-              .map((entry) => entry.movie)
-              .filter((movie) => movie.id !== currentMovie.id)
-              .slice(0, 3)}
           />
         ) : null}
       </AnimatePresence>

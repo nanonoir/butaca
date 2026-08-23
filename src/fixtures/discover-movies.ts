@@ -22,6 +22,7 @@ export const DISCOVER_MOVIES_FIXTURE = DiscoverResponseSchema.parse({
           tier: "high",
           matchedGenres: ["Ciencia ficción", "Aventura"],
           clashingGenres: [],
+          reason: { kind: "genre", name: null },
         },
       },
       {
@@ -43,6 +44,7 @@ export const DISCOVER_MOVIES_FIXTURE = DiscoverResponseSchema.parse({
           tier: "medium",
           matchedGenres: ["Ciencia ficción"],
           clashingGenres: [],
+          reason: { kind: "genre", name: null },
         },
       },
       {
@@ -64,6 +66,7 @@ export const DISCOVER_MOVIES_FIXTURE = DiscoverResponseSchema.parse({
           tier: "high",
           matchedGenres: ["Ciencia ficción", "Drama"],
           clashingGenres: [],
+          reason: { kind: "genre", name: null },
         },
       },
       {
@@ -85,6 +88,7 @@ export const DISCOVER_MOVIES_FIXTURE = DiscoverResponseSchema.parse({
           tier: "low",
           matchedGenres: ["Acción"],
           clashingGenres: ["Terror"],
+          reason: { kind: "genre", name: null },
         },
       },
       {
@@ -106,6 +110,7 @@ export const DISCOVER_MOVIES_FIXTURE = DiscoverResponseSchema.parse({
           tier: "low",
           matchedGenres: [],
           clashingGenres: [],
+          reason: { kind: "genre", name: null },
         },
       },
     ],
