@@ -100,7 +100,11 @@ export function MoviePosterCard({
           </h3>
           {year ? <p className="mt-1 text-sm text-muted">{year}</p> : null}
         </div>
-        {metadataSlot ? <div className="shrink-0">{metadataSlot}</div> : null}
+        {/* Above the click target, which covers the whole tile. A slot meant for
+         * controls is useless if the card's own button swallows every press. */}
+        {metadataSlot ? (
+          <div className="relative z-20 shrink-0">{metadataSlot}</div>
+        ) : null}
       </div>
       {onSelect ? (
         <button

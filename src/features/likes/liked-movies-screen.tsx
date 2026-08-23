@@ -13,6 +13,12 @@ import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  removeMovieReaction,
+  setMovieWatched,
+} from "@/features/interactions/interaction-client";
+
+import { LikedMovieMenu } from "./liked-movie-menu";
 import type { MovieDetailPageData } from "@/contracts/movie-detail";
 import type { Review } from "@/contracts/reviews";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
@@ -103,18 +109,31 @@ function EyeIcon() {
   );
 }
 
-function OverflowGlyph() {
+function TrashIcon() {
   return (
-    <span
-      aria-hidden="true"
-      className="mb-1 inline-flex h-5 items-center text-muted-foreground"
-    >
-      <svg className="h-4 w-6" viewBox="0 0 24 16" fill="currentColor">
-        <circle cx="5" cy="8" r="1.25" />
-        <circle cx="12" cy="8" r="1.25" />
-        <circle cx="19" cy="8" r="1.25" />
-      </svg>
-    </span>
+    <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M5 7h14M10 7V5.5A1.5 1.5 0 0 1 11.5 4h1A1.5 1.5 0 0 1 14 5.5V7m-7 0 .8 11.1A2 2 0 0 0 9.8 20h4.4a2 2 0 0 0 2-1.9L17 7"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+    </svg>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8.25" stroke="currentColor" strokeWidth="1.7" />
+      <path
+        d="M12 11v5m0-8.2v.6"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.7"
+      />
+    </svg>
   );
 }
 
@@ -256,6 +275,47 @@ export function LikedMoviesScreen({
       setDetailExperience({ pageData, publicReviews: reviews.data });
     } catch {
       setSelectedItem(null);
+    }
+  }
+
+  /** The card writes straight through now, rather than only reflecting what the
+   * detail overlay did on its way out. The local edit lands first so the tile
+   * reacts on the press, and a write the server refuses puts it back. */
+  async function handleToggleWatched(item: LikedMovieItem): Promise<void> {
+    const movieId = item.movie.id;
+    const watched = item.watchedAt === null;
+    const previous = item.watchedAt;
+
+    setEdits((current) =>
+      new Map(current).set(movieId, {
+        removed: false,
+        watchedAt: watched ? new Date().toISOString() : null,
+      }),
+    );
+
+    try {
+      await setMovieWatched(movieId, watched);
+    } catch {
+      setEdits((current) =>
+        new Map(current).set(movieId, { removed: false, watchedAt: previous }),
+      );
+    }
+  }
+
+  async function handleRemoveLike(item: LikedMovieItem): Promise<void> {
+    const movieId = item.movie.id;
+
+    setEdits((current) => new Map(current).set(movieId, { removed: true }));
+
+    try {
+      await removeMovieReaction(movieId);
+    } catch {
+      setEdits((current) => {
+        const next = new Map(current);
+        next.delete(movieId);
+
+        return next;
+      });
     }
   }
 
@@ -436,7 +496,33 @@ export function LikedMoviesScreen({
                     poster={
                       <LikedPoster movie={item.movie} watched={watchedMovie} />
                     }
-                    metadataSlot={<OverflowGlyph />}
+                    metadataSlot={
+                      <LikedMovieMenu
+                        actions={[
+                          {
+                            id: "watched",
+                            label: watchedMovie
+                              ? "Marcar como no vista"
+                              : "Marcar como vista",
+                            icon: <EyeIcon />,
+                            onSelect: () => void handleToggleWatched(item),
+                          },
+                          {
+                            id: "remove",
+                            label: "Quitar de me gusta",
+                            icon: <TrashIcon />,
+                            onSelect: () => void handleRemoveLike(item),
+                          },
+                          {
+                            id: "detail",
+                            label: "Ver detalles",
+                            icon: <InfoIcon />,
+                            onSelect: () => void handleSelectItem(item),
+                          },
+                        ]}
+                        title={item.movie.title}
+                      />
+                    }
                   />
                 </li>
               );

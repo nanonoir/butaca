@@ -16,11 +16,17 @@ import type { LikedMovieItem, LikesWatchedFilter } from "@/contracts/likes";
 
 import { LikedMoviesScreen } from "./liked-movies-screen";
 
-const { fetchMovieDetail, fetchMovieReviews, push } = vi.hoisted(() => ({
-  fetchMovieDetail: vi.fn(),
-  fetchMovieReviews: vi.fn(),
-  push: vi.fn(),
-}));
+const { fetchMovieDetail, fetchMovieReviews, push, interactions } = vi.hoisted(
+  () => ({
+    fetchMovieDetail: vi.fn(),
+    fetchMovieReviews: vi.fn(),
+    push: vi.fn(),
+    interactions: {
+      removeMovieReaction: vi.fn().mockResolvedValue(undefined),
+      setMovieWatched: vi.fn().mockResolvedValue(undefined),
+    },
+  }),
+);
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace: vi.fn(), refresh: vi.fn() }),
@@ -38,8 +44,8 @@ vi.mock("@/features/reviews/review-client", () => ({
 
 vi.mock("@/features/interactions/interaction-client", () => ({
   setMovieReaction: vi.fn().mockResolvedValue(undefined),
-  removeMovieReaction: vi.fn().mockResolvedValue(undefined),
-  setMovieWatched: vi.fn().mockResolvedValue(undefined),
+  removeMovieReaction: interactions.removeMovieReaction,
+  setMovieWatched: interactions.setMovieWatched,
 }));
 
 /** The overlay now loads the detail from the API instead of a fixture, so the
@@ -503,5 +509,138 @@ describe("LikedMoviesScreen search", () => {
     fireEvent.submit(screen.getByRole("search"));
 
     expect(push).toHaveBeenLastCalledWith("/liked");
+  });
+});
+
+describe("LikedMoviesScreen card menu", () => {
+  function openMenu(title: string) {
+    fireEvent.click(
+      screen.getByRole("button", { name: `Acciones para ${title}` }),
+    );
+  }
+
+  beforeEach(() => {
+    interactions.removeMovieReaction.mockResolvedValue(undefined);
+    interactions.setMovieWatched.mockResolvedValue(undefined);
+  });
+
+  /** The dots used to be a decorative glyph with nothing behind them. */
+  it("keeps the actions folded away until the dots are pressed", () => {
+    renderScreen();
+
+    expect(
+      screen.queryByRole("menuitem", { name: /Quitar de me gusta/ }),
+    ).not.toBeInTheDocument();
+
+    openMenu("Interstellar");
+
+    expect(
+      screen.getByRole("menuitem", { name: /Quitar de me gusta/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: /Ver detalles/ }),
+    ).toBeInTheDocument();
+  });
+
+  /** The card underneath is one big button that opens the detail overlay. */
+  it("does not open the detail when the dots are pressed", () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+
+    expect(fetchMovieDetail).not.toHaveBeenCalled();
+  });
+
+  it("names the watched action after what pressing it would do", () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+    expect(
+      screen.getByRole("menuitem", { name: /Marcar como no vista/ }),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    openMenu("Parásitos");
+    expect(
+      screen.getByRole("menuitem", { name: /Marcar como vista/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("marks a movie watched from the card", async () => {
+    renderScreen();
+
+    openMenu("Parásitos");
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Marcar como vista/ }),
+    );
+
+    await waitFor(() => {
+      expect(interactions.setMovieWatched).toHaveBeenCalledWith(2, true);
+    });
+    const article = screen
+      .getByRole("button", { name: "Ver detalle de Parásitos" })
+      .closest("article")!;
+    expect(within(article).getByText("Vista")).toBeInTheDocument();
+  });
+
+  it("removes a movie from the library from the card", async () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Quitar de me gusta/ }),
+    );
+
+    await waitFor(() => {
+      expect(interactions.removeMovieReaction).toHaveBeenCalledWith(1);
+    });
+    expect(
+      screen.queryByRole("button", { name: "Ver detalle de Interstellar" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("2 películas")).toBeInTheDocument();
+  });
+
+  /** The tile reacts on the press, so a refused write has to put it back. */
+  it("restores the card when the server refuses the removal", async () => {
+    interactions.removeMovieReaction.mockRejectedValue(new Error("down"));
+    renderScreen();
+
+    openMenu("Interstellar");
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Quitar de me gusta/ }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Ver detalle de Interstellar" }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText("3 películas")).toBeInTheDocument();
+  });
+
+  it("opens the detail from the menu", async () => {
+    stubMovieDetail(INTERSTELLAR!);
+    renderScreen();
+
+    openMenu("Interstellar");
+    fireEvent.click(screen.getByRole("menuitem", { name: /Ver detalles/ }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Detalle de Interstellar" }),
+    ).toBeInTheDocument();
+  });
+
+  it("folds away on Escape", async () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    // It leaves with an animation, so it is still there for a frame.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("menuitem", { name: /Ver detalles/ }),
+      ).not.toBeInTheDocument();
+    });
   });
 });
