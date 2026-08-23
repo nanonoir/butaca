@@ -43,6 +43,7 @@ function createPage(movies: MovieSummary[] = [createMovie(MOVIE_ID)]) {
 function createCatalog() {
   return {
     getGenres: vi.fn(),
+    getPopularMovies: vi.fn(),
     searchMovies: vi.fn(),
     getSimilarMovies: vi.fn(),
   };

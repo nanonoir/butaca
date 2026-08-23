@@ -283,6 +283,13 @@ export class TmdbAdapter {
     );
   }
 
+  async getPopularMovies(page: number): Promise<PaginatedMovies> {
+    const parsedPage = PageQuerySchema.shape.page.parse(page);
+    const response = await this.client.getPopularMovies({ page: parsedPage });
+
+    return parsePublicResult(PaginatedMoviesSchema, mapMovieList(response));
+  }
+
   async getMovieDetail(movieId: number): Promise<MovieDetail> {
     const cache = this.cache;
 
