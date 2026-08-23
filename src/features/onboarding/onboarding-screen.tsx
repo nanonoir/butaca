@@ -5,15 +5,19 @@ import { useRouter } from "next/navigation";
 
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type { Genre, MovieSummary } from "@/contracts";
 import { ApiClientError } from "@/lib/api/client";
+import { InlineMovieSearch } from "@/features/movies/components/inline-movie-search";
 import { SearchGrid } from "@/features/movies/components/search-grid";
 import {
   fetchMovieGenres,
+  fetchPopularMovies,
   fetchSearchMovies,
 } from "@/features/movies/movie-catalog-client";
-import { useMovieSearch } from "@/features/movies/hooks/use-movie-search";
+import {
+  type MovieSearchResults,
+  useMovieSearch,
+} from "@/features/movies/hooks/use-movie-search";
 
 import { completeOnboarding } from "./onboarding-client";
 
@@ -73,6 +77,10 @@ export function OnboardingScreen() {
   const [isLoadingGenres, setIsLoadingGenres] = useState(true);
   const [selectedGenreIds, setSelectedGenreIds] = useState<number[]>([]);
   const [selectedMovies, setSelectedMovies] = useState<MovieSummary[]>([]);
+  const [popularMovies, setPopularMovies] = useState<MovieSearchResults | null>(null);
+  const [isLoadingPopularMovies, setIsLoadingPopularMovies] = useState(true);
+  const [popularMoviesError, setPopularMoviesError] = useState(false);
+  const [movieSearchOpen, setMovieSearchOpen] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submitting = useRef(false);
@@ -89,11 +97,28 @@ export function OnboardingScreen() {
     ).finally(() => setIsLoadingGenres(false));
   }
 
+  function loadPopularMovies(page = 1) {
+    setIsLoadingPopularMovies(true);
+    setPopularMoviesError(false);
+
+    void fetchPopularMovies(page).then(
+      (nextMovies) => setPopularMovies(nextMovies),
+      () => setPopularMoviesError(true),
+    ).finally(() => setIsLoadingPopularMovies(false));
+  }
+
   useEffect(() => {
     void fetchMovieGenres().then(
       (nextGenres) => setGenres(nextGenres),
       () => setGenreError(true),
     ).finally(() => setIsLoadingGenres(false));
+  }, []);
+
+  useEffect(() => {
+    void fetchPopularMovies(1).then(
+      (nextMovies) => setPopularMovies(nextMovies),
+      () => setPopularMoviesError(true),
+    ).finally(() => setIsLoadingPopularMovies(false));
   }, []);
 
   useEffect(() => {
@@ -164,7 +189,32 @@ export function OnboardingScreen() {
       <PageHeader
         eyebrow="Tu perfil"
         title="Afinemos tus recomendaciones"
-        action={<span className="font-mono text-xs text-primary">Paso {step === "genres" ? "1" : "2"} de 2</span>}
+        action={
+          <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-end">
+            <span className="font-mono text-xs text-primary">
+              Paso {step === "genres" ? "1" : "2"} de 2
+            </span>
+            {step === "genres" ? (
+              <Button
+                disabled={selectedGenreIds.length < GENRE_STEP.minimum}
+                onClick={() => setStep("movies")}
+              >
+                Continuar con películas
+              </Button>
+            ) : (
+              <Button
+                disabled={selectedMovies.length < MOVIE_STEP.minimum || isSubmitting}
+                onClick={() => void submit()}
+              >
+                {isSubmitting
+                  ? "Guardando…"
+                  : submissionError
+                    ? "Reintentar"
+                    : "Completar perfil"}
+              </Button>
+            )}
+          </div>
+        }
       />
 
       {step === "genres" ? (
@@ -204,12 +254,6 @@ export function OnboardingScreen() {
               })}
             </div>
           ) : null}
-          <Button
-            disabled={selectedGenreIds.length < GENRE_STEP.minimum}
-            onClick={() => setStep("movies")}
-          >
-            Continuar con películas
-          </Button>
         </section>
       ) : (
         <section aria-labelledby="movies-heading" className="space-y-6">
@@ -221,16 +265,23 @@ export function OnboardingScreen() {
               {selectionStatus(selectedMovies.length, MOVIE_STEP)}
             </p>
           </div>
-          <form aria-label="Búsqueda de películas para onboarding" className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={(event) => { event.preventDefault(); movieSearch.submit(); }} role="search">
-            <div className="min-w-0 flex-1">
-              <Input aria-describedby="onboarding-search-help" label="Buscar películas" onChange={(event) => movieSearch.setDraft(event.target.value)} value={movieSearch.draft} />
-              <p className="mt-2 text-sm text-muted" id="onboarding-search-help">Buscá por título y presioná Enter para ver resultados.</p>
-            </div>
-            <div className="flex gap-3">
-              <Button disabled={movieSearch.isLoading} type="submit">Buscar</Button>
-              {movieSearch.submittedQuery ? <Button onClick={movieSearch.clear} type="button" variant={BUTTON_VARIANT.OUTLINE}>Limpiar búsqueda</Button> : null}
-            </div>
-          </form>
+          <InlineMovieSearch
+            draft={movieSearch.draft}
+            helperText="Buscá por título y presioná Enter para ver resultados."
+            inputId="onboarding-search-input"
+            isLoading={movieSearch.isLoading}
+            isOpen={movieSearchOpen}
+            layoutId="onboarding-search-control"
+            onClear={movieSearch.clear}
+            onDraftChange={movieSearch.setDraft}
+            onOpenChange={setMovieSearchOpen}
+            onSubmit={movieSearch.submit}
+            clearLabel="Volver a películas populares"
+            searchAriaLabel="Búsqueda de películas para onboarding"
+            showFieldLabel
+            submittedQuery={movieSearch.submittedQuery}
+            triggerLabel="Abrir buscador de películas"
+          />
           {movieSearch.submittedQuery ? (
             <SearchGrid
               error={movieSearch.hasError}
@@ -243,17 +294,29 @@ export function OnboardingScreen() {
               selectedActionLabel={(movie, selected) => `${selected ? "Quitar" : "Seleccionar"} ${movie.title}`}
               selectedMovieIds={selectedMovieIds}
             />
-          ) : null}
+          ) : (
+            <SearchGrid
+              error={popularMoviesError}
+              errorMessage="No pudimos cargar las películas populares. Intentá de nuevo."
+              heading="Películas populares"
+              isLoading={isLoadingPopularMovies}
+              onPageChange={loadPopularMovies}
+              onRetry={() => loadPopularMovies(popularMovies?.meta.page ?? 1)}
+              onSelectMovie={toggleMovie}
+              results={popularMovies}
+              selectedActionLabel={(movie, selected) => `${selected ? "Quitar" : "Seleccionar"} ${movie.title}`}
+              selectedMovieIds={selectedMovieIds}
+            />
+          )}
           {selectedMovies.length > 0 ? (
             <div aria-label="Películas seleccionadas" className="flex flex-wrap gap-2">
               {selectedMovies.map((movie) => <Button key={movie.id} onClick={() => toggleMovie(movie)} variant={BUTTON_VARIANT.OUTLINE}>Quitar {movie.title}</Button>)}
             </div>
           ) : null}
           {submissionError ? <p role="alert" className="text-primary">{submissionError}</p> : null}
-          <div className="flex flex-wrap gap-3">
-            <Button onClick={() => setStep("genres")} variant={BUTTON_VARIANT.OUTLINE}>Volver a géneros</Button>
-            <Button disabled={selectedMovies.length < MOVIE_STEP.minimum || isSubmitting} onClick={() => void submit()}>{isSubmitting ? "Guardando…" : submissionError ? "Reintentar" : "Completar perfil"}</Button>
-          </div>
+          <Button onClick={() => setStep("genres")} variant={BUTTON_VARIANT.OUTLINE}>
+            Volver a géneros
+          </Button>
         </section>
       )}
     </div>
