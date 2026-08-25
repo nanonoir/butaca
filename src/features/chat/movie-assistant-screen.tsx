@@ -21,7 +21,7 @@ import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { MovieSummary } from "@/contracts/movies";
+import type { ChatMovie } from "@/contracts/chat";
 import type { MovieDetailPageData } from "@/contracts/movie-detail";
 import type { Review } from "@/contracts/reviews";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
@@ -140,7 +140,7 @@ function RecommendationCard({
   movie,
   onSelect,
 }: {
-  movie: MovieSummary;
+  movie: ChatMovie;
   onSelect: () => void;
 }) {
   const year = movie.releaseDate?.slice(0, 4);
@@ -168,7 +168,7 @@ function Conversation({
   onMovieSelect,
 }: {
   turns: ChatTurn[];
-  onMovieSelect: (movie: MovieSummary) => void;
+  onMovieSelect: (movie: ChatMovie) => void;
 }) {
   return (
     <section aria-label="Conversación" className="w-full">
@@ -308,7 +308,9 @@ export function MovieAssistantScreen() {
 
   /** Loaded on demand: the tool hands back a summary, while the detail and its
    * community reviews are their own endpoints. */
-  async function openMovieDetail(movie: MovieSummary): Promise<void> {
+  /** Only the id is used: the overlay fetches the full detail from the API,
+   * which is why the chat payload never needed to carry a synopsis. */
+  async function openMovieDetail(movie: ChatMovie): Promise<void> {
     setDetailExperience(null);
 
     try {

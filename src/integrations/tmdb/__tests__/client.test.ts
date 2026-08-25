@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { TmdbClient } from "../client";
-import { createTmdbConfig } from "../config";
+import { TMDB_LANGUAGE, createTmdbConfig } from "../config";
 import { TmdbError, type TmdbErrorCode } from "../errors";
 
 const TEST_TOKEN = "test-token";
@@ -158,7 +158,7 @@ describe("TmdbClient requests", () => {
       );
 
       expectRequest(fetchImpl, "/genre/movie/list", {
-        language: "es-AR",
+        language: TMDB_LANGUAGE,
       });
       expect(vi.getTimerCount()).toBe(0);
     } finally {
@@ -178,7 +178,7 @@ describe("TmdbClient requests", () => {
     ).resolves.toEqual(MOVIE_LIST_RESPONSE);
 
     expectRequest(fetchImpl, "/search/movie", {
-      language: "es-AR",
+      language: TMDB_LANGUAGE,
       region: "AR",
       include_adult: "false",
       query: "Forrest Gump",
@@ -195,7 +195,7 @@ describe("TmdbClient requests", () => {
     );
 
     expectRequest(fetchImpl, "/movie/13", {
-      language: "es-AR",
+      language: TMDB_LANGUAGE,
       append_to_response: "credits,keywords,videos",
     });
   });
@@ -221,7 +221,7 @@ describe("TmdbClient requests", () => {
     ).resolves.toEqual(MOVIE_LIST_RESPONSE);
 
     expectRequest(fetchImpl, "/discover/movie", {
-      language: "es-AR",
+      language: TMDB_LANGUAGE,
       region: "AR",
       include_adult: "false",
       page: "3",
@@ -247,7 +247,7 @@ describe("TmdbClient requests", () => {
     ).resolves.toEqual(MOVIE_LIST_RESPONSE);
 
     expectRequest(fetchImpl, "/movie/13/similar", {
-      language: "es-AR",
+      language: TMDB_LANGUAGE,
       page: "2",
     });
   });

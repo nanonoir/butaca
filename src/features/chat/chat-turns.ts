@@ -1,7 +1,7 @@
 import {
-  MovieSummarySchema,
+  ChatMovieSchema,
   type ChatMessage,
-  type MovieSummary,
+  type ChatMovie,
 } from "@/contracts";
 
 /** Shape of a message part as it reaches the screen. Kept structural rather
@@ -24,7 +24,7 @@ export type ChatTurn = {
   id: string;
   user: { id: string; role: "user"; content: string };
   assistant?: { id: string; role: "assistant"; content: string };
-  movies: MovieSummary[];
+  movies: ChatMovie[];
 };
 
 const RECOMMEND_TOOL_PART = "tool-recommendMovies";
@@ -40,7 +40,7 @@ function readText(parts: MessagePart[]): string {
 /** Movies come from the tool output rather than from the prose, so what the
  * screen renders is exactly what the recommender returned even if the model
  * paraphrases the titles. */
-function readMovies(parts: MessagePart[]): MovieSummary[] {
+function readMovies(parts: MessagePart[]): ChatMovie[] {
   return parts
     .filter(
       (part) =>
@@ -48,7 +48,7 @@ function readMovies(parts: MessagePart[]): MovieSummary[] {
     )
     .flatMap((part) => {
       const output = part.output as { movies?: unknown } | undefined;
-      const parsed = MovieSummarySchema.array().safeParse(output?.movies);
+      const parsed = ChatMovieSchema.array().safeParse(output?.movies);
 
       return parsed.success ? parsed.data : [];
     });

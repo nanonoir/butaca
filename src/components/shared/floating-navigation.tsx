@@ -155,14 +155,14 @@ export function FloatingNavigation() {
 
   return (
     <nav aria-label="Navegación principal">
-      <div className="fixed left-6 top-1/2 z-20 hidden -translate-y-1/2 md:block">
+      <div className="fixed left-6 top-1/2 z-30 hidden -translate-y-1/2 md:block">
         <div className="flex w-14 flex-col items-center gap-1 rounded-full border border-border bg-surface/95 p-1.5 shadow-floating">
           {NAVIGATION_ITEMS.map((item) => (
             <NavigationItem key={item.href} {...item} pathname={pathname} />
           ))}
         </div>
       </div>
-      <div className="fixed inset-x-3 bottom-3 z-20 flex items-center justify-around gap-1 rounded-xl border border-border bg-surface/95 px-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] pt-1.5 shadow-floating md:hidden">
+      <div className="fixed inset-x-3 bottom-3 z-30 flex items-center justify-around gap-1 rounded-xl border border-border bg-surface/95 px-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] pt-1.5 shadow-floating md:hidden">
         {NAVIGATION_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = isActivePath(pathname, href);
 

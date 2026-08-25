@@ -33,12 +33,21 @@ export const ChatRequestSchema = z
     }
   });
 
+/** What a recommendation carries into the assistant. Narrower than the movie
+ * summary on purpose: the overview is a plot synopsis written by TMDB's
+ * community, and everything the tool returns is read back by the model as
+ * context. The chat renders a poster and a title and has never shown a
+ * synopsis, so sending one bought nothing and handed a stranger a paragraph
+ * inside the conversation. */
+export const ChatMovieSchema = MovieSummarySchema.omit({ overview: true });
+
 export const ChatMovieRecommendationsPayloadSchema = z.object({
-  movies: z.array(MovieSummarySchema).min(1).max(10),
+  movies: z.array(ChatMovieSchema).min(1).max(10),
 });
 
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
+export type ChatMovie = z.infer<typeof ChatMovieSchema>;
 export type ChatMovieRecommendationsPayload = z.infer<
   typeof ChatMovieRecommendationsPayloadSchema
 >;

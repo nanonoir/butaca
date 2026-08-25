@@ -200,7 +200,9 @@ describe("MovieDetailScreen similar movies", () => {
       within(section).getByRole("button", { name: "Ver detalle de Similar 1" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(within(section).getByRole("button", { name: "Continuar" }));
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Página siguiente" }),
+    );
 
     await waitFor(() => {
       expect(
@@ -246,28 +248,38 @@ describe("MovieDetailScreen similar movies", () => {
       name: "Películas similares",
     });
 
-    expect(within(section).getByText("Página 1")).toBeInTheDocument();
     expect(
-      within(section).getByRole("button", { name: "Atrás" }),
+      within(section).getByRole("button", { name: "Página 1" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      within(section).getByRole("button", { name: "Página anterior" }),
     ).toBeDisabled();
 
-    fireEvent.click(within(section).getByRole("button", { name: "Continuar" }));
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Página siguiente" }),
+    );
 
     await waitFor(() => {
-      expect(within(section).getByText("Página 2")).toBeInTheDocument();
+      expect(
+        within(section).getByRole("button", { name: "Página 2" }),
+      ).toHaveAttribute("aria-current", "page");
     });
     expect(
-      within(section).getByRole("button", { name: "Atrás" }),
+      within(section).getByRole("button", { name: "Página anterior" }),
     ).toBeEnabled();
     // Nothing left after the second window, so continuing is offered no more.
     expect(
-      within(section).getByRole("button", { name: "Continuar" }),
+      within(section).getByRole("button", { name: "Página siguiente" }),
     ).toBeDisabled();
 
-    fireEvent.click(within(section).getByRole("button", { name: "Atrás" }));
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Página anterior" }),
+    );
 
     await waitFor(() => {
-      expect(within(section).getByText("Página 1")).toBeInTheDocument();
+      expect(
+        within(section).getByRole("button", { name: "Página 1" }),
+      ).toHaveAttribute("aria-current", "page");
     });
     expect(
       within(section).getByRole("button", { name: "Ver detalle de Similar 1" }),
@@ -286,8 +298,8 @@ describe("MovieDetailScreen similar movies", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: "Continuar" });
-    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("button", { name: "Página siguiente" });
+    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }));
 
     await waitFor(() => {
       expect(clientMocks.fetchSimilarMovies).toHaveBeenLastCalledWith(
@@ -320,7 +332,7 @@ describe("MovieDetailScreen similar movies", () => {
     await screen.findByRole("alert");
     expect(screen.getByText("Sinopsis")).toBeInTheDocument();
     expect(
-      screen.getByRole("group", { name: "Tu reacción" }),
+      screen.getByRole("group", { name: "Tu estado" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Ver trailer" }),
@@ -354,7 +366,7 @@ describe("MovieDetailScreen similar movies", () => {
     );
 
     fireEvent.click(
-      within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
+      within(screen.getByRole("group", { name: "Tu estado" })).getByRole(
         "button",
         { name: "Me gusta" },
       ),
@@ -369,5 +381,266 @@ describe("MovieDetailScreen similar movies", () => {
 
     expect(persistence.setReaction).toHaveBeenCalledWith("LIKE");
     expect(onClose).toHaveBeenCalledWith({ reaction: "LIKE", watchedAt: null });
+  });
+});
+
+describe("MovieDetailScreen viewer state", () => {
+  function renderDetail(persistence = createPersistence()) {
+    clientMocks.fetchSimilarMovies.mockResolvedValue({
+      data: [],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 0,
+        totalResults: 0,
+        hasNextPage: false,
+      },
+    });
+    render(
+      <MovieDetailScreen
+        createPersistence={() => persistence}
+        onClose={vi.fn()}
+        pageData={INITIAL.pageData}
+        publicReviews={INITIAL.publicReviews}
+      />,
+    );
+
+    return persistence;
+  }
+
+  /** They used to live in a card under the synopsis, past a scroll. */
+  it("puts the three controls on the artwork, above the synopsis", () => {
+    renderDetail();
+
+    const group = screen.getByRole("group", { name: "Tu estado" });
+    expect(group.closest("header")).not.toBeNull();
+    expect(
+      within(group)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Me gusta", "No me gusta", "Marcar vista"]);
+  });
+
+  function renderWithCast(size: number) {
+    const cast = Array.from({ length: size }, (_, index) => ({
+      id: 9000 + index,
+      name: `Actor ${index}`,
+      character: `Personaje ${index}`,
+      // TMDB has no photograph of everybody, and the tail of a long cast is
+      // where it runs out.
+      profilePath: index % 3 === 2 ? null : `/actor-${index}.jpg`,
+      order: index,
+    }));
+    clientMocks.fetchSimilarMovies.mockResolvedValue({
+      data: [],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 0,
+        totalResults: 0,
+        hasNextPage: false,
+      },
+    });
+    render(
+      <MovieDetailScreen
+        createPersistence={() => createPersistence()}
+        onClose={vi.fn()}
+        pageData={{
+          ...INITIAL.pageData,
+          movie: { ...INITIAL.pageData.movie, cast },
+        }}
+        publicReviews={INITIAL.publicReviews}
+      />,
+    );
+  }
+
+  it("shows four of the cast and offers the rest", () => {
+    renderWithCast(20);
+
+    expect(screen.getByText("Actor 3")).toBeInTheDocument();
+    expect(screen.queryByText("Actor 4")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver todo el reparto (20)" }),
+    );
+
+    expect(screen.getByText("Actor 19")).toBeInTheDocument();
+  });
+
+  /** The photographs already arrived with the detail; they were being thrown
+   * away at the last step, in favour of initials. */
+  it("paints the face TMDB has, at the size the avatar is drawn", () => {
+    renderWithCast(20);
+
+    expect(screen.getByAltText("Actor 0")).toHaveAttribute(
+      "src",
+      "https://image.tmdb.org/t/p/w185/actor-0.jpg",
+    );
+  });
+
+  it("falls back to initials for anyone TMDB has no photograph of", () => {
+    renderWithCast(20);
+
+    // Actor 2 is the one the fixture leaves without a profile path.
+    expect(screen.queryByAltText("Actor 2")).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Actor 2" })).toHaveTextContent(
+      "A",
+    );
+  });
+
+  it("keeps the control away when the whole cast already fits", () => {
+    renderWithCast(4);
+
+    expect(
+      screen.queryByRole("button", { name: /Ver todo el reparto/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  /** Nine reviews turned the column into a scroll of its own, with the rest of
+   * the detail stranded above it. */
+  it("shows three reviews at a time and walks to the rest", () => {
+    const publicReviews = Array.from({ length: 7 }, (_, index) => ({
+      ...INITIAL.publicReviews[0]!,
+      id: `review-${index}`,
+      title: `Reseña ${index}`,
+    }));
+    clientMocks.fetchSimilarMovies.mockResolvedValue({
+      data: [],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 0,
+        totalResults: 0,
+        hasNextPage: false,
+      },
+    });
+    render(
+      <MovieDetailScreen
+        createPersistence={() => createPersistence()}
+        onClose={vi.fn()}
+        pageData={INITIAL.pageData}
+        publicReviews={publicReviews}
+      />,
+    );
+
+    expect(screen.getByText("Reseña 2")).toBeInTheDocument();
+    expect(screen.queryByText("Reseña 3")).not.toBeInTheDocument();
+
+    const pager = screen.getByRole("navigation", {
+      name: "Paginación de reseñas",
+    });
+    fireEvent.click(within(pager).getByRole("button", { name: "Página 3" }));
+
+    expect(screen.getByText("Reseña 6")).toBeInTheDocument();
+    expect(screen.queryByText("Reseña 2")).not.toBeInTheDocument();
+  });
+
+  /** Under the list it moved out from under the pointer as the reviews it
+   * swapped resized, and it sat level with the similar movies' own pager. */
+  it("keeps the reviews pager above the reviews it pages", () => {
+    const publicReviews = Array.from({ length: 7 }, (_, index) => ({
+      ...INITIAL.publicReviews[0]!,
+      id: `review-${index}`,
+      title: `Reseña ${index}`,
+    }));
+    clientMocks.fetchSimilarMovies.mockResolvedValue({
+      data: [],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 0,
+        totalResults: 0,
+        hasNextPage: false,
+      },
+    });
+    render(
+      <MovieDetailScreen
+        createPersistence={() => createPersistence()}
+        onClose={vi.fn()}
+        pageData={INITIAL.pageData}
+        publicReviews={publicReviews}
+      />,
+    );
+
+    const pager = screen.getByRole("navigation", {
+      name: "Paginación de reseñas",
+    });
+    const firstReview = screen.getByText("Reseña 0");
+
+    expect(
+      pager.compareDocumentPosition(firstReview) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  /** On one column the page is a sequence, and what other people said about
+   * this movie belongs before a list of other movies. Side by side from lg up
+   * the order stops meaning anything, so only this one is worth pinning. */
+  it("puts the reviews before the similar movies in reading order", () => {
+    renderDetail();
+
+    const reviews = screen.getByRole("heading", { name: "La comunidad" });
+    const similar = screen.getByRole("heading", {
+      name: "Películas similares",
+    });
+
+    expect(
+      reviews.compareDocumentPosition(similar) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  /** The separate "Quitar reacción" button is gone: each control undoes
+   * itself, which is the only way an icon on its own can. */
+  it("clears the reaction when the one already on is pressed again", async () => {
+    const persistence = renderDetail();
+
+    fireEvent.click(screen.getByRole("button", { name: "Me gusta" }));
+
+    const liked = screen.getByRole("button", { name: "Quitar me gusta" });
+    expect(liked).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(liked);
+
+    await waitFor(() => {
+      expect(persistence.clearReaction).toHaveBeenCalled();
+    });
+    expect(screen.getByRole("button", { name: "Me gusta" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("swaps one reaction for the other without clearing in between", async () => {
+    const persistence = renderDetail();
+
+    fireEvent.click(screen.getByRole("button", { name: "Me gusta" }));
+    fireEvent.click(screen.getByRole("button", { name: "No me gusta" }));
+
+    await waitFor(() => {
+      expect(persistence.setReaction).toHaveBeenLastCalledWith("DISLIKE");
+    });
+    expect(persistence.clearReaction).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Me gusta" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("keeps the eye answering for itself while a reaction is on", async () => {
+    const persistence = renderDetail();
+
+    fireEvent.click(screen.getByRole("button", { name: "Me gusta" }));
+    fireEvent.click(screen.getByRole("button", { name: "Marcar vista" }));
+
+    await waitFor(() => {
+      expect(persistence.setWatched).toHaveBeenCalledWith(true);
+    });
+    expect(
+      screen.getByRole("button", { name: "Quitar me gusta" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "Marcar no vista" }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 });

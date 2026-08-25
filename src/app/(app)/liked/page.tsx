@@ -39,5 +39,12 @@ export default async function LikedMoviesPage({
     query,
   );
 
-  return <LikedMoviesScreen items={data} meta={meta} watched={query.watched} />;
+  return (
+    <LikedMoviesScreen
+      items={data}
+      meta={meta}
+      search={query.search}
+      watched={query.watched}
+    />
+  );
 }

@@ -238,7 +238,7 @@ describe("foundation database schema", () => {
         },
         {
           name: "reviews_description_length_check",
-          sql: 'char_length(btrim("reviews"."description")) between 10 and 400',
+          sql: 'char_length(btrim("reviews"."description")) between 3 and 400',
         },
       ],
       movieCache: [

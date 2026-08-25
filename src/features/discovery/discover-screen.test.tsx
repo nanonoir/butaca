@@ -604,7 +604,7 @@ describe("DiscoverScreen", () => {
       screen.getByRole("button", { name: "Más información sobre Dune" }),
     );
     fireEvent.click(
-      within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
+      within(screen.getByRole("group", { name: "Tu estado" })).getByRole(
         "button",
         { name: "Me gusta" },
       ),
@@ -627,7 +627,7 @@ describe("DiscoverScreen", () => {
     );
 
     const reactionGroup = screen.getByRole("group", {
-      name: "Tu reacción",
+      name: "Tu estado",
     });
     const likeButton = within(reactionGroup).getByRole("button", {
       name: "Me gusta",
@@ -641,7 +641,9 @@ describe("DiscoverScreen", () => {
       screen.getByRole("button", { name: "Marcar no vista" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Quitar reacción" }));
+    // Pressing the reaction that is already on is what clears it now: there is
+    // no separate button to undo one.
+    fireEvent.click(screen.getByRole("button", { name: "Quitar me gusta" }));
 
     expect(likeButton).toHaveAttribute("aria-pressed", "false");
     expect(

@@ -4,11 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { MovieArtwork } from "@/components/shared/movie-artwork";
+import {
+  getTmdbImageUrl,
+  TMDB_IMAGE_SIZE,
+} from "@/integrations/tmdb/image-url";
+import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import type { MovieDetailPageData } from "@/contracts/movie-detail";
 import type { MovieReaction, ViewerMovieState } from "@/contracts/interactions";
-import type { MovieSummary } from "@/contracts/movies";
+import type { CastMember, MovieSummary } from "@/contracts/movies";
 import type { Review, UpsertReviewRequest } from "@/contracts/reviews";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
 import {
@@ -99,16 +104,25 @@ function StarIcon({ className }: { className?: string }) {
   );
 }
 
-function HeartIcon({ className }: { className?: string }) {
+const HEART_OUTLINE =
+  "M20.4 8.8c0 4.6-8.4 9.2-8.4 9.2S3.6 13.4 3.6 8.8A4.3 4.3 0 0 1 12 6.6a4.3 4.3 0 0 1 8.4 2.2Z";
+
+function HeartIcon({
+  className,
+  filled = false,
+}: {
+  className?: string;
+  filled?: boolean;
+}) {
   return (
     <svg
       aria-hidden="true"
       className={className}
-      fill="none"
+      fill={filled ? "currentColor" : "none"}
       viewBox="0 0 24 24"
     >
       <path
-        d="M20.4 8.8c0 4.6-8.4 9.2-8.4 9.2S3.6 13.4 3.6 8.8A4.3 4.3 0 0 1 12 6.6a4.3 4.3 0 0 1 8.4 2.2Z"
+        d={HEART_OUTLINE}
         stroke="currentColor"
         strokeLinejoin="round"
         strokeWidth="1.8"
@@ -117,19 +131,40 @@ function HeartIcon({ className }: { className?: string }) {
   );
 }
 
-function CrossIcon({ className }: { className?: string }) {
+/** The same heart with a split down it. A cross said "no" but said nothing
+ * about what it was answering; this one is legibly the other half of the
+ * pair, which is what a viewer is choosing between. */
+function BrokenHeartIcon({
+  className,
+  filled = false,
+}: {
+  className?: string;
+  filled?: boolean;
+}) {
   return (
     <svg
       aria-hidden="true"
       className={className}
-      fill="none"
+      fill={filled ? "currentColor" : "none"}
       viewBox="0 0 24 24"
     >
       <path
-        d="m7 7 10 10m0-10L7 17"
+        d={HEART_OUTLINE}
         stroke="currentColor"
-        strokeLinecap="round"
+        strokeLinejoin="round"
         strokeWidth="1.8"
+      />
+      <path
+        d="M12 6.7 10.2 10.2l3 1.5-2.1 4.5"
+        fill="none"
+        stroke={
+          filled
+            ? "var(--color-primary-foreground, currentColor)"
+            : "currentColor"
+        }
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
       />
     </svg>
   );
@@ -192,93 +227,172 @@ function formatRuntime(runtime: number | null) {
   return `${hours} h ${minutes} min`;
 }
 
-function PersonalMovieState({
-  reaction,
-  watched,
-  onClearReaction,
-  onReactionChange,
-  onWatchedChange,
-}: {
+interface ViewerStateActionsProps {
+  className?: string;
   reaction: MovieReaction | null;
   watched: boolean;
   onClearReaction: () => void;
   onReactionChange: (reaction: MovieReaction) => void;
   onWatchedChange: (watched: boolean) => void;
-}) {
+}
+
+/** The three things a viewer does to a movie, sitting on the artwork where
+ * they can be reached without scrolling past the synopsis.
+ *
+ * There is no separate button to undo a reaction any more: pressing the one
+ * that is already on turns it off, so each control answers for itself. The
+ * labels say which of the two it is about to do, since an icon that means
+ * both "like" and "stop liking" cannot be read by anyone who cannot see
+ * whether it is lit. */
+/** Four is what fits one row on a wide screen and two on a narrow one, and on
+ * a narrow one the cast sits ahead of the reviews -- so every extra row here
+ * is a row between a viewer and what people said about the film. */
+const COLLAPSED_CAST = 4;
+
+interface CastSectionProps {
+  cast: CastMember[];
+}
+
+/** TMDB bills the cast in order, and its tail is uncredited extras: The Dark
+ * Knight lists 138 people, of whom only 90 have a photograph at all. The
+ * contract keeps the first 20, which is the cast anyone means, and where
+ * almost every face is actually there. */
+function CastSection({ cast }: CastSectionProps) {
+  const shouldReduceMotion = useReducedMotion();
+  const [expanded, setExpanded] = useState(false);
+  const visibleCast = expanded ? cast : cast.slice(0, COLLAPSED_CAST);
+
   return (
-    <section
-      aria-labelledby="personal-state-heading"
-      className="overflow-hidden rounded-xl border border-border bg-surface-elevated"
-    >
-      <div className="border-b border-border px-5 py-4 sm:px-6">
-        <h2
-          className="font-mono text-xs uppercase tracking-[0.14em] text-muted"
-          id="personal-state-heading"
-        >
-          Tu estado
-        </h2>
-      </div>
-
-      <div className="p-5 sm:p-6">
-        <p className="text-sm font-medium text-foreground">Tu reacción</p>
-        <div
-          aria-label="Tu reacción"
-          className="mt-3 grid grid-cols-2 gap-3"
-          role="group"
-        >
-          {(
-            [
-              ["LIKE", "Me gusta", HeartIcon],
-              ["DISLIKE", "No me gusta", CrossIcon],
-            ] as const
-          ).map(([value, label, Icon]) => {
-            const selected = reaction === value;
-
-            return (
-              <Button
-                aria-pressed={selected}
-                className={`min-h-14 rounded-lg px-3 ${selected ? "border-primary bg-primary/12 text-primary hover:bg-primary/12" : "text-muted hover:border-primary hover:bg-transparent hover:text-primary"}`}
-                key={value}
-                onClick={() => onReactionChange(value)}
-                variant={BUTTON_VARIANT.OUTLINE}
-              >
-                <Icon className="size-5" />
-                {label}
-              </Button>
-            );
-          })}
-        </div>
-        {reaction ? (
-          <Button
-            className="mt-2 w-full text-xs hover:bg-transparent hover:text-primary"
-            onClick={onClearReaction}
-            size={CONTROL_SIZE.SM}
-            variant={BUTTON_VARIANT.GHOST}
+    <section aria-labelledby="cast-heading">
+      <h2
+        className="font-mono text-xs uppercase tracking-[0.14em] text-muted"
+        id="cast-heading"
+      >
+        Reparto
+      </h2>
+      <ul className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-4">
+        {visibleCast.map((castMember, index) => (
+          <motion.li
+            animate={{ opacity: 1, y: 0 }}
+            className="min-w-0"
+            initial={
+              // Only what the press revealed moves; the first four were
+              // already on screen and have no business re-entering.
+              index < COLLAPSED_CAST || shouldReduceMotion
+                ? false
+                : { opacity: 0, y: 8 }
+            }
+            key={castMember.id}
+            transition={{
+              delay: Math.min((index - COLLAPSED_CAST) * 0.03, 0.3),
+              duration: 0.22,
+              ease: [0.23, 1, 0.32, 1],
+            }}
           >
-            Quitar reacción
-          </Button>
-        ) : null}
-      </div>
-
-      <div className="flex flex-col gap-4 border-t border-border p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-        <div>
-          <p className="font-display text-base font-semibold text-foreground">
-            ¿Ya la viste?
-          </p>
-          <p className="mt-1 text-sm text-muted">
-            Independiente de tu reacción
-          </p>
-        </div>
+            <Avatar
+              alt={castMember.name}
+              className="bg-surface-elevated! text-muted! ring-1 ring-border"
+              initials={getInitials(castMember.name)}
+              size="lg"
+              // Null for anyone TMDB has no photograph of, which drops the
+              // avatar back to initials on its own.
+              src={
+                getTmdbImageUrl(
+                  castMember.profilePath,
+                  TMDB_IMAGE_SIZE.PROFILE,
+                ) ?? undefined
+              }
+            />
+            <p className="mt-3 text-sm font-medium leading-5 text-foreground">
+              {castMember.name}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              {castMember.character}
+            </p>
+          </motion.li>
+        ))}
+      </ul>
+      {cast.length > COLLAPSED_CAST ? (
         <Button
-          className={`shrink-0 ${watched ? "border-primary bg-primary/12 text-primary hover:bg-primary/12" : "text-muted hover:border-primary hover:bg-transparent hover:text-primary"}`}
-          onClick={() => onWatchedChange(!watched)}
+          aria-expanded={expanded}
+          className="mt-5"
+          onClick={() => setExpanded((current) => !current)}
           variant={BUTTON_VARIANT.OUTLINE}
         >
-          <EyeIcon className="size-5" watched={watched} />
-          {watched ? "Marcar no vista" : "Marcar vista"}
+          {expanded ? "Ver menos" : `Ver todo el reparto (${cast.length})`}
         </Button>
-      </div>
+      ) : null}
     </section>
+  );
+}
+
+function ViewerStateActions({
+  className,
+  reaction,
+  watched,
+  onClearReaction,
+  onReactionChange,
+  onWatchedChange,
+}: ViewerStateActionsProps) {
+  const actions = [
+    {
+      id: "LIKE" as const,
+      on: reaction === "LIKE",
+      label: reaction === "LIKE" ? "Quitar me gusta" : "Me gusta",
+      icon: (filled: boolean) => (
+        <HeartIcon className="size-5 sm:size-6" filled={filled} />
+      ),
+      press: () =>
+        reaction === "LIKE" ? onClearReaction() : onReactionChange("LIKE"),
+    },
+    {
+      id: "DISLIKE" as const,
+      on: reaction === "DISLIKE",
+      label: reaction === "DISLIKE" ? "Quitar no me gusta" : "No me gusta",
+      icon: (filled: boolean) => (
+        <BrokenHeartIcon className="size-5 sm:size-6" filled={filled} />
+      ),
+      press: () =>
+        reaction === "DISLIKE"
+          ? onClearReaction()
+          : onReactionChange("DISLIKE"),
+    },
+    {
+      id: "WATCHED" as const,
+      on: watched,
+      label: watched ? "Marcar no vista" : "Marcar vista",
+      icon: () => <EyeIcon className="size-5 sm:size-6" watched={watched} />,
+      press: () => onWatchedChange(!watched),
+    },
+  ];
+
+  return (
+    <div
+      aria-label="Tu estado"
+      className={cn("flex items-center gap-2 sm:gap-3", className)}
+      role="group"
+    >
+      {actions.map((action) => (
+        <button
+          aria-label={action.label}
+          aria-pressed={action.on}
+          className={cn(
+            // It sits over the backdrop image, so it carries its own ground
+            // rather than trusting whatever frame of the movie is behind it.
+            "inline-flex size-12 shrink-0 items-center justify-center rounded-full border backdrop-blur-sm transition-colors duration-fast ease-ui focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:size-14",
+            action.on
+              ? "border-primary bg-primary/20 text-primary"
+              : "border-border bg-background/80 text-foreground hover:border-primary hover:text-primary",
+          )}
+          key={action.id}
+          onClick={action.press}
+          title={action.label}
+          type="button"
+        >
+          {action.icon(action.on)}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -594,7 +708,10 @@ export function MovieDetailScreen({
           <BackIcon className="size-5" />
         </Button>
 
-        <div className="absolute inset-x-0 bottom-0 mx-auto flex w-full max-w-7xl items-end gap-5 px-4 pb-7 sm:gap-7 sm:px-8 lg:px-12">
+        {/* Wrapping until lg: below it the title needs the whole row, so the
+         * controls take one of their own underneath rather than squeezing a
+         * six line heading next to them. */}
+        <div className="absolute inset-x-0 bottom-0 mx-auto flex w-full max-w-7xl flex-wrap items-end gap-x-5 gap-y-5 px-4 pb-7 sm:gap-x-7 sm:px-8 lg:flex-nowrap lg:px-12">
           <MovieArtwork
             className="aspect-[2/3] w-28 shrink-0 rounded-lg border border-border shadow-floating sm:w-36 lg:w-44"
             movie={movie}
@@ -628,6 +745,14 @@ export function MovieDetailScreen({
               {movie.tmdbRating.toFixed(1)} TMDB
             </div>
           </div>
+          <ViewerStateActions
+            className="w-full justify-end lg:ml-auto lg:w-auto lg:pb-1"
+            onClearReaction={handleClearReaction}
+            onReactionChange={handleReactionChange}
+            onWatchedChange={handleWatchedChange}
+            reaction={reaction}
+            watched={watched}
+          />
         </div>
       </header>
 
@@ -672,60 +797,39 @@ export function MovieDetailScreen({
             ) : null}
 
             {movie.cast.length > 0 ? (
-              <section aria-labelledby="cast-heading">
-                <h2
-                  className="font-mono text-xs uppercase tracking-[0.14em] text-muted"
-                  id="cast-heading"
-                >
-                  Reparto
-                </h2>
-                <ul className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-4">
-                  {movie.cast.slice(0, 4).map((castMember) => (
-                    <li className="min-w-0" key={castMember.id}>
-                      <Avatar
-                        alt={castMember.name}
-                        className="bg-surface-elevated! text-muted! ring-1 ring-border"
-                        initials={getInitials(castMember.name)}
-                        size="lg"
-                      />
-                      <p className="mt-3 text-sm font-medium leading-5 text-foreground">
-                        {castMember.name}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-muted">
-                        {castMember.character}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+              <CastSection cast={movie.cast} key={movie.id} />
             ) : null}
+          </div>
 
-            <PersonalMovieState
-              onClearReaction={handleClearReaction}
-              onReactionChange={handleReactionChange}
-              onWatchedChange={handleWatchedChange}
-              reaction={reaction}
-              watched={watched}
+          {/* Second in the source, so on one column it reads right after the
+           * cast: what other people said about this movie comes before a list
+           * of other movies. Placed back beside them from lg up, where both
+           * columns are visible at once and order stops meaning sequence. */}
+          <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+            <MovieReviews
+              editorMode={editorMode}
+              // Walking to a similar movie inside the same overlay brings a
+              // different set of reviews; the page they were on is not a page
+              // of it.
+              key={movie.id}
+              myReview={myReview}
+              onCloseEditor={() => setEditorMode(null)}
+              onDeleteReview={handleDeleteReview}
+              onOpenCreate={() => setEditorMode("create")}
+              onOpenEdit={() => setEditorMode("edit")}
+              onSaveReview={handleSaveReview}
+              publicReviews={activeDetail.publicReviews}
+              summary={reviewSummary}
             />
+          </div>
 
+          <div className="min-w-0 lg:col-start-1 lg:row-start-2">
             <SimilarMoviesSection
               key={movie.id}
               movieId={movie.id}
               onSelectMovie={handleSelectSimilarMovie}
             />
           </div>
-
-          <MovieReviews
-            editorMode={editorMode}
-            myReview={myReview}
-            onCloseEditor={() => setEditorMode(null)}
-            onDeleteReview={handleDeleteReview}
-            onOpenCreate={() => setEditorMode("create")}
-            onOpenEdit={() => setEditorMode("edit")}
-            onSaveReview={handleSaveReview}
-            publicReviews={activeDetail.publicReviews}
-            summary={reviewSummary}
-          />
         </div>
       </div>
 

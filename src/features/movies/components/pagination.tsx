@@ -5,6 +5,10 @@ interface PaginationProps {
   totalPages: number;
   hasNextPage: boolean;
   disabled?: boolean;
+  /** Three of these can be on screen at once. Sharing one name leaves anyone
+   * reading by voice with three identical navigations and no way to tell
+   * which is which. */
+  label?: string;
   onPageChange: (page: number) => void;
 }
 
@@ -23,6 +27,7 @@ export function Pagination({
   totalPages,
   hasNextPage,
   disabled = false,
+  label = "Paginación de resultados",
   onPageChange,
 }: PaginationProps) {
   if (totalPages <= 1) {
@@ -32,7 +37,7 @@ export function Pagination({
   const visiblePages = getVisiblePages(page, totalPages);
 
   return (
-    <nav aria-label="Paginación de resultados" className="flex flex-wrap gap-2">
+    <nav aria-label={label} className="flex flex-wrap gap-2">
       <Button
         aria-label="Página anterior"
         disabled={disabled || page === 1}

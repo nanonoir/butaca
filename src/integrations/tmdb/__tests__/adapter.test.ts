@@ -708,7 +708,7 @@ describe("TmdbAdapter.discoverMovies", () => {
       page: 3,
       withGenres: "7101,7102,7101",
       withoutGenres: "7103,7103",
-      withKeywords: "8003,8001,8003",
+      withKeywords: "8003|8001|8003",
       withCast: "9102,9101,9102",
       withCrew: "9202,9201,9202",
       withOriginalLanguage: "es",

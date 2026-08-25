@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { MovieSummary } from "@/contracts";
+import { ChatMovieSchema, type MovieSummary } from "@/contracts";
 
 import {
   toChatTurns,
@@ -73,7 +73,11 @@ describe("toChatTurns", () => {
       ]),
     ]);
 
-    expect(turns[0]?.movies).toEqual(movies);
+    // The payload is narrower than a movie summary: the synopsis never travels
+    // to the assistant, so it never comes back either.
+    expect(turns[0]?.movies).toEqual(
+      movies.map((movie) => ChatMovieSchema.parse(movie)),
+    );
   });
 
   it("ignores a tool call whose output has not arrived", () => {
