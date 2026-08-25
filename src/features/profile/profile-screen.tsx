@@ -1,8 +1,10 @@
 import type { Genre } from "@/contracts/movies";
+import type { MyReview } from "@/contracts/profile";
 
 import { LogoutButton } from "./logout-button";
 import { ProfileAvatarEditor } from "./profile-avatar-editor";
 import { ProfilePreferencesSummary } from "./profile-preferences-summary";
+import { ProfileReviews } from "./profile-reviews";
 
 interface ProfileActivityItem {
   label: string;
@@ -18,6 +20,7 @@ export interface ProfileScreenProps {
     initials: string;
     preferredGenreIds: readonly number[];
     activity: readonly ProfileActivityItem[];
+    reviews: MyReview[];
   };
 }
 
@@ -85,6 +88,13 @@ export function ProfileScreen({ genreOptions, profile }: ProfileScreenProps) {
               <ActivityStat key={item.label} item={item} divided={index > 0} />
             ))}
           </dl>
+        </section>
+
+        <section aria-labelledby="profile-reviews-title">
+          <SectionHeading id="profile-reviews-title">
+            Mis reseñas
+          </SectionHeading>
+          <ProfileReviews reviews={profile.reviews} />
         </section>
 
         <section aria-labelledby="profile-account-title">

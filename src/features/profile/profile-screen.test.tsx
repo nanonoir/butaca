@@ -13,7 +13,32 @@ vi.mock("next/navigation", () => ({
 beforeEach(() => window.sessionStorage.clear());
 afterEach(cleanup);
 
+function createMyReview(id: string, title: string, movieTitle: string) {
+  return {
+    id: `00000000-0000-4000-8000-00000000000${id}`,
+    movie: {
+      id: 603,
+      title: movieTitle,
+      originalTitle: movieTitle,
+      overview: "",
+      posterPath: null,
+      backdropPath: null,
+      genreIds: [878],
+      releaseDate: "1999-03-30",
+      originalLanguage: "en",
+      tmdbRating: 8.2,
+      tmdbVoteCount: 26_000,
+    },
+    verdict: "RECOMMENDED" as const,
+    title,
+    description: "Una reseña de prueba con largo suficiente.",
+    createdAt: "2026-08-25T10:00:00.000Z",
+    updatedAt: "2026-08-25T10:00:00.000Z",
+  };
+}
+
 const PROFILE = {
+  reviews: [createMyReview("1", "Impecable", "Matrix")],
   displayName: "Sofía Ramírez",
   email: "sofia.ramirez@correo.com",
   initials: "SR",
