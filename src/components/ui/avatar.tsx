@@ -48,7 +48,9 @@ export function Avatar({
 
     return (
       <Image
-        className={classes}
+        // TMDB serves profiles as 2:3 portraits and this frame is a circle.
+        // Without a fit the face arrives squashed to square.
+        className={`${classes} object-cover`}
         src={src}
         alt={alt}
         width={dimension}

@@ -421,6 +421,81 @@ describe("MovieDetailScreen viewer state", () => {
     ).toEqual(["Me gusta", "No me gusta", "Marcar vista"]);
   });
 
+  function renderWithCast(size: number) {
+    const cast = Array.from({ length: size }, (_, index) => ({
+      id: 9000 + index,
+      name: `Actor ${index}`,
+      character: `Personaje ${index}`,
+      // TMDB has no photograph of everybody, and the tail of a long cast is
+      // where it runs out.
+      profilePath: index % 3 === 2 ? null : `/actor-${index}.jpg`,
+      order: index,
+    }));
+    clientMocks.fetchSimilarMovies.mockResolvedValue({
+      data: [],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 0,
+        totalResults: 0,
+        hasNextPage: false,
+      },
+    });
+    render(
+      <MovieDetailScreen
+        createPersistence={() => createPersistence()}
+        onClose={vi.fn()}
+        pageData={{
+          ...INITIAL.pageData,
+          movie: { ...INITIAL.pageData.movie, cast },
+        }}
+        publicReviews={INITIAL.publicReviews}
+      />,
+    );
+  }
+
+  it("shows four of the cast and offers the rest", () => {
+    renderWithCast(20);
+
+    expect(screen.getByText("Actor 3")).toBeInTheDocument();
+    expect(screen.queryByText("Actor 4")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver todo el reparto (20)" }),
+    );
+
+    expect(screen.getByText("Actor 19")).toBeInTheDocument();
+  });
+
+  /** The photographs already arrived with the detail; they were being thrown
+   * away at the last step, in favour of initials. */
+  it("paints the face TMDB has, at the size the avatar is drawn", () => {
+    renderWithCast(20);
+
+    expect(screen.getByAltText("Actor 0")).toHaveAttribute(
+      "src",
+      "https://image.tmdb.org/t/p/w185/actor-0.jpg",
+    );
+  });
+
+  it("falls back to initials for anyone TMDB has no photograph of", () => {
+    renderWithCast(20);
+
+    // Actor 2 is the one the fixture leaves without a profile path.
+    expect(screen.queryByAltText("Actor 2")).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Actor 2" })).toHaveTextContent(
+      "A",
+    );
+  });
+
+  it("keeps the control away when the whole cast already fits", () => {
+    renderWithCast(4);
+
+    expect(
+      screen.queryByRole("button", { name: /Ver todo el reparto/ }),
+    ).not.toBeInTheDocument();
+  });
+
   /** On one column the page is a sequence, and what other people said about
    * this movie belongs before a list of other movies. Side by side from lg up
    * the order stops meaning anything, so only this one is worth pinning. */

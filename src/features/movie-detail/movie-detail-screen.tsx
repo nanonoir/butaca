@@ -4,12 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { MovieArtwork } from "@/components/shared/movie-artwork";
+import {
+  getTmdbImageUrl,
+  TMDB_IMAGE_SIZE,
+} from "@/integrations/tmdb/image-url";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import type { MovieDetailPageData } from "@/contracts/movie-detail";
 import type { MovieReaction, ViewerMovieState } from "@/contracts/interactions";
-import type { MovieSummary } from "@/contracts/movies";
+import type { CastMember, MovieSummary } from "@/contracts/movies";
 import type { Review, UpsertReviewRequest } from "@/contracts/reviews";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
 import {
@@ -240,6 +244,88 @@ interface ViewerStateActionsProps {
  * labels say which of the two it is about to do, since an icon that means
  * both "like" and "stop liking" cannot be read by anyone who cannot see
  * whether it is lit. */
+/** Four is what fits one row on a wide screen and two on a narrow one, and on
+ * a narrow one the cast sits ahead of the reviews -- so every extra row here
+ * is a row between a viewer and what people said about the film. */
+const COLLAPSED_CAST = 4;
+
+interface CastSectionProps {
+  cast: CastMember[];
+}
+
+/** TMDB bills the cast in order, and its tail is uncredited extras: The Dark
+ * Knight lists 138 people, of whom only 90 have a photograph at all. The
+ * contract keeps the first 20, which is the cast anyone means, and where
+ * almost every face is actually there. */
+function CastSection({ cast }: CastSectionProps) {
+  const shouldReduceMotion = useReducedMotion();
+  const [expanded, setExpanded] = useState(false);
+  const visibleCast = expanded ? cast : cast.slice(0, COLLAPSED_CAST);
+
+  return (
+    <section aria-labelledby="cast-heading">
+      <h2
+        className="font-mono text-xs uppercase tracking-[0.14em] text-muted"
+        id="cast-heading"
+      >
+        Reparto
+      </h2>
+      <ul className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-4">
+        {visibleCast.map((castMember, index) => (
+          <motion.li
+            animate={{ opacity: 1, y: 0 }}
+            className="min-w-0"
+            initial={
+              // Only what the press revealed moves; the first four were
+              // already on screen and have no business re-entering.
+              index < COLLAPSED_CAST || shouldReduceMotion
+                ? false
+                : { opacity: 0, y: 8 }
+            }
+            key={castMember.id}
+            transition={{
+              delay: Math.min((index - COLLAPSED_CAST) * 0.03, 0.3),
+              duration: 0.22,
+              ease: [0.23, 1, 0.32, 1],
+            }}
+          >
+            <Avatar
+              alt={castMember.name}
+              className="bg-surface-elevated! text-muted! ring-1 ring-border"
+              initials={getInitials(castMember.name)}
+              size="lg"
+              // Null for anyone TMDB has no photograph of, which drops the
+              // avatar back to initials on its own.
+              src={
+                getTmdbImageUrl(
+                  castMember.profilePath,
+                  TMDB_IMAGE_SIZE.PROFILE,
+                ) ?? undefined
+              }
+            />
+            <p className="mt-3 text-sm font-medium leading-5 text-foreground">
+              {castMember.name}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              {castMember.character}
+            </p>
+          </motion.li>
+        ))}
+      </ul>
+      {cast.length > COLLAPSED_CAST ? (
+        <Button
+          aria-expanded={expanded}
+          className="mt-5"
+          onClick={() => setExpanded((current) => !current)}
+          variant={BUTTON_VARIANT.OUTLINE}
+        >
+          {expanded ? "Ver menos" : `Ver todo el reparto (${cast.length})`}
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
 function ViewerStateActions({
   className,
   reaction,
@@ -711,40 +797,14 @@ export function MovieDetailScreen({
             ) : null}
 
             {movie.cast.length > 0 ? (
-              <section aria-labelledby="cast-heading">
-                <h2
-                  className="font-mono text-xs uppercase tracking-[0.14em] text-muted"
-                  id="cast-heading"
-                >
-                  Reparto
-                </h2>
-                <ul className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-4">
-                  {movie.cast.slice(0, 4).map((castMember) => (
-                    <li className="min-w-0" key={castMember.id}>
-                      <Avatar
-                        alt={castMember.name}
-                        className="bg-surface-elevated! text-muted! ring-1 ring-border"
-                        initials={getInitials(castMember.name)}
-                        size="lg"
-                      />
-                      <p className="mt-3 text-sm font-medium leading-5 text-foreground">
-                        {castMember.name}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-muted">
-                        {castMember.character}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+              <CastSection cast={movie.cast} key={movie.id} />
             ) : null}
-
           </div>
 
           {/* Second in the source, so on one column it reads right after the
-            * cast: what other people said about this movie comes before a list
-            * of other movies. Placed back beside them from lg up, where both
-            * columns are visible at once and order stops meaning sequence. */}
+           * cast: what other people said about this movie comes before a list
+           * of other movies. Placed back beside them from lg up, where both
+           * columns are visible at once and order stops meaning sequence. */}
           <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
             <MovieReviews
               editorMode={editorMode}
