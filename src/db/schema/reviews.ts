@@ -46,7 +46,7 @@ export const reviews = pgTable(
     ),
     check(
       "reviews_description_length_check",
-      sql`char_length(btrim(${table.description})) between 10 and 400`,
+      sql`char_length(btrim(${table.description})) between 3 and 400`,
     ),
     index("reviews_movie_created_at_idx").on(
       table.movieId,

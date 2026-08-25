@@ -1,0 +1,2 @@
+ALTER TABLE "reviews" DROP CONSTRAINT "reviews_description_length_check";--> statement-breakpoint
+ALTER TABLE "reviews" ADD CONSTRAINT "reviews_description_length_check" CHECK (char_length(btrim("reviews"."description")) between 3 and 400);
