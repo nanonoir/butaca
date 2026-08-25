@@ -16,6 +16,10 @@ const { getCurrentSession, redirect, findByUserId, countInteractions } =
     countInteractions: vi.fn(),
   }));
 
+vi.mock("@/features/profile/profile-likes-factory", () => ({
+  getProfileLikesService: () => ({ listRecentLikes: async () => [] }),
+}));
+
 vi.mock("@/features/profile/profile-reviews-factory", () => ({
   getProfileReviewsService: () => ({
     listMyReviews: async () => ({

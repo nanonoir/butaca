@@ -8,6 +8,7 @@ import {
 } from "@/db/repositories";
 import { getServerAuthService } from "@/features/auth/server-auth-factory";
 import { getProfileInitials } from "@/features/profile/profile-initials";
+import { getProfileLikesService } from "@/features/profile/profile-likes-factory";
 import { getProfileReviewsService } from "@/features/profile/profile-reviews-factory";
 import { ProfileScreen } from "@/features/profile/profile-screen";
 import { PROFILE_GENRE_OPTIONS_FIXTURE } from "@/fixtures/profile";
@@ -24,14 +25,14 @@ export default async function ProfilePage() {
 
   const database = getDatabase();
   const reviewRepository = new ReviewRepository(database);
-  const [preferences, interactions, reviewCount, myReviews] = await Promise.all(
-    [
+  const [preferences, interactions, reviewCount, myReviews, recentLikes] =
+    await Promise.all([
       new UserPreferencesRepository(database).findByUserId(session.user.id),
       new UserMovieInteractionRepository(database).countByUser(session.user.id),
       reviewRepository.countByUser(session.user.id),
       getProfileReviewsService().listMyReviews(session.user.id, 1),
-    ],
-  );
+      getProfileLikesService().listRecentLikes(session.user.id),
+    ]);
 
   return (
     <ProfileScreen
@@ -49,6 +50,7 @@ export default async function ProfilePage() {
           { label: "Reseñas", value: reviewCount, tone: "default" },
         ],
         reviews: myReviews.data,
+        recentLikes,
       }}
     />
   );

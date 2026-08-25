@@ -4,13 +4,12 @@ import {
   PAGE_SIZE,
   type LikedMovieItem,
   type LikesQuery,
-  type MovieDetail,
-  type MovieSummary,
 } from "@/contracts";
 
 import type { UserMovieInteractionRepository } from "../../db/repositories";
 import type { UserMovieInteractionRecord } from "../../db/schema/user-movie-interactions";
 import type { TmdbAdapter } from "../../integrations/tmdb";
+import { toMovieSummary } from "../movies/movie-summary";
 
 type LikesPort = Pick<
   UserMovieInteractionRepository,
@@ -30,23 +29,6 @@ export type PaginatedLikes = {
   };
 };
 
-/** `MovieSummary` is the list shape; the catalog only exposes a detail lookup
- * by id, and the genre ids it carries as objects flatten back to ids here. */
-function toSummary(detail: MovieDetail): MovieSummary {
-  return {
-    id: detail.id,
-    title: detail.title,
-    originalTitle: detail.originalTitle,
-    overview: detail.overview,
-    posterPath: detail.posterPath,
-    backdropPath: detail.backdropPath,
-    genreIds: detail.genres.map((genre) => genre.id),
-    releaseDate: detail.releaseDate,
-    originalLanguage: detail.originalLanguage,
-    tmdbRating: detail.tmdbRating,
-    tmdbVoteCount: detail.tmdbVoteCount,
-  };
-}
 
 export class LikesService {
   constructor(
@@ -94,7 +76,7 @@ export class LikesService {
         // date shown and the position always agree.
         likedAt: interaction.updatedAt.toISOString(),
         watchedAt: interaction.watchedAt?.toISOString() ?? null,
-        movie: toSummary(
+        movie: toMovieSummary(
           await this.catalog.getMovieDetail(interaction.movieId),
         ),
       })),

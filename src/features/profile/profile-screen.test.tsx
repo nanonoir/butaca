@@ -39,6 +39,13 @@ function createMyReview(id: string, title: string, movieTitle: string) {
 
 const PROFILE = {
   reviews: [createMyReview("1", "Impecable", "Matrix")],
+  recentLikes: [
+    {
+      movie: createMyReview("2", "", "Interestelar").movie,
+      likedAt: "2026-08-25T10:00:00.000Z",
+      watchedAt: null,
+    },
+  ],
   displayName: "Sofía Ramírez",
   email: "sofia.ramirez@correo.com",
   initials: "SR",

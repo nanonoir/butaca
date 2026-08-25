@@ -1,10 +1,11 @@
 import "server-only";
 
-import { PAGE_SIZE, type MovieDetail, type MyReview } from "@/contracts";
+import { PAGE_SIZE, type MyReview } from "@/contracts";
 
 import type { ReviewRepository } from "../../db/repositories";
 import type { ReviewRecord } from "../../db/schema/reviews";
 import type { TmdbAdapter } from "../../integrations/tmdb";
+import { toMovieSummary } from "../movies/movie-summary";
 
 type ReviewPort = Pick<ReviewRepository, "findByUser" | "countByUser">;
 type MovieCatalogPort = Pick<TmdbAdapter, "getMovieDetail">;
@@ -20,21 +21,6 @@ export type PaginatedMyReviews = {
   };
 };
 
-function toSummary(detail: MovieDetail) {
-  return {
-    id: detail.id,
-    title: detail.title,
-    originalTitle: detail.originalTitle,
-    overview: detail.overview,
-    posterPath: detail.posterPath,
-    backdropPath: detail.backdropPath,
-    genreIds: detail.genres.map((genre) => genre.id),
-    releaseDate: detail.releaseDate,
-    originalLanguage: detail.originalLanguage,
-    tmdbRating: detail.tmdbRating,
-    tmdbVoteCount: detail.tmdbVoteCount,
-  };
-}
 
 /** The profile counted the viewer's reviews and had no way to show them. This
  * pairs each one with the movie it is about, which is the only thing that
@@ -75,7 +61,7 @@ export class ProfileReviewsService {
     const resolved = await Promise.allSettled(
       records.map(async (record) => ({
         id: record.id,
-        movie: toSummary(await this.catalog.getMovieDetail(record.movieId)),
+        movie: toMovieSummary(await this.catalog.getMovieDetail(record.movieId)),
         verdict: record.verdict,
         title: record.title,
         description: record.description,
