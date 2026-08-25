@@ -1,17 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { AnimatePresence } from "motion/react";
+import Link from "next/link";
 
 import type { MyReview } from "@/contracts/profile";
-import type { MovieDetailPageData } from "@/contracts/movie-detail";
-import type { Review } from "@/contracts/reviews";
 import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { ReviewVerdictLabel } from "@/components/shared/review-verdict";
-import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
-import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
+import { movieDetailPath } from "@/features/movie-detail/movie-slug";
 import { Pagination } from "@/features/movies/components/pagination";
-import { fetchMovieReviews } from "@/features/reviews/review-client";
 
 /** Three at a time, like the ones under a movie. A review is a block of text,
  * and the profile is a page somebody scans rather than reads. */
@@ -29,30 +25,11 @@ interface ProfileReviewsProps {
 
 export function ProfileReviews({ reviews }: ProfileReviewsProps) {
   const [page, setPage] = useState(1);
-  const [detail, setDetail] = useState<{
-    pageData: MovieDetailPageData;
-    publicReviews: Review[];
-  } | null>(null);
   const totalPages = Math.ceil(reviews.length / REVIEWS_PER_PAGE);
   const visible = reviews.slice(
     (page - 1) * REVIEWS_PER_PAGE,
     page * REVIEWS_PER_PAGE,
   );
-
-  /** The movie is where a review can be edited, so the card opens it rather
-   * than offering an editor of its own here. */
-  async function openMovie(movieId: number): Promise<void> {
-    try {
-      const [pageData, movieReviews] = await Promise.all([
-        fetchMovieDetail(movieId),
-        fetchMovieReviews(movieId),
-      ]);
-
-      setDetail({ pageData, publicReviews: movieReviews.data });
-    } catch {
-      setDetail(null);
-    }
-  }
 
   if (reviews.length === 0) {
     return (
@@ -66,7 +43,7 @@ export function ProfileReviews({ reviews }: ProfileReviewsProps) {
   return (
     <>
       {/* Above the list, like the reviews under a movie: pressing a page must
-        * not move the control out from under the pointer. */}
+       * not move the control out from under the pointer. */}
       {totalPages > 1 ? (
         <div className="mt-4 flex justify-end">
           <Pagination
@@ -82,11 +59,10 @@ export function ProfileReviews({ reviews }: ProfileReviewsProps) {
       <ul className="mt-4 space-y-3">
         {visible.map((review) => (
           <li key={review.id}>
-            <button
+            <Link
               aria-label={`Ver ${review.movie.title}`}
-              className="flex w-full cursor-pointer gap-4 rounded-xl border border-border bg-surface-elevated p-4 text-left transition-colors duration-fast ease-ui hover:border-primary/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => void openMovie(review.movie.id)}
-              type="button"
+              className="flex w-full gap-4 rounded-xl border border-border bg-surface-elevated p-4 text-left transition-colors duration-fast ease-ui hover:border-primary/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              href={movieDetailPath(review.movie.id, review.movie.title)}
             >
               <MovieArtwork
                 className="aspect-[2/3] w-16 shrink-0 overflow-hidden rounded-lg border border-border"
@@ -109,21 +85,10 @@ export function ProfileReviews({ reviews }: ProfileReviewsProps) {
                   {DATE_FORMATTER.format(new Date(review.createdAt))}
                 </p>
               </div>
-            </button>
+            </Link>
           </li>
         ))}
       </ul>
-
-      <AnimatePresence>
-        {detail ? (
-          <MovieDetailScreen
-            key={detail.pageData.movie.id}
-            onClose={() => setDetail(null)}
-            pageData={detail.pageData}
-            publicReviews={detail.publicReviews}
-          />
-        ) : null}
-      </AnimatePresence>
     </>
   );
 }

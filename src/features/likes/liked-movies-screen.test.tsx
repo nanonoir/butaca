@@ -50,38 +50,6 @@ vi.mock("@/features/interactions/interaction-client", () => ({
 
 /** The overlay now loads the detail from the API instead of a fixture, so the
  * screen tests provide that payload. */
-function stubMovieDetail(item: LikedMovieItem) {
-  fetchMovieDetail.mockResolvedValue({
-    movie: {
-      ...item.movie,
-      tagline: null,
-      runtime: 120,
-      genres: [{ id: 18, name: "Drama" }],
-      director: null,
-      cast: [],
-      keywords: [],
-      trailer: null,
-    },
-    viewerState: { reaction: "LIKE", watchedAt: item.watchedAt },
-    reviewSummary: {
-      recommended: 0,
-      notWorthIt: 0,
-      total: 0,
-      recommendationRate: null,
-    },
-    myReview: null,
-  });
-  fetchMovieReviews.mockResolvedValue({
-    data: [],
-    meta: {
-      page: 1,
-      pageSize: 20,
-      totalPages: 0,
-      totalResults: 0,
-      hasNextPage: false,
-    },
-  });
-}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -146,18 +114,8 @@ function renderScreen(options?: {
   );
 }
 
-async function openDetail(item: LikedMovieItem) {
-  stubMovieDetail(item);
-  fireEvent.click(
-    screen.getByRole("button", { name: `Ver detalle de ${item.movie.title}` }),
-  );
 
-  return screen.findByRole("dialog", {
-    name: `Detalle de ${item.movie.title}`,
-  });
-}
-
-const [INTERSTELLAR, PARASITOS] = ITEMS;
+const [INTERSTELLAR] = ITEMS;
 
 describe("LikedMoviesScreen", () => {
   it("renders the complete collection with its watched presentation", () => {
@@ -181,69 +139,18 @@ describe("LikedMoviesScreen", () => {
     );
   });
 
-  it("opens the movie detail when selecting a liked movie", async () => {
+  /** The detail used to be fetched and thrown over this list. It has an
+   * address now, so the tile points at it and the router does the rest --
+   * which is also what makes opening one in a new tab work. */
+  it("points each tile at the film's own address", () => {
     renderScreen();
 
-    expect(await openDetail(INTERSTELLAR!)).toBeInTheDocument();
     expect(
-      within(screen.getByRole("group", { name: "Tu estado" })).getByRole(
-        "button",
-        { name: "Quitar me gusta" },
-      ),
-    ).toHaveAttribute("aria-pressed", "true");
+      screen.getByRole("link", { name: "Ver detalle de Interstellar" }),
+    ).toHaveAttribute("href", "/movies/1/interstellar");
     expect(
-      screen.getByRole("button", { name: "Marcar no vista" }),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Cerrar detalle" }));
-
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "Detalle de Interstellar" }),
-      ).not.toBeInTheDocument();
-    });
-  });
-
-  it("removes a movie from Liked after changing its reaction", async () => {
-    renderScreen();
-
-    await openDetail(INTERSTELLAR!);
-    fireEvent.click(
-      within(screen.getByRole("group", { name: "Tu estado" })).getByRole(
-        "button",
-        { name: "No me gusta" },
-      ),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Cerrar detalle" }));
-
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("button", {
-          name: "Ver detalle de Interstellar",
-        }),
-      ).not.toBeInTheDocument();
-    });
-    expect(screen.getByText("2 películas")).toBeInTheDocument();
-  });
-
-  it("shows the watched badge after marking a movie from the detail", async () => {
-    renderScreen();
-
-    await openDetail(PARASITOS!);
-    fireEvent.click(screen.getByRole("button", { name: "Marcar vista" }));
-    fireEvent.click(screen.getByRole("button", { name: "Cerrar detalle" }));
-
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "Detalle de Parásitos" }),
-      ).not.toBeInTheDocument();
-    });
-    const parasitosAction = screen.getByRole("button", {
-      name: "Ver detalle de Parásitos",
-    });
-    expect(
-      within(parasitosAction.closest("article")!).getByText("Vista"),
-    ).toBeInTheDocument();
+      screen.getByRole("link", { name: "Ver detalle de Parásitos" }),
+    ).toHaveAttribute("href", "/movies/2/parasitos");
   });
 
   /** The screen used to paint its own hover layer and then neutralise the one
@@ -251,7 +158,7 @@ describe("LikedMoviesScreen", () => {
   it("leaves the hover treatment to the poster card", () => {
     renderScreen();
 
-    const action = screen.getByRole("button", {
+    const action = screen.getByRole("link", {
       name: "Ver detalle de Interstellar",
     });
 
@@ -602,7 +509,7 @@ describe("LikedMoviesScreen card menu", () => {
       expect(interactions.setMovieWatched).toHaveBeenCalledWith(2, true);
     });
     const article = screen
-      .getByRole("button", { name: "Ver detalle de Parásitos" })
+      .getByRole("link", { name: "Ver detalle de Parásitos" })
       .closest("article")!;
     expect(within(article).getByText("Vista")).toBeInTheDocument();
   });
@@ -619,7 +526,7 @@ describe("LikedMoviesScreen card menu", () => {
       expect(interactions.removeMovieReaction).toHaveBeenCalledWith(1);
     });
     expect(
-      screen.queryByRole("button", { name: "Ver detalle de Interstellar" }),
+      screen.queryByRole("link", { name: "Ver detalle de Interstellar" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("2 películas")).toBeInTheDocument();
   });
@@ -636,22 +543,19 @@ describe("LikedMoviesScreen card menu", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Ver detalle de Interstellar" }),
+        screen.getByRole("link", { name: "Ver detalle de Interstellar" }),
       ).toBeInTheDocument();
     });
     expect(screen.getByText("3 películas")).toBeInTheDocument();
   });
 
-  it("opens the detail from the menu", async () => {
-    stubMovieDetail(INTERSTELLAR!);
+  it("sends the menu's detail action to the film's address", () => {
     renderScreen();
 
     openMenu("Interstellar");
     fireEvent.click(screen.getByRole("menuitem", { name: /Ver detalles/ }));
 
-    expect(
-      await screen.findByRole("dialog", { name: "Detalle de Interstellar" }),
-    ).toBeInTheDocument();
+    expect(push).toHaveBeenLastCalledWith("/movies/1/interstellar");
   });
 
   /** It floated over the tile below at first. Growing the card is the point:
@@ -662,7 +566,7 @@ describe("LikedMoviesScreen card menu", () => {
     openMenu("Interstellar");
 
     const article = screen
-      .getByRole("button", { name: "Ver detalle de Interstellar" })
+      .getByRole("link", { name: "Ver detalle de Interstellar" })
       .closest("article")!;
     let node: HTMLElement = within(article).getByRole("menu");
 

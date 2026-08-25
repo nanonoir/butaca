@@ -2,14 +2,13 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AnimatePresence } from "motion/react";
 
 import type { PaginationMeta } from "@/contracts/common";
 import type { LikedMovieItem, LikesWatchedFilter } from "@/contracts/likes";
 import type { MovieSummary } from "@/contracts/movies";
-import type { ViewerMovieState } from "@/contracts/interactions";
 import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
+import { movieDetailPath } from "@/features/movie-detail/movie-slug";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
 import { InlineMovieSearch } from "@/features/movies/components/inline-movie-search";
@@ -23,11 +22,6 @@ import {
   LikedMovieMenuPanel,
   LikedMovieMenuTrigger,
 } from "./liked-movie-menu";
-import type { MovieDetailPageData } from "@/contracts/movie-detail";
-import type { Review } from "@/contracts/reviews";
-import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
-import { fetchMovieReviews } from "@/features/reviews/review-client";
-import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
 import { Pagination } from "@/features/movies/components/pagination";
 
 const FILTER_OPTIONS: readonly {
@@ -213,11 +207,6 @@ export function LikedMoviesScreen({
   // One menu at a time. The state sits here rather than in the card because
   // the dots and the list they open are two separate slots of it.
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
-  const [selectedItem, setSelectedItem] = useState<LikedMovieItem | null>(null);
-  const [detailExperience, setDetailExperience] = useState<{
-    pageData: MovieDetailPageData;
-    publicReviews: Review[];
-  } | null>(null);
   const visibleItems = applyLocalEdits(items, edits);
   // Only movies unliked on this very page are missing from the server count:
   // once the viewer moves on, the next query already leaves them out.
@@ -290,24 +279,6 @@ export function LikedMoviesScreen({
     }
   }
 
-  /** The overlay loads on demand: the list only carries a summary per movie,
-   * and the detail plus its community reviews are two separate endpoints. */
-  async function handleSelectItem(item: LikedMovieItem): Promise<void> {
-    setSelectedItem(item);
-    setDetailExperience(null);
-
-    try {
-      const [pageData, reviews] = await Promise.all([
-        fetchMovieDetail(item.movie.id),
-        fetchMovieReviews(item.movie.id),
-      ]);
-
-      setDetailExperience({ pageData, publicReviews: reviews.data });
-    } catch {
-      setSelectedItem(null);
-    }
-  }
-
   /** The card writes straight through now, rather than only reflecting what the
    * detail overlay did on its way out. The local edit lands first so the tile
    * reacts on the press, and a write the server refuses puts it back. */
@@ -347,27 +318,6 @@ export function LikedMoviesScreen({
         return next;
       });
     }
-  }
-
-  function handleDetailClose(viewerState: ViewerMovieState) {
-    if (!selectedItem) {
-      return;
-    }
-
-    const selectedMovieId = selectedItem.movie.id;
-    setEdits((currentEdits) => {
-      const nextEdits = new Map(currentEdits);
-
-      nextEdits.set(
-        selectedMovieId,
-        viewerState.reaction === "LIKE"
-          ? { removed: false, watchedAt: viewerState.watchedAt }
-          : { removed: true },
-      );
-
-      return nextEdits;
-    });
-    setSelectedItem(null);
   }
 
   return (
@@ -484,7 +434,7 @@ export function LikedMoviesScreen({
                   icon: <InfoIcon />,
                   onSelect: () => {
                     setOpenMenuId(null);
-                    void handleSelectItem(item);
+                    router.push(movieDetailPath(movieId, item.movie.title));
                   },
                 },
               ];
@@ -493,7 +443,7 @@ export function LikedMoviesScreen({
                 <li className="min-w-0" key={movieId}>
                   <MoviePosterCard
                     actionLabel={`Ver detalle de ${item.movie.title}`}
-                    onSelect={() => void handleSelectItem(item)}
+                    href={movieDetailPath(movieId, item.movie.title)}
                     title={item.movie.title}
                     year={year}
                     poster={
@@ -531,19 +481,6 @@ export function LikedMoviesScreen({
           totalPages={meta.totalPages}
         />
       </section>
-
-      <AnimatePresence>
-        {detailExperience && selectedItem ? (
-          <MovieDetailScreen
-            key={detailExperience.pageData.movie.id}
-            onClose={handleDetailClose}
-            // The viewer state now comes from the server with the rest of the
-            // page instead of being inferred from the list row.
-            pageData={detailExperience.pageData}
-            publicReviews={detailExperience.publicReviews}
-          />
-        ) : null}
-      </AnimatePresence>
     </div>
   );
 }
