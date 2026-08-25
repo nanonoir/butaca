@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence } from "motion/react";
 
@@ -12,6 +12,17 @@ import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
+import { InlineMovieSearch } from "@/features/movies/components/inline-movie-search";
+import {
+  removeMovieReaction,
+  setMovieWatched,
+} from "@/features/interactions/interaction-client";
+
+import {
+  type LikedMovieMenuAction,
+  LikedMovieMenuPanel,
+  LikedMovieMenuTrigger,
+} from "./liked-movie-menu";
 import type { MovieDetailPageData } from "@/contracts/movie-detail";
 import type { Review } from "@/contracts/reviews";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
@@ -50,13 +61,13 @@ const EMPTY_STATES: Record<
  * `items` instead of copied over them: the list is server rendered per page, so
  * a copy taken on mount would survive into the next page and freeze it. */
 type LocalEdit =
-  | { removed: true }
-  | { removed: false; watchedAt: string | null };
+  { removed: true } | { removed: false; watchedAt: string | null };
 
 interface LikedMoviesScreenProps {
   items: LikedMovieItem[];
   meta: PaginationMeta;
   watched: LikesWatchedFilter;
+  search?: string;
 }
 
 function EyeIcon() {
@@ -84,18 +95,37 @@ function EyeIcon() {
   );
 }
 
-function OverflowGlyph() {
+function TrashIcon() {
   return (
-    <span
-      aria-hidden="true"
-      className="mb-1 inline-flex h-5 items-center text-muted-foreground"
-    >
-      <svg className="h-4 w-6" viewBox="0 0 24 16" fill="currentColor">
-        <circle cx="5" cy="8" r="1.25" />
-        <circle cx="12" cy="8" r="1.25" />
-        <circle cx="19" cy="8" r="1.25" />
-      </svg>
-    </span>
+    <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
+      <path
+        d="M5 7h14M10 7V5.5A1.5 1.5 0 0 1 11.5 4h1A1.5 1.5 0 0 1 14 5.5V7m-7 0 .8 11.1A2 2 0 0 0 9.8 20h4.4a2 2 0 0 0 2-1.9L17 7"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+    </svg>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
+      <circle
+        cx="12"
+        cy="12"
+        r="8.25"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M12 11v5m0-8.2v.6"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.7"
+      />
+    </svg>
   );
 }
 
@@ -137,8 +167,16 @@ function applyLocalEdits(
 
 /** The library spans more than one page, so the URL carries which slice the
  * viewer is on. Defaults stay out of it to keep `/liked` clean. */
-function buildLikedHref(page: number, watched: LikesWatchedFilter) {
+function buildLikedHref(
+  page: number,
+  watched: LikesWatchedFilter,
+  search?: string,
+) {
   const params = new URLSearchParams();
+
+  if (search) {
+    params.set("search", search);
+  }
 
   if (watched !== "all") {
     params.set("watched", watched);
@@ -161,12 +199,20 @@ export function LikedMoviesScreen({
   items,
   meta,
   watched,
+  search,
 }: LikedMoviesScreenProps) {
   const router = useRouter();
   const [isNavigating, startNavigation] = useTransition();
+  // Open when a search is already running, so a reload or a shared link lands
+  // on the box that produced what is on screen rather than hiding it.
+  const [searchOpen, setSearchOpen] = useState(Boolean(search));
+  const [draft, setDraft] = useState(search ?? "");
   const [edits, setEdits] = useState<ReadonlyMap<number, LocalEdit>>(
     () => new Map(),
   );
+  // One menu at a time. The state sits here rather than in the card because
+  // the dots and the list they open are two separate slots of it.
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [selectedItem, setSelectedItem] = useState<LikedMovieItem | null>(null);
   const [detailExperience, setDetailExperience] = useState<{
     pageData: MovieDetailPageData;
@@ -176,12 +222,72 @@ export function LikedMoviesScreen({
   // Only movies unliked on this very page are missing from the server count:
   // once the viewer moves on, the next query already leaves them out.
   const totalResults = meta.totalResults - (items.length - visibleItems.length);
-  const emptyState = EMPTY_STATES[watched];
+  const emptyState = search
+    ? {
+        title: `Nada en tu biblioteca para "${search}"`,
+        hint: "Buscá otro título, o quitá la búsqueda para ver todo de nuevo.",
+      }
+    : EMPTY_STATES[watched];
 
-  function goTo(page: number, nextWatched: LikesWatchedFilter) {
+  useEffect(() => {
+    if (openMenuId === null) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Element | null;
+
+      if (target?.closest(`[data-liked-menu="${openMenuId}"]`)) {
+        return;
+      }
+
+      setOpenMenuId(null);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenMenuId(null);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openMenuId]);
+
+  /** Every caller states the term. A default of `search` would have made
+   * clearing impossible: passing undefined to a defaulted parameter is what
+   * asks for the default, so "limpiar búsqueda" kept the term it was clearing. */
+  function goTo(
+    page: number,
+    nextWatched: LikesWatchedFilter,
+    nextSearch: string | undefined,
+  ) {
     startNavigation(() => {
-      router.push(buildLikedHref(page, nextWatched));
+      router.push(buildLikedHref(page, nextWatched, nextSearch));
     });
+  }
+
+  /** A different term is a different library, so it starts at the first page
+   * rather than at an offset that belonged to the previous one. */
+  function submitSearch() {
+    const term = draft.trim();
+
+    goTo(1, watched, term || undefined);
+  }
+
+  /** Closing the field clears it, so this also runs with no search behind it.
+   * Navigating then would reload the page the viewer is already reading. */
+  function clearSearch() {
+    setDraft("");
+
+    if (search) {
+      goTo(1, watched, undefined);
+    }
   }
 
   /** The overlay loads on demand: the list only carries a summary per movie,
@@ -199,6 +305,47 @@ export function LikedMoviesScreen({
       setDetailExperience({ pageData, publicReviews: reviews.data });
     } catch {
       setSelectedItem(null);
+    }
+  }
+
+  /** The card writes straight through now, rather than only reflecting what the
+   * detail overlay did on its way out. The local edit lands first so the tile
+   * reacts on the press, and a write the server refuses puts it back. */
+  async function handleToggleWatched(item: LikedMovieItem): Promise<void> {
+    const movieId = item.movie.id;
+    const watched = item.watchedAt === null;
+    const previous = item.watchedAt;
+
+    setEdits((current) =>
+      new Map(current).set(movieId, {
+        removed: false,
+        watchedAt: watched ? new Date().toISOString() : null,
+      }),
+    );
+
+    try {
+      await setMovieWatched(movieId, watched);
+    } catch {
+      setEdits((current) =>
+        new Map(current).set(movieId, { removed: false, watchedAt: previous }),
+      );
+    }
+  }
+
+  async function handleRemoveLike(item: LikedMovieItem): Promise<void> {
+    const movieId = item.movie.id;
+
+    setEdits((current) => new Map(current).set(movieId, { removed: true }));
+
+    try {
+      await removeMovieReaction(movieId);
+    } catch {
+      setEdits((current) => {
+        const next = new Map(current);
+        next.delete(movieId);
+
+        return next;
+      });
     }
   }
 
@@ -226,19 +373,38 @@ export function LikedMoviesScreen({
   return (
     <div className="mx-auto flex w-full max-w-[90rem] flex-col gap-8 py-4 md:py-8">
       <PageHeader
+        action={
+          <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+            <InlineMovieSearch
+              clearLabel="Ver toda la biblioteca"
+              draft={draft}
+              helperText="Busca solamente entre las películas que ya guardaste."
+              inputId="liked-search-input"
+              isLoading={isNavigating}
+              isOpen={searchOpen}
+              layoutId="liked-search-control"
+              onClear={clearSearch}
+              onDraftChange={setDraft}
+              onOpenChange={setSearchOpen}
+              onSubmit={submitSearch}
+              searchAriaLabel="Buscar en mis películas"
+              submittedQuery={search ?? null}
+              triggerId="liked-search-trigger"
+              triggerLabel="Abrir buscador de la biblioteca"
+            />
+            <p
+              aria-live="polite"
+              className="font-mono text-xs tracking-[0.08em] text-muted"
+            >
+              {getMovieCountLabel(totalResults)}
+              {meta.totalPages > 1
+                ? ` · Página ${meta.page} de ${meta.totalPages}`
+                : null}
+            </p>
+          </div>
+        }
         eyebrow="Tu biblioteca"
         title="Mis películas"
-        action={
-          <p
-            aria-live="polite"
-            className="font-mono text-xs tracking-[0.08em] text-muted"
-          >
-            {getMovieCountLabel(totalResults)}
-            {meta.totalPages > 1
-              ? ` · Página ${meta.page} de ${meta.totalPages}`
-              : null}
-          </p>
-        }
       />
 
       <section aria-labelledby="liked-movies-title" className="space-y-7">
@@ -262,7 +428,7 @@ export function LikedMoviesScreen({
                 // A filter changes how many movies there are, so it lands back
                 // on the first page instead of an offset that may not exist
                 // under the new count.
-                onClick={() => goTo(1, option.value)}
+                onClick={() => goTo(1, option.value, search)}
                 variant={
                   active ? BUTTON_VARIANT.PRIMARY : BUTTON_VARIANT.OUTLINE
                 }
@@ -287,9 +453,44 @@ export function LikedMoviesScreen({
             {visibleItems.map((item) => {
               const watchedMovie = item.watchedAt !== null;
               const year = item.movie.releaseDate?.slice(0, 4);
+              const movieId = item.movie.id;
+              const open = openMenuId === movieId;
+              // Each one closes the menu on its way out: the list it belongs to
+              // is about to be a different shape.
+              const actions: LikedMovieMenuAction[] = [
+                {
+                  id: "watched",
+                  label: watchedMovie
+                    ? "Marcar como no vista"
+                    : "Marcar como vista",
+                  icon: <EyeIcon />,
+                  onSelect: () => {
+                    setOpenMenuId(null);
+                    void handleToggleWatched(item);
+                  },
+                },
+                {
+                  id: "remove",
+                  label: "Quitar de me gusta",
+                  icon: <TrashIcon />,
+                  onSelect: () => {
+                    setOpenMenuId(null);
+                    void handleRemoveLike(item);
+                  },
+                },
+                {
+                  id: "detail",
+                  label: "Ver detalles",
+                  icon: <InfoIcon />,
+                  onSelect: () => {
+                    setOpenMenuId(null);
+                    void handleSelectItem(item);
+                  },
+                },
+              ];
 
               return (
-                <li className="min-w-0" key={item.movie.id}>
+                <li className="min-w-0" key={movieId}>
                   <MoviePosterCard
                     actionLabel={`Ver detalle de ${item.movie.title}`}
                     onSelect={() => void handleSelectItem(item)}
@@ -298,7 +499,22 @@ export function LikedMoviesScreen({
                     poster={
                       <LikedPoster movie={item.movie} watched={watchedMovie} />
                     }
-                    metadataSlot={<OverflowGlyph />}
+                    metadataSlot={
+                      <LikedMovieMenuTrigger
+                        movieId={movieId}
+                        onToggle={() => setOpenMenuId(open ? null : movieId)}
+                        open={open}
+                        title={item.movie.title}
+                      />
+                    }
+                    expansionSlot={
+                      <LikedMovieMenuPanel
+                        actions={actions}
+                        movieId={movieId}
+                        open={open}
+                        title={item.movie.title}
+                      />
+                    }
                   />
                 </li>
               );
@@ -309,7 +525,8 @@ export function LikedMoviesScreen({
         <Pagination
           disabled={isNavigating}
           hasNextPage={meta.hasNextPage}
-          onPageChange={(page) => goTo(page, watched)}
+          label="Paginación de la biblioteca"
+          onPageChange={(page) => goTo(page, watched, search)}
           page={meta.page}
           totalPages={meta.totalPages}
         />

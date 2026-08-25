@@ -8,6 +8,7 @@ export interface MoviePosterCardProps {
   poster: ReactNode;
   presentationSlot?: ReactNode;
   metadataSlot?: ReactNode;
+  expansionSlot?: ReactNode;
   articleLabel?: string;
   actionLabel?: string;
   pressed?: boolean;
@@ -16,12 +17,7 @@ export interface MoviePosterCardProps {
 
 function CheckIcon() {
   return (
-    <svg
-      aria-hidden="true"
-      className="size-4"
-      fill="none"
-      viewBox="0 0 24 24"
-    >
+    <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
       <path
         d="m5 12.5 4.5 4.5L19 7"
         stroke="currentColor"
@@ -39,6 +35,7 @@ export function MoviePosterCard({
   poster,
   presentationSlot,
   metadataSlot,
+  expansionSlot,
   articleLabel,
   actionLabel,
   pressed,
@@ -100,8 +97,17 @@ export function MoviePosterCard({
           </h3>
           {year ? <p className="mt-1 text-sm text-muted">{year}</p> : null}
         </div>
-        {metadataSlot ? <div className="shrink-0">{metadataSlot}</div> : null}
+        {/* Above the click target, which covers the whole tile. A slot meant for
+         * controls is useless if the card's own button swallows every press. */}
+        {metadataSlot ? (
+          <div className="relative z-20 shrink-0">{metadataSlot}</div>
+        ) : null}
       </div>
+      {/* In flow, under the title row: whatever opens here grows the card and
+       * moves the grid down rather than covering the tile below it. */}
+      {expansionSlot ? (
+        <div className="relative z-20">{expansionSlot}</div>
+      ) : null}
       {onSelect ? (
         <button
           aria-label={actionLabel ?? `Ver detalle de ${title}`}

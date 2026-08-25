@@ -13,7 +13,7 @@ export const ReviewVerdictSchema = z.enum(["RECOMMENDED", "NOT_WORTH_IT"]);
 
 export const ReviewTitleSchema = z.string().trim().min(3).max(30);
 
-export const ReviewDescriptionSchema = z.string().trim().min(10).max(400);
+export const ReviewDescriptionSchema = z.string().trim().min(3).max(400);
 
 export const ReviewAuthorSchema = z.object({
   displayName: z.string().min(1).max(80),

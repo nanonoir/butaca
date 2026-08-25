@@ -1,11 +1,22 @@
 import "server-only";
 
-import { and, count, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  exists,
+  isNotNull,
+  isNull,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
 import { PAGE_SIZE } from "../../contracts/common";
 import type { LikesWatchedFilter } from "../../contracts/likes";
 import type { MovieReaction } from "../../contracts/interactions";
 import type { DbExecutor } from "../client";
+import { movieCache } from "../schema/movie-cache";
 import {
   type UserMovieInteractionRecord,
   userMovieInteractions,
@@ -45,9 +56,60 @@ export class UserMovieInteractionRepository {
       .offset((page - 1) * PAGE_SIZE);
   }
 
+  /** Every diacritic Unicode composes, as a character class. Built here rather
+   * than typed into the query: a literal range of combining marks is invisible
+   * in a source file and the next person to touch it cannot see what it says. */
+  private static readonly COMBINING_MARKS = `[${String.fromCharCode(
+    0x300,
+  )}-${String.fromCharCode(0x36f)}]`;
+
+  /** Accents are decoration here, not meaning: somebody typing "pelicula" is
+   * looking for "película". Decomposing to NFD splits an accented letter into
+   * the letter and its mark, and dropping the marks leaves the letter -- which
+   * needs no Postgres extension, unlike `unaccent`, and covers every accent
+   * rather than a hand written list.
+   *
+   * It rules out an index too, which does not matter: this runs against one
+   * viewer's library, a few hundred rows at most. */
+  private unaccented(expression: SQL) {
+    return sql`regexp_replace(normalize(${expression}, NFD), ${UserMovieInteractionRepository.COMBINING_MARKS}, '', 'g')`;
+  }
+
+  /** The library stores movie ids and nothing a person could read, so matching
+   * a title reaches into the cached payload the catalog already wrote for every
+   * movie the viewer has had on screen. Original title counts too: somebody who
+   * types "the" should find "Entrevista con el vampiro". */
+  private titleMatches(term: string) {
+    // ILIKE reads % and _ as wildcards, so a viewer typing one has to get the
+    // character rather than a match on everything.
+    const escaped = term.replace(/[%_\\]/g, (character) => `\\${character}`);
+    const pattern = `%${escaped}%`;
+    const needle = this.unaccented(sql`${pattern}`);
+    const title = this.unaccented(sql`${movieCache.payload} ->> 'title'`);
+    const original = this.unaccented(
+      sql`${movieCache.payload} ->> 'original_title'`,
+    );
+
+    return exists(
+      this.db
+        .select({ matched: sql`1` })
+        .from(movieCache)
+        .where(
+          and(
+            eq(movieCache.movieId, userMovieInteractions.movieId),
+            sql`(${title} ILIKE ${needle} OR ${original} ILIKE ${needle})`,
+          ),
+        ),
+    );
+  }
+
   /** The watched filter is part of the same WHERE as the ownership scope, so a
    * filtered list can never widen past the owner's rows. */
-  private likedWhere(userId: string, watched: LikesWatchedFilter) {
+  private likedWhere(
+    userId: string,
+    watched: LikesWatchedFilter,
+    search?: string,
+  ) {
     const watchedCondition =
       watched === "watched"
         ? isNotNull(userMovieInteractions.watchedAt)
@@ -59,17 +121,19 @@ export class UserMovieInteractionRepository {
       eq(userMovieInteractions.userId, userId),
       eq(userMovieInteractions.reaction, "LIKE"),
       watchedCondition,
+      search ? this.titleMatches(search) : undefined,
     );
   }
 
   async countLikesByUser(
     userId: string,
     watched: LikesWatchedFilter = "all",
+    search?: string,
   ): Promise<number> {
     const [total] = await this.db
       .select({ total: count() })
       .from(userMovieInteractions)
-      .where(this.likedWhere(userId, watched));
+      .where(this.likedWhere(userId, watched, search));
 
     return total?.total ?? 0;
   }
@@ -78,11 +142,12 @@ export class UserMovieInteractionRepository {
     userId: string,
     page = 1,
     watched: LikesWatchedFilter = "all",
+    search?: string,
   ): Promise<UserMovieInteractionRecord[]> {
     return this.db
       .select()
       .from(userMovieInteractions)
-      .where(this.likedWhere(userId, watched))
+      .where(this.likedWhere(userId, watched, search))
       .orderBy(desc(userMovieInteractions.updatedAt))
       .limit(PAGE_SIZE)
       .offset((page - 1) * PAGE_SIZE);

@@ -104,6 +104,19 @@ export class TmdbClient {
     );
   }
 
+  getPopularMovies(input: { page: number }): Promise<TmdbMovieListResponse> {
+    return this.request(
+      "/movie/popular",
+      {
+        language: this.config.language,
+        region: this.config.region,
+        include_adult: this.config.includeAdult,
+        page: input.page,
+      },
+      TmdbMovieListResponseSchema,
+    );
+  }
+
   searchPeople(input: {
     query: string;
     page: number;

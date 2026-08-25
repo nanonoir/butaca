@@ -11,6 +11,10 @@ export const LikesWatchedFilterSchema = z.enum(["all", "watched", "unwatched"]);
 
 export const LikesQuerySchema = PageQuerySchema.extend({
   watched: LikesWatchedFilterSchema.default("all"),
+  /** Matched against the titles of the movies already in the library, not
+   * against the catalog. Trimmed to nothing means no search at all, so an empty
+   * box behaves like the plain list rather than like a query for everything. */
+  search: z.string().trim().min(1).max(80).optional(),
 });
 
 export const LikedMovieItemSchema = z.object({

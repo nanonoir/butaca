@@ -3,7 +3,12 @@ import "server-only";
 import { tool } from "ai";
 import { z } from "zod";
 
-import { RecommendationFiltersSchema, type MovieSummary } from "@/contracts";
+import {
+  ChatMovieSchema,
+  RecommendationFiltersSchema,
+  type ChatMovie,
+  type MovieSummary,
+} from "@/contracts";
 
 import type { RecommendationService } from "../recommendations/recommendation-service";
 
@@ -117,7 +122,7 @@ const RecommendMoviesInputSchema = z.object({
     .describe("Latest release year."),
 });
 
-export type ChatToolMovies = { movies: MovieSummary[] };
+export type ChatToolMovies = { movies: ChatMovie[] };
 
 /** Every name the model supplied, resolved in one round of lookups. A name that
  * matches nothing is dropped rather than failing the call: a viewer who
@@ -195,14 +200,16 @@ export function createChatTools(
           limit: CHAT_RECOMMENDATION_LIMIT,
         });
 
-        // The whole summary travels: the model talks about the movies and the
-        // screen reads the same tool output from the stream to render them, so
-        // there is one payload rather than a side channel that a streamed
-        // response could never deliver.
-        // The batch pairs each movie with why it was picked; the assistant
-        // only needs the movie.
+        // One payload rather than a side channel: the model talks about these
+        // movies and the screen reads the same tool output from the stream to
+        // render them, which a streamed response could not deliver twice.
+        //
+        // Parsed rather than passed through. Everything here is read back by
+        // the model as context, and the synopsis TMDB carries is a paragraph
+        // written by a stranger -- the schema drops it, and parsing is what
+        // makes that true of the bytes and not only of the type.
         return {
-          movies: batch.movies.map(({ movie }) => movie),
+          movies: batch.movies.map(({ movie }) => ChatMovieSchema.parse(movie)),
         } satisfies ChatToolMovies;
       },
     }),

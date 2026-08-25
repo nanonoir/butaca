@@ -1,12 +1,20 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
   fetchGenres: vi.fn(),
+  fetchPopularMovies: vi.fn(),
   fetchSearchMovies: vi.fn(),
   refresh: vi.fn(),
   replace: vi.fn(),
@@ -15,11 +23,22 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: mocks.refresh, replace: mocks.replace }),
 }));
-vi.mock("@/features/onboarding/onboarding-client", () => ({ completeOnboarding: mocks.complete }));
+vi.mock("@/features/onboarding/onboarding-client", () => ({
+  completeOnboarding: mocks.complete,
+}));
 vi.mock("@/features/movies/movie-catalog-client", () => ({
   fetchMovieGenres: mocks.fetchGenres,
+  fetchPopularMovies: mocks.fetchPopularMovies,
   fetchSearchMovies: mocks.fetchSearchMovies,
 }));
+vi.mock("motion/react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("motion/react")>();
+
+  return {
+    ...actual,
+    AnimatePresence: ({ children }: { children: ReactNode }) => children,
+  };
+});
 
 import { OnboardingScreen } from "./onboarding-screen";
 
@@ -44,6 +63,16 @@ describe("OnboardingScreen", () => {
       { id: 28, name: "Action" },
       { id: 12, name: "Adventure" },
     ]);
+    mocks.fetchPopularMovies.mockResolvedValue({
+      data: [],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 0,
+        totalResults: 0,
+        hasNextPage: false,
+      },
+    });
   });
 
   afterEach(cleanup);
@@ -51,61 +80,134 @@ describe("OnboardingScreen", () => {
   it("preserves genre selection while searching and selecting movies", async () => {
     mocks.fetchSearchMovies.mockResolvedValue({
       data: [movie],
-      meta: { page: 1, pageSize: 20, totalPages: 1, totalResults: 1, hasNextPage: false },
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
+        totalResults: 1,
+        hasNextPage: false,
+      },
     });
     render(<OnboardingScreen />);
 
     await screen.findByRole("button", { name: "Action" });
+    expect(screen.getByText("Paso 1 de 2").parentElement).toContainElement(
+      screen.getByRole("button", { name: "Continuar con películas" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Action" }));
     fireEvent.click(screen.getByRole("button", { name: "Adventure" }));
-    fireEvent.click(screen.getByRole("button", { name: "Continuar con películas" }));
-    fireEvent.change(screen.getByLabelText("Buscar películas"), { target: { value: "fight" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continuar con películas" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Abrir buscador de películas" }),
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Buscar películas" }),
+      { target: { value: "fight" } },
+    );
     fireEvent.submit(screen.getByRole("search"));
 
     await screen.findByRole("button", { name: "Seleccionar Fight Club" });
-    fireEvent.click(screen.getByRole("button", { name: "Seleccionar Fight Club" }));
-    expect(screen.getAllByRole("button", { name: "Quitar Fight Club" })).toHaveLength(2);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Seleccionar Fight Club" }),
+    );
+    expect(
+      screen.getAllByRole("button", { name: "Quitar Fight Club" }),
+    ).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Volver a géneros" }));
     expect(screen.getByRole("status")).toHaveTextContent(
       "2 géneros elegidos. Podés sumar hasta 8.",
     );
   });
 
-  it("retries one transient completion failure and keeps selections after exhaustion", async () => {
-    mocks.complete.mockRejectedValue(new (await import("@/lib/api/client")).ApiClientError("INTERNAL_ERROR"));
+  it("prefetches popular movies and restores them after clearing a search", async () => {
+    const searchMovie = { ...movie, id: 680, title: "Pulp Fiction" };
+    mocks.fetchPopularMovies.mockResolvedValue({
+      data: [movie],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
+        totalResults: 1,
+        hasNextPage: false,
+      },
+    });
+    mocks.fetchSearchMovies.mockResolvedValue({
+      data: [searchMovie],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
+        totalResults: 1,
+        hasNextPage: false,
+      },
+    });
     render(<OnboardingScreen />);
+
     await screen.findByRole("button", { name: "Action" });
+    await waitFor(() =>
+      expect(mocks.fetchPopularMovies).toHaveBeenCalledWith(1),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Action" }));
     fireEvent.click(screen.getByRole("button", { name: "Adventure" }));
-    fireEvent.click(screen.getByRole("button", { name: "Continuar con películas" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continuar con películas" }),
+    );
 
-    const movies = [movie, { ...movie, id: 680, title: "Pulp Fiction" }, { ...movie, id: 155, title: "The Dark Knight" }];
-    mocks.fetchSearchMovies.mockResolvedValue({ data: movies, meta: { page: 1, pageSize: 20, totalPages: 1, totalResults: 3, hasNextPage: false } });
-    fireEvent.change(screen.getByLabelText("Buscar películas"), { target: { value: "fight" } });
+    await screen.findByRole("heading", { name: "Películas populares" });
+    expect(screen.getByText("Paso 2 de 2").parentElement).toContainElement(
+      screen.getByRole("button", { name: "Completar perfil" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Seleccionar Fight Club" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Abrir buscador de películas" }),
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Buscar películas" }),
+      { target: { value: "pulp" } },
+    );
     fireEvent.submit(screen.getByRole("search"));
-    await screen.findByRole("button", { name: "Seleccionar Fight Club" });
-    fireEvent.click(screen.getByRole("button", { name: "Seleccionar Fight Club" }));
-    fireEvent.click(screen.getByRole("button", { name: "Seleccionar Pulp Fiction" }));
-    fireEvent.click(screen.getByRole("button", { name: "Seleccionar The Dark Knight" }));
-    fireEvent.click(screen.getByRole("button", { name: "Completar perfil" }));
+    await screen.findByRole("button", { name: "Seleccionar Pulp Fiction" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Seleccionar Pulp Fiction" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Volver a películas populares" }),
+    );
 
-    await waitFor(() => expect(mocks.complete).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole("alert")).toHaveTextContent("Conservamos tus selecciones");
-    expect(screen.getByRole("button", { name: "Reintentar" })).toBeEnabled();
-    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: "Películas populares" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Quitar Pulp Fiction" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("search")).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Abrir buscador de películas" }),
+      ).toHaveFocus(),
+    );
   });
 
-  /** The shell prefetches "/" while onboarding is open, and the proxy answers
-   * that prefetch by sending an unfinished profile straight back here. Replacing
-   * without dropping that cached answer leaves the viewer on this page. */
-  it("drops the cached route before leaving for the home page", async () => {
-    mocks.complete.mockResolvedValue(undefined);
+  it("retries one transient completion failure and keeps selections after exhaustion", async () => {
+    mocks.complete.mockRejectedValue(
+      new (await import("@/lib/api/client")).ApiClientError("INTERNAL_ERROR"),
+    );
     render(<OnboardingScreen />);
     await screen.findByRole("button", { name: "Action" });
     fireEvent.click(screen.getByRole("button", { name: "Action" }));
     fireEvent.click(screen.getByRole("button", { name: "Adventure" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Continuar con películas" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Abrir buscador de películas" }),
     );
 
     const movies = [
@@ -123,13 +225,74 @@ describe("OnboardingScreen", () => {
         hasNextPage: false,
       },
     });
-    fireEvent.change(screen.getByLabelText("Buscar películas"), {
-      target: { value: "fight" },
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Buscar películas" }),
+      { target: { value: "fight" } },
+    );
+    fireEvent.submit(screen.getByRole("search"));
+    await screen.findByRole("button", { name: "Seleccionar Fight Club" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Seleccionar Fight Club" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Seleccionar Pulp Fiction" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Seleccionar The Dark Knight" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Completar perfil" }));
+
+    await waitFor(() => expect(mocks.complete).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Conservamos tus selecciones",
+    );
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeEnabled();
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
+  /** The shell prefetches "/" while onboarding is open, and the proxy answers
+   * that prefetch by sending an unfinished profile straight back here. Replacing
+   * without dropping that cached answer leaves the viewer on this page. */
+  it("drops the cached route before leaving for the home page", async () => {
+    mocks.complete.mockResolvedValue(undefined);
+    render(<OnboardingScreen />);
+    await screen.findByRole("button", { name: "Action" });
+    fireEvent.click(screen.getByRole("button", { name: "Action" }));
+    fireEvent.click(screen.getByRole("button", { name: "Adventure" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continuar con películas" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Abrir buscador de películas" }),
+    );
+
+    const movies = [
+      movie,
+      { ...movie, id: 680, title: "Pulp Fiction" },
+      { ...movie, id: 155, title: "The Dark Knight" },
+    ];
+    mocks.fetchSearchMovies.mockResolvedValue({
+      data: movies,
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
+        totalResults: 3,
+        hasNextPage: false,
+      },
     });
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Buscar películas" }),
+      {
+        target: { value: "fight" },
+      },
+    );
     fireEvent.submit(screen.getByRole("search"));
     await screen.findByRole("button", { name: "Seleccionar Fight Club" });
     for (const title of ["Fight Club", "Pulp Fiction", "The Dark Knight"]) {
-      fireEvent.click(screen.getByRole("button", { name: `Seleccionar ${title}` }));
+      fireEvent.click(
+        screen.getByRole("button", { name: `Seleccionar ${title}` }),
+      );
     }
     fireEvent.click(screen.getByRole("button", { name: "Completar perfil" }));
 
@@ -183,12 +346,20 @@ describe("OnboardingScreen", () => {
         hasNextPage: false,
       },
     });
-    fireEvent.change(screen.getByLabelText("Buscar películas"), {
-      target: { value: "fight" },
-    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Abrir buscador de películas" }),
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Buscar películas" }),
+      {
+        target: { value: "fight" },
+      },
+    );
     fireEvent.submit(screen.getByRole("search"));
     await screen.findByRole("button", { name: "Seleccionar Fight Club" });
-    fireEvent.click(screen.getByRole("button", { name: "Seleccionar Fight Club" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Seleccionar Fight Club" }),
+    );
 
     expect(screen.getByRole("status")).toHaveTextContent(
       "Llevás 1. Elegí 2 más para continuar.",

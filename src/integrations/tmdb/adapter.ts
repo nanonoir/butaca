@@ -283,6 +283,13 @@ export class TmdbAdapter {
     );
   }
 
+  async getPopularMovies(page: number): Promise<PaginatedMovies> {
+    const parsedPage = PageQuerySchema.shape.page.parse(page);
+    const response = await this.client.getPopularMovies({ page: parsedPage });
+
+    return parsePublicResult(PaginatedMoviesSchema, mapMovieList(response));
+  }
+
   async getMovieDetail(movieId: number): Promise<MovieDetail> {
     const cache = this.cache;
 
@@ -323,11 +330,17 @@ export class TmdbAdapter {
     const options = TmdbDiscoverOptionsSchema.parse(input);
     const joinIds = (ids: number[] | undefined) =>
       ids && ids.length > 0 ? ids.join(",") : undefined;
+    /** TMDB reads a comma as "and" and a pipe as "or". Genres and people want
+     * "and" -- a comedy thriller is both. Keywords want "or": they describe
+     * one film from several angles, so a movie carrying every one of them at
+     * once is not a stricter match, it is nothing at all. */
+    const joinAnyId = (ids: number[] | undefined) =>
+      ids && ids.length > 0 ? ids.join("|") : undefined;
     const response = await this.client.discoverMovies({
       page: options.page,
       withGenres: joinIds(options.genreIds),
       withoutGenres: joinIds(options.excludedGenreIds),
-      withKeywords: joinIds(options.keywordIds),
+      withKeywords: joinAnyId(options.keywordIds),
       withCast: joinIds(options.castIds),
       withCrew: joinIds(options.crewIds),
       withOriginalLanguage: options.originalLanguage,

@@ -13,7 +13,9 @@ export interface SearchResults {
 }
 
 interface SearchGridProps {
-  query: string;
+  query?: string;
+  heading?: string;
+  errorMessage?: string;
   results: SearchResults | null;
   isLoading: boolean;
   error: boolean;
@@ -47,6 +49,8 @@ function SearchGridSkeleton() {
 
 export function SearchGrid({
   query,
+  heading,
+  errorMessage = "No pudimos buscar películas. Intentá de nuevo.",
   results,
   isLoading,
   error,
@@ -58,10 +62,11 @@ export function SearchGrid({
 }: SearchGridProps) {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const page = results?.meta.page ?? 1;
+  const headingText = heading ?? `Resultados para “${query ?? ""}”`;
 
   useEffect(() => {
     headingRef.current?.focus();
-  }, [page, query]);
+  }, [headingText, page]);
 
   return (
     <section aria-labelledby="search-results-heading" className="space-y-7">
@@ -73,7 +78,7 @@ export function SearchGrid({
             ref={headingRef}
             tabIndex={-1}
           >
-            Resultados para “{query}”
+            {headingText}
           </h2>
           {results ? (
             <p className="mt-2 text-sm text-muted">
@@ -92,7 +97,7 @@ export function SearchGrid({
       {error ? (
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-surface-muted p-4">
           <p className="text-sm text-foreground" role="alert">
-            No pudimos buscar películas. Intentá de nuevo.
+            {errorMessage}
           </p>
           <Button onClick={onRetry} variant={BUTTON_VARIANT.OUTLINE}>
             Reintentar

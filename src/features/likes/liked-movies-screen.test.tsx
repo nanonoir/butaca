@@ -16,11 +16,17 @@ import type { LikedMovieItem, LikesWatchedFilter } from "@/contracts/likes";
 
 import { LikedMoviesScreen } from "./liked-movies-screen";
 
-const { fetchMovieDetail, fetchMovieReviews, push } = vi.hoisted(() => ({
-  fetchMovieDetail: vi.fn(),
-  fetchMovieReviews: vi.fn(),
-  push: vi.fn(),
-}));
+const { fetchMovieDetail, fetchMovieReviews, push, interactions } = vi.hoisted(
+  () => ({
+    fetchMovieDetail: vi.fn(),
+    fetchMovieReviews: vi.fn(),
+    push: vi.fn(),
+    interactions: {
+      removeMovieReaction: vi.fn().mockResolvedValue(undefined),
+      setMovieWatched: vi.fn().mockResolvedValue(undefined),
+    },
+  }),
+);
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace: vi.fn(), refresh: vi.fn() }),
@@ -38,8 +44,8 @@ vi.mock("@/features/reviews/review-client", () => ({
 
 vi.mock("@/features/interactions/interaction-client", () => ({
   setMovieReaction: vi.fn().mockResolvedValue(undefined),
-  removeMovieReaction: vi.fn().mockResolvedValue(undefined),
-  setMovieWatched: vi.fn().mockResolvedValue(undefined),
+  removeMovieReaction: interactions.removeMovieReaction,
+  setMovieWatched: interactions.setMovieWatched,
 }));
 
 /** The overlay now loads the detail from the API instead of a fixture, so the
@@ -128,11 +134,13 @@ function renderScreen(options?: {
   items?: LikedMovieItem[];
   meta?: Partial<PaginationMeta>;
   watched?: LikesWatchedFilter;
+  search?: string;
 }) {
   return render(
     <LikedMoviesScreen
       items={options?.items ?? ITEMS}
       meta={createMeta(options?.meta)}
+      search={options?.search}
       watched={options?.watched ?? "all"}
     />,
   );
@@ -178,9 +186,9 @@ describe("LikedMoviesScreen", () => {
 
     expect(await openDetail(INTERSTELLAR!)).toBeInTheDocument();
     expect(
-      within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
+      within(screen.getByRole("group", { name: "Tu estado" })).getByRole(
         "button",
-        { name: "Me gusta" },
+        { name: "Quitar me gusta" },
       ),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
@@ -201,7 +209,7 @@ describe("LikedMoviesScreen", () => {
 
     await openDetail(INTERSTELLAR!);
     fireEvent.click(
-      within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
+      within(screen.getByRole("group", { name: "Tu estado" })).getByRole(
         "button",
         { name: "No me gusta" },
       ),
@@ -320,7 +328,9 @@ describe("LikedMoviesScreen paging", () => {
     renderScreen();
 
     expect(
-      screen.queryByRole("navigation", { name: "Paginación de resultados" }),
+      screen.queryByRole("navigation", {
+        name: "Paginación de la biblioteca",
+      }),
     ).not.toBeInTheDocument();
   });
 });
@@ -407,5 +417,307 @@ describe("LikedMoviesScreen posters", () => {
     });
 
     expect(poster.getAttribute("style")).toContain("repeating-linear-gradient");
+  });
+});
+
+describe("LikedMoviesScreen search", () => {
+  function openSearch() {
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Abrir buscador de la biblioteca",
+      }),
+    );
+  }
+
+  /** The library used to drop a panel of its own under the header, built to
+   * look like Descubrir's. It shares Descubrir's control now, so being the
+   * same control is the thing worth pinning rather than the numbers it moves
+   * by -- those cannot drift apart any more. */
+  it("shares Descubrir's field instead of dropping a panel of its own", () => {
+    renderScreen();
+
+    openSearch();
+
+    const field = screen.getByRole("search", {
+      name: "Buscar en mis películas",
+    });
+    expect(field.tagName).toBe("FORM");
+    expect(field).not.toHaveClass("absolute");
+    expect(
+      screen.getByRole("textbox", { name: /Buscar películas/i }),
+    ).toHaveFocus();
+    expect(document.getElementById("liked-search-panel")).toBeNull();
+  });
+
+  it("keeps the box out of the way until it is asked for", () => {
+    renderScreen();
+
+    expect(screen.queryByRole("search")).not.toBeInTheDocument();
+
+    openSearch();
+
+    expect(
+      screen.getByRole("search", { name: "Buscar en mis películas" }),
+    ).toBeInTheDocument();
+  });
+
+  /** A different term is a different library, so it cannot land on an offset
+   * that belonged to the previous one. */
+  it("searches from the first page and keeps the active filter", () => {
+    renderScreen({
+      meta: { page: 4, totalPages: 7, totalResults: 133 },
+      watched: "watched",
+    });
+    openSearch();
+
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /Buscar películas/i }),
+      { target: { value: "  matrix  " } },
+    );
+    fireEvent.submit(screen.getByRole("search"));
+
+    expect(push).toHaveBeenLastCalledWith("/liked?search=matrix&watched=watched");
+  });
+
+  it("opens already showing the term that produced the list", () => {
+    renderScreen({ search: "matrix" });
+
+    expect(
+      screen.getByRole("textbox", { name: /Buscar películas/i }),
+    ).toHaveValue("matrix");
+  });
+
+  it("carries the term into the next page", () => {
+    renderScreen({
+      meta: { page: 1, totalPages: 2, totalResults: 25, hasNextPage: true },
+      search: "matrix",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }));
+
+    expect(push).toHaveBeenLastCalledWith("/liked?search=matrix&page=2");
+  });
+
+  it("drops the term when the search is cleared", () => {
+    renderScreen({ search: "matrix" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver toda la biblioteca" }),
+    );
+
+    expect(push).toHaveBeenLastCalledWith("/liked");
+  });
+
+  it("says which term found nothing", () => {
+    renderScreen({
+      items: [],
+      meta: { totalPages: 0, totalResults: 0 },
+      search: "zzzz",
+    });
+
+    expect(
+      screen.getByRole("heading", {
+        name: 'Nada en tu biblioteca para "zzzz"',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("submits nothing when the box holds only spaces", () => {
+    renderScreen();
+    openSearch();
+
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /Buscar películas/i }),
+      { target: { value: "   " } },
+    );
+    fireEvent.submit(screen.getByRole("search"));
+
+    expect(push).toHaveBeenLastCalledWith("/liked");
+  });
+});
+
+describe("LikedMoviesScreen card menu", () => {
+  function openMenu(title: string) {
+    fireEvent.click(
+      screen.getByRole("button", { name: `Acciones para ${title}` }),
+    );
+  }
+
+  beforeEach(() => {
+    interactions.removeMovieReaction.mockResolvedValue(undefined);
+    interactions.setMovieWatched.mockResolvedValue(undefined);
+  });
+
+  /** The dots used to be a decorative glyph with nothing behind them. */
+  it("keeps the actions folded away until the dots are pressed", () => {
+    renderScreen();
+
+    expect(
+      screen.queryByRole("menuitem", { name: /Quitar de me gusta/ }),
+    ).not.toBeInTheDocument();
+
+    openMenu("Interstellar");
+
+    expect(
+      screen.getByRole("menuitem", { name: /Quitar de me gusta/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: /Ver detalles/ }),
+    ).toBeInTheDocument();
+  });
+
+  /** The card underneath is one big button that opens the detail overlay. */
+  it("does not open the detail when the dots are pressed", () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+
+    expect(fetchMovieDetail).not.toHaveBeenCalled();
+  });
+
+  it("names the watched action after what pressing it would do", () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+    expect(
+      screen.getByRole("menuitem", { name: /Marcar como no vista/ }),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    openMenu("Parásitos");
+    expect(
+      screen.getByRole("menuitem", { name: /Marcar como vista/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("marks a movie watched from the card", async () => {
+    renderScreen();
+
+    openMenu("Parásitos");
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Marcar como vista/ }),
+    );
+
+    await waitFor(() => {
+      expect(interactions.setMovieWatched).toHaveBeenCalledWith(2, true);
+    });
+    const article = screen
+      .getByRole("button", { name: "Ver detalle de Parásitos" })
+      .closest("article")!;
+    expect(within(article).getByText("Vista")).toBeInTheDocument();
+  });
+
+  it("removes a movie from the library from the card", async () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Quitar de me gusta/ }),
+    );
+
+    await waitFor(() => {
+      expect(interactions.removeMovieReaction).toHaveBeenCalledWith(1);
+    });
+    expect(
+      screen.queryByRole("button", { name: "Ver detalle de Interstellar" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("2 películas")).toBeInTheDocument();
+  });
+
+  /** The tile reacts on the press, so a refused write has to put it back. */
+  it("restores the card when the server refuses the removal", async () => {
+    interactions.removeMovieReaction.mockRejectedValue(new Error("down"));
+    renderScreen();
+
+    openMenu("Interstellar");
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Quitar de me gusta/ }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Ver detalle de Interstellar" }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText("3 películas")).toBeInTheDocument();
+  });
+
+  it("opens the detail from the menu", async () => {
+    stubMovieDetail(INTERSTELLAR!);
+    renderScreen();
+
+    openMenu("Interstellar");
+    fireEvent.click(screen.getByRole("menuitem", { name: /Ver detalles/ }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Detalle de Interstellar" }),
+    ).toBeInTheDocument();
+  });
+
+  /** It floated over the tile below at first. Growing the card is the point:
+   * the grid moves down and nothing on it gets covered. */
+  it("unfolds inside the card instead of over the grid", () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+
+    const article = screen
+      .getByRole("button", { name: "Ver detalle de Interstellar" })
+      .closest("article")!;
+    let node: HTMLElement = within(article).getByRole("menu");
+
+    while (node !== article) {
+      expect(node.className).not.toMatch(/absolute/);
+      node = node.parentElement!;
+    }
+  });
+
+  it("keeps a single menu open across the grid", async () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+    openMenu("Parásitos");
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("menu")).toHaveLength(1);
+    });
+    expect(
+      screen.getByRole("menuitem", { name: /Marcar como vista/ }),
+    ).toBeInTheDocument();
+  });
+
+  /** The floating navigation is fixed over the bottom of the screen, so a menu
+   * on the last row would open underneath it. */
+  it("asks to be brought into view once it has unfolded", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+      writable: true,
+    });
+    renderScreen();
+
+    openMenu("Interstellar");
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    });
+
+    delete (HTMLElement.prototype as { scrollIntoView?: unknown })
+      .scrollIntoView;
+  });
+
+  it("folds away on Escape", async () => {
+    renderScreen();
+
+    openMenu("Interstellar");
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    // It leaves with an animation, so it is still there for a frame.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("menuitem", { name: /Ver detalles/ }),
+      ).not.toBeInTheDocument();
+    });
   });
 });

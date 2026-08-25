@@ -103,10 +103,12 @@ describe("listLikedMovies", () => {
       USER_ID,
       2,
       "unwatched",
+      undefined,
     );
     expect(repository.countLikesByUser).toHaveBeenCalledWith(
       USER_ID,
       "unwatched",
+      undefined,
     );
   });
 
@@ -172,5 +174,32 @@ describe("listLikedMovies", () => {
     expect(result.data).toEqual([]);
     expect(result.meta).toMatchObject({ totalPages: 0, hasNextPage: false });
     expect(catalog.getMovieDetail).not.toHaveBeenCalled();
+  });
+
+  /** The library stores movie ids, so matching a title means reaching into the
+   * cached payload the catalog already wrote. */
+  it("hands the search term to both the page and the count", async () => {
+    const repository = createRepository();
+    const catalog = createCatalog();
+    repository.findLikesByUser.mockResolvedValue([]);
+    repository.countLikesByUser.mockResolvedValue(0);
+
+    await new LikesService(repository, catalog).listLikedMovies(USER_ID, {
+      page: 1,
+      watched: "all",
+      search: "matrix",
+    });
+
+    expect(repository.findLikesByUser).toHaveBeenCalledWith(
+      USER_ID,
+      1,
+      "all",
+      "matrix",
+    );
+    expect(repository.countLikesByUser).toHaveBeenCalledWith(
+      USER_ID,
+      "all",
+      "matrix",
+    );
   });
 });

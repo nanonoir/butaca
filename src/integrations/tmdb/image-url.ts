@@ -3,6 +3,9 @@ const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p";
 export const TMDB_IMAGE_SIZE = {
   POSTER: "w780",
   BACKDROP: "w1280",
+  /** Twice the 88px the avatars are drawn at, so they stay sharp on the dense
+   * screens most of this is read on. */
+  PROFILE: "w185",
 } as const;
 
 type TmdbImageSize = (typeof TMDB_IMAGE_SIZE)[keyof typeof TMDB_IMAGE_SIZE];
