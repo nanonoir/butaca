@@ -294,6 +294,96 @@ export class UserMovieInteractionRepository {
     return { liked: totals?.liked ?? 0, watched: totals?.watched ?? 0 };
   }
 
+  /** Only the top billed few of each cast are counted.
+   *
+   * Reading the whole list makes the answer a record of which franchises
+   * somebody watched rather than who they like: Stan Lee cameos in every
+   * Marvel film at an average billing of 43, and Pixar's good luck charm
+   * turns up in all of theirs. Neither is an actor anybody chose. */
+  private static readonly TOP_BILLED_CAST = 3;
+
+  /** One cache row per movie, preferring the language in use. Nearly two
+   * hundred titles are cached under both the old locale and the current one,
+   * and a plain join would count every one of them twice. */
+  private cachedPayload(language: string) {
+    return sql`(
+      select ${movieCache.payload}
+      from ${movieCache}
+      where ${movieCache.movieId} = ${userMovieInteractions.movieId}
+      order by (${movieCache.language} = ${language}) desc
+      limit 1
+    )`;
+  }
+
+  /** Counted over everything the viewer ever liked rather than over a recent
+   * window. A taste in people accumulates slowly -- nobody watches a
+   * filmography in a week -- so a window is exactly the wrong instrument: ten
+   * Tarantinos spread across three years fall outside any of them.
+   *
+   * Aggregated here rather than in the service because the credits are already
+   * in the cached payload. Pulling three hundred movie details one at a time
+   * to count names in them is the reason this used to be capped at twenty. */
+  private async findTopPeople(
+    userId: string,
+    language: string,
+    people: SQL,
+    limit: number,
+  ): Promise<{ id: number; name: string }[]> {
+    const rows = await this.db.execute(sql`
+      select
+        (person ->> 'id')::int as id,
+        person ->> 'name' as name,
+        count(*)::int as appearances
+      from ${userMovieInteractions}
+      cross join lateral (select ${this.cachedPayload(language)} as payload) cached
+      cross join lateral jsonb_array_elements(${people}) person
+      where ${userMovieInteractions.userId} = ${userId}
+        and ${userMovieInteractions.reaction} = 'LIKE'
+        and cached.payload is not null
+      group by 1, 2
+      order by appearances desc, name asc
+      limit ${limit}
+    `);
+
+    return (rows as unknown as { id: number; name: string }[]).map(
+      ({ id, name }) => ({ id, name }),
+    );
+  }
+
+  async findTopCastByUser(
+    userId: string,
+    language: string,
+    limit: number,
+  ): Promise<{ id: number; name: string }[]> {
+    return this.findTopPeople(
+      userId,
+      language,
+      sql`(
+        select coalesce(jsonb_agg(member), '[]'::jsonb)
+        from jsonb_array_elements(cached.payload -> 'credits' -> 'cast') member
+        where (member ->> 'order')::int < ${UserMovieInteractionRepository.TOP_BILLED_CAST}
+      )`,
+      limit,
+    );
+  }
+
+  async findTopDirectorsByUser(
+    userId: string,
+    language: string,
+    limit: number,
+  ): Promise<{ id: number; name: string }[]> {
+    return this.findTopPeople(
+      userId,
+      language,
+      sql`(
+        select coalesce(jsonb_agg(member), '[]'::jsonb)
+        from jsonb_array_elements(cached.payload -> 'credits' -> 'crew') member
+        where member ->> 'job' = 'Director'
+      )`,
+      limit,
+    );
+  }
+
   /** Every movie the viewer already reacted to. Discover excludes them, so it
    * needs the whole set rather than a page of it. */
   async findReactedMovieIds(userId: string): Promise<number[]> {

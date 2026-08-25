@@ -27,7 +27,15 @@ function createMovie(overrides: Partial<MovieDetail> = {}): MovieDetail {
   };
 }
 
-const EMPTY = { preferredGenreIds: [], liked: [], disliked: [] };
+const EMPTY = {
+  preferredGenreIds: [],
+  liked: [],
+  disliked: [],
+  reviewed: [],
+  panned: [],
+  cast: [],
+  crew: [],
+};
 
 describe("buildTasteProfile", () => {
   it("ranks a stated preference above a single like", () => {
@@ -122,11 +130,11 @@ describe("buildTasteProfile", () => {
   it("lets a pattern of likes outweigh what onboarding was told", () => {
     const drama = [{ id: 18, name: "Drama" }];
     const profile = buildTasteProfile({
+      ...EMPTY,
       preferredGenreIds: [27],
       liked: Array.from({ length: 4 }, (_unused, index) =>
         createMovie({ id: index + 1, genres: drama }),
       ),
-      disliked: [],
     });
 
     expect(profile.preferredGenreIds[0]).toBe(18);
@@ -135,6 +143,7 @@ describe("buildTasteProfile", () => {
   it("keeps a genre the viewer both likes and dislikes out of the exclusions", () => {
     const horror = [{ id: 27, name: "Terror" }];
     const profile = buildTasteProfile({
+      ...EMPTY,
       preferredGenreIds: [27],
       liked: [createMovie({ id: 1, genres: horror })],
       disliked: [
@@ -147,35 +156,85 @@ describe("buildTasteProfile", () => {
     expect(profile.preferredGenreIds).toContain(27);
   });
 
-  it("collects keywords, cast and directors only from liked movies", () => {
+  /** A swipe is one gesture; a review is somebody sitting down to write. */
+  it("weighs a reviewed film above a swiped one", () => {
+    const drama = [{ id: 18, name: "Drama" }];
+    const scifi = [{ id: 878, name: "Ciencia ficción" }];
+    const profile = buildTasteProfile({
+      ...EMPTY,
+      liked: [
+        createMovie({ id: 1, genres: scifi }),
+        createMovie({ id: 2, genres: scifi }),
+      ],
+      reviewed: [createMovie({ id: 3, genres: drama })],
+    });
+
+    expect(profile.preferredGenreIds[0]).toBe(18);
+  });
+
+  /** Nobody writes two hundred characters about a film they shrugged at, so a
+   * panned genre has cleared the bar three swipes were standing in for. */
+  it("excludes a genre on a single written pan", () => {
+    const horror = [{ id: 27, name: "Terror" }];
+    const profile = buildTasteProfile({
+      ...EMPTY,
+      panned: [createMovie({ id: 1, genres: horror })],
+    });
+
+    expect(profile.excludedGenreIds).toEqual([27]);
+  });
+
+  /** The ratio still protects a genre somebody keeps choosing. */
+  it("keeps a panned genre the viewer otherwise likes", () => {
+    const horror = [{ id: 27, name: "Terror" }];
+    const profile = buildTasteProfile({
+      ...EMPTY,
+      liked: Array.from({ length: 3 }, (_unused, index) =>
+        createMovie({ id: index + 10, genres: horror }),
+      ),
+      panned: [createMovie({ id: 1, genres: horror })],
+    });
+
+    expect(profile.excludedGenreIds).toEqual([]);
+  });
+
+  it("collects keywords only from liked movies", () => {
+    const profile = buildTasteProfile({
+      ...EMPTY,
+      liked: [
+        createMovie({ id: 1, keywords: [{ id: 100, name: "espacio" }] }),
+      ],
+      disliked: [createMovie({ id: 2, keywords: [{ id: 999, name: "no" }] })],
+    });
+
+    expect(profile.keywordIds).toEqual([100]);
+  });
+
+  /** People are counted over the whole history rather than over the window of
+   * liked movies this function is handed, so they arrive already tallied. A
+   * taste in them accumulates too slowly for any window to see it. */
+  it("takes the people it is given rather than reading them off the window", () => {
     const profile = buildTasteProfile({
       ...EMPTY,
       liked: [
         createMovie({
           id: 1,
-          keywords: [{ id: 100, name: "espacio" }],
           cast: [
             {
-              id: 200,
-              name: "Actriz",
+              id: 999,
+              name: "Ignorada",
               character: "Ella",
               profilePath: null,
               order: 0,
             },
           ],
-          director: { id: 300, name: "Directora", profilePath: null },
+          director: { id: 998, name: "Ignorado", profilePath: null },
         }),
       ],
-      disliked: [
-        createMovie({
-          id: 2,
-          keywords: [{ id: 999, name: "no" }],
-          director: { id: 998, name: "Otro", profilePath: null },
-        }),
-      ],
+      cast: [{ id: 200, name: "Actriz" }],
+      crew: [{ id: 300, name: "Directora" }],
     });
 
-    expect(profile.keywordIds).toEqual([100]);
     expect(profile.cast.map(({ id }) => id)).toEqual([200]);
     expect(profile.crew.map(({ id }) => id)).toEqual([300]);
   });
