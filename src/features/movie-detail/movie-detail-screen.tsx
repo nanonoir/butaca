@@ -808,6 +808,10 @@ export function MovieDetailScreen({
           <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
             <MovieReviews
               editorMode={editorMode}
+              // Walking to a similar movie inside the same overlay brings a
+              // different set of reviews; the page they were on is not a page
+              // of it.
+              key={movie.id}
               myReview={myReview}
               onCloseEditor={() => setEditorMode(null)}
               onDeleteReview={handleDeleteReview}

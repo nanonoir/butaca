@@ -496,6 +496,42 @@ describe("MovieDetailScreen viewer state", () => {
     ).not.toBeInTheDocument();
   });
 
+  /** Nine reviews turned the column into a scroll of its own, with the rest of
+   * the detail stranded above it. */
+  it("shows three reviews at a time and walks to the rest", () => {
+    const publicReviews = Array.from({ length: 7 }, (_, index) => ({
+      ...INITIAL.publicReviews[0]!,
+      id: `review-${index}`,
+      title: `Reseña ${index}`,
+    }));
+    clientMocks.fetchSimilarMovies.mockResolvedValue({
+      data: [],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 0,
+        totalResults: 0,
+        hasNextPage: false,
+      },
+    });
+    render(
+      <MovieDetailScreen
+        createPersistence={() => createPersistence()}
+        onClose={vi.fn()}
+        pageData={INITIAL.pageData}
+        publicReviews={publicReviews}
+      />,
+    );
+
+    expect(screen.getByText("Reseña 2")).toBeInTheDocument();
+    expect(screen.queryByText("Reseña 3")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Página 3" }));
+
+    expect(screen.getByText("Reseña 6")).toBeInTheDocument();
+    expect(screen.queryByText("Reseña 2")).not.toBeInTheDocument();
+  });
+
   /** On one column the page is a sequence, and what other people said about
    * this movie belongs before a list of other movies. Side by side from lg up
    * the order stops meaning anything, so only this one is worth pinning. */

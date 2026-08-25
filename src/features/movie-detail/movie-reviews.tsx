@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
+import { Pagination } from "@/features/movies/components/pagination";
 import {
   UpsertReviewRequestSchema,
   type Review,
@@ -21,6 +22,11 @@ const REVIEW_DATE_FORMATTER = new Intl.DateTimeFormat("es-AR", {
   year: "numeric",
   timeZone: "UTC",
 });
+
+/** Three at a time, like the similar movies. A review is a block of text
+ * rather than a tile, so a dozen of them turn the page into a scroll with the
+ * rest of the detail stranded above it. */
+const REVIEWS_PER_PAGE = 3;
 
 interface MovieReviewsProps {
   summary: ReviewSummary;
@@ -432,6 +438,12 @@ export function MovieReviews({
   onOpenEdit,
   onSaveReview,
 }: MovieReviewsProps) {
+  const [reviewsPage, setReviewsPage] = useState(1);
+  const totalReviewPages = Math.ceil(publicReviews.length / REVIEWS_PER_PAGE);
+  const visibleReviews = publicReviews.slice(
+    (reviewsPage - 1) * REVIEWS_PER_PAGE,
+    reviewsPage * REVIEWS_PER_PAGE,
+  );
   return (
     <div className="space-y-5">
       <CommunitySummary summary={summary} />
@@ -463,7 +475,7 @@ export function MovieReviews({
         </h2>
         <div className="mt-4">
           {publicReviews.length > 0 ? (
-            publicReviews.map((review) => (
+            visibleReviews.map((review) => (
               <ReviewCard key={review.id} review={review} />
             ))
           ) : (
@@ -472,6 +484,16 @@ export function MovieReviews({
             </p>
           )}
         </div>
+        {totalReviewPages > 1 ? (
+          <div className="mt-5">
+            <Pagination
+              hasNextPage={reviewsPage < totalReviewPages}
+              onPageChange={setReviewsPage}
+              page={reviewsPage}
+              totalPages={totalReviewPages}
+            />
+          </div>
+        ) : null}
       </section>
 
       <AnimatePresence>
