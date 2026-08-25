@@ -328,7 +328,9 @@ describe("LikedMoviesScreen paging", () => {
     renderScreen();
 
     expect(
-      screen.queryByRole("navigation", { name: "Paginación de resultados" }),
+      screen.queryByRole("navigation", {
+        name: "Paginación de la biblioteca",
+      }),
     ).not.toBeInTheDocument();
   });
 });

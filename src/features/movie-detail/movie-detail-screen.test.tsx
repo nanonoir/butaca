@@ -526,10 +526,51 @@ describe("MovieDetailScreen viewer state", () => {
     expect(screen.getByText("Reseña 2")).toBeInTheDocument();
     expect(screen.queryByText("Reseña 3")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Página 3" }));
+    const pager = screen.getByRole("navigation", {
+      name: "Paginación de reseñas",
+    });
+    fireEvent.click(within(pager).getByRole("button", { name: "Página 3" }));
 
     expect(screen.getByText("Reseña 6")).toBeInTheDocument();
     expect(screen.queryByText("Reseña 2")).not.toBeInTheDocument();
+  });
+
+  /** Under the list it moved out from under the pointer as the reviews it
+   * swapped resized, and it sat level with the similar movies' own pager. */
+  it("keeps the reviews pager above the reviews it pages", () => {
+    const publicReviews = Array.from({ length: 7 }, (_, index) => ({
+      ...INITIAL.publicReviews[0]!,
+      id: `review-${index}`,
+      title: `Reseña ${index}`,
+    }));
+    clientMocks.fetchSimilarMovies.mockResolvedValue({
+      data: [],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 0,
+        totalResults: 0,
+        hasNextPage: false,
+      },
+    });
+    render(
+      <MovieDetailScreen
+        createPersistence={() => createPersistence()}
+        onClose={vi.fn()}
+        pageData={INITIAL.pageData}
+        publicReviews={publicReviews}
+      />,
+    );
+
+    const pager = screen.getByRole("navigation", {
+      name: "Paginación de reseñas",
+    });
+    const firstReview = screen.getByText("Reseña 0");
+
+    expect(
+      pager.compareDocumentPosition(firstReview) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   /** On one column the page is a sequence, and what other people said about

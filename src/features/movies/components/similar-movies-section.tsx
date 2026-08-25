@@ -231,6 +231,7 @@ export function SimilarMoviesSection({
         <Pagination
           disabled={isLoading || isNavigating}
           hasNextPage={canContinue}
+          label="Paginación de películas similares"
           onPageChange={showSimilarMoviesWindow}
           page={windowPage}
           totalPages={totalWindows}

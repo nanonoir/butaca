@@ -525,6 +525,7 @@ export function LikedMoviesScreen({
         <Pagination
           disabled={isNavigating}
           hasNextPage={meta.hasNextPage}
+          label="Paginación de la biblioteca"
           onPageChange={(page) => goTo(page, watched, search)}
           page={meta.page}
           totalPages={meta.totalPages}
