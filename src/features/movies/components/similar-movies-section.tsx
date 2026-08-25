@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { MovieSummary, PaginationMeta } from "@/contracts";
 import { MovieArtwork } from "@/components/shared/movie-artwork";
-import { StepPagination } from "./step-pagination";
+import { Pagination } from "./pagination";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
 import { fetchSimilarMovies } from "@/features/movies/movie-catalog-client";
@@ -143,21 +143,25 @@ export function SimilarMoviesSection({
   );
   const hasMoreLoaded = windowStart + SIMILAR_WINDOW_SIZE < loadedMovies.length;
   const canContinue = hasMoreLoaded || (results?.meta.hasNextPage ?? false);
-  const canGoBack = windowStart > 0;
   /** Counted in windows of three, not in provider pages: it is the number the
-   * viewer is actually stepping through. No total is shown because TMDB's
-   * count for similar movies is not a meaningful one. */
+   * viewer is actually stepping through. */
   const windowPage = Math.floor(windowStart / SIMILAR_WINDOW_SIZE) + 1;
+  /** Only what is loaded, plus the one more the provider says it has. TMDB's
+   * own count for similar movies is not one to hand a viewer -- it would put
+   * numbered pages on screen that need several round trips to reach. Growing
+   * as the window walks keeps every number one press away. */
+  const totalWindows =
+    Math.ceil(loadedMovies.length / SIMILAR_WINDOW_SIZE) +
+    (results?.meta.hasNextPage ? 1 : 0);
 
-  function showPreviousSimilarMovies() {
-    setWindowStart((start) => Math.max(0, start - SIMILAR_WINDOW_SIZE));
-  }
+  /** Walks the window, pulling the next provider page only once the loaded
+   * ones are exhausted. The one page past what is loaded is the only one that
+   * can ask for a request, since it is the only one offered. */
+  function showSimilarMoviesWindow(page: number) {
+    const start = (page - 1) * SIMILAR_WINDOW_SIZE;
 
-  /** Walks the window forward, pulling the next provider page only once the
-   * loaded ones are exhausted. */
-  function showNextSimilarMovies() {
-    if (hasMoreLoaded) {
-      setWindowStart((start) => start + SIMILAR_WINDOW_SIZE);
+    if (start < loadedMovies.length) {
+      setWindowStart(start);
       return;
     }
 
@@ -224,14 +228,12 @@ export function SimilarMoviesSection({
       ) : null}
 
       {results && loadedMovies.length > 0 ? (
-        <StepPagination
+        <Pagination
           disabled={isLoading || isNavigating}
           hasNextPage={canContinue}
-          hasPreviousPage={canGoBack}
-          label="Paginación de películas similares"
-          onNext={showNextSimilarMovies}
-          onPrevious={showPreviousSimilarMovies}
+          onPageChange={showSimilarMoviesWindow}
           page={windowPage}
+          totalPages={totalWindows}
         />
       ) : null}
     </section>

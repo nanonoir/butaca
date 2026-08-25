@@ -200,7 +200,9 @@ describe("MovieDetailScreen similar movies", () => {
       within(section).getByRole("button", { name: "Ver detalle de Similar 1" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(within(section).getByRole("button", { name: "Página siguiente" }));
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Página siguiente" }),
+    );
 
     await waitFor(() => {
       expect(
@@ -246,15 +248,21 @@ describe("MovieDetailScreen similar movies", () => {
       name: "Películas similares",
     });
 
-    expect(within(section).getByText("Página 1")).toBeInTheDocument();
+    expect(
+      within(section).getByRole("button", { name: "Página 1" }),
+    ).toHaveAttribute("aria-current", "page");
     expect(
       within(section).getByRole("button", { name: "Página anterior" }),
     ).toBeDisabled();
 
-    fireEvent.click(within(section).getByRole("button", { name: "Página siguiente" }));
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Página siguiente" }),
+    );
 
     await waitFor(() => {
-      expect(within(section).getByText("Página 2")).toBeInTheDocument();
+      expect(
+        within(section).getByRole("button", { name: "Página 2" }),
+      ).toHaveAttribute("aria-current", "page");
     });
     expect(
       within(section).getByRole("button", { name: "Página anterior" }),
@@ -264,10 +272,14 @@ describe("MovieDetailScreen similar movies", () => {
       within(section).getByRole("button", { name: "Página siguiente" }),
     ).toBeDisabled();
 
-    fireEvent.click(within(section).getByRole("button", { name: "Página anterior" }));
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Página anterior" }),
+    );
 
     await waitFor(() => {
-      expect(within(section).getByText("Página 1")).toBeInTheDocument();
+      expect(
+        within(section).getByRole("button", { name: "Página 1" }),
+      ).toHaveAttribute("aria-current", "page");
     });
     expect(
       within(section).getByRole("button", { name: "Ver detalle de Similar 1" }),
@@ -441,9 +453,10 @@ describe("MovieDetailScreen viewer state", () => {
     await waitFor(() => {
       expect(persistence.clearReaction).toHaveBeenCalled();
     });
-    expect(
-      screen.getByRole("button", { name: "Me gusta" }),
-    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Me gusta" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("swaps one reaction for the other without clearing in between", async () => {
@@ -456,9 +469,10 @@ describe("MovieDetailScreen viewer state", () => {
       expect(persistence.setReaction).toHaveBeenLastCalledWith("DISLIKE");
     });
     expect(persistence.clearReaction).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("button", { name: "Me gusta" }),
-    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Me gusta" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("keeps the eye answering for itself while a reaction is on", async () => {

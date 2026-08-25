@@ -319,9 +319,7 @@ describe("LikedMoviesScreen paging", () => {
       watched: "watched",
     });
 
-    // Stepping back off page two, which is the only way back to the first one
-    // now that there is no numbered button to jump to it.
-    fireEvent.click(screen.getByRole("button", { name: "Página anterior" }));
+    fireEvent.click(screen.getByRole("button", { name: "Página 1" }));
 
     expect(push).toHaveBeenLastCalledWith("/liked?watched=watched");
   });
@@ -330,9 +328,7 @@ describe("LikedMoviesScreen paging", () => {
     renderScreen();
 
     expect(
-      screen.queryByRole("navigation", {
-        name: "Paginación de la biblioteca",
-      }),
+      screen.queryByRole("navigation", { name: "Paginación de resultados" }),
     ).not.toBeInTheDocument();
   });
 });
@@ -686,6 +682,27 @@ describe("LikedMoviesScreen card menu", () => {
     expect(
       screen.getByRole("menuitem", { name: /Marcar como vista/ }),
     ).toBeInTheDocument();
+  });
+
+  /** The floating navigation is fixed over the bottom of the screen, so a menu
+   * on the last row would open underneath it. */
+  it("asks to be brought into view once it has unfolded", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+      writable: true,
+    });
+    renderScreen();
+
+    openMenu("Interstellar");
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    });
+
+    delete (HTMLElement.prototype as { scrollIntoView?: unknown })
+      .scrollIntoView;
   });
 
   it("folds away on Escape", async () => {

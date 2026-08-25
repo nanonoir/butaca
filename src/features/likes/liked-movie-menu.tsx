@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 export interface LikedMovieMenuAction {
@@ -91,19 +92,33 @@ export function LikedMovieMenuPanel({
   actions,
 }: LikedMovieMenuPanelProps) {
   const shouldReduceMotion = useReducedMotion();
+  const panel = useRef<HTMLDivElement | null>(null);
+
+  /** The floating navigation is fixed over the bottom of every screen, so a
+   * menu opened on the last row would unfold underneath it. Once it has its
+   * height, it asks to be brought into view; the scroll margin below is what
+   * keeps the bar from being counted as somewhere the menu can sit. */
+  function revealPanel() {
+    if (open) {
+      // Optional call: not every environment the tests run in has it.
+      panel.current?.scrollIntoView?.({ block: "nearest" });
+    }
+  }
 
   return (
     <AnimatePresence initial={false}>
       {open ? (
         <motion.div
           animate={{ height: "auto", opacity: 1 }}
-          className="overflow-hidden"
+          className="overflow-hidden scroll-mb-28"
           exit={shouldReduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
           initial={
             shouldReduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }
           }
           key={menuPanelId(movieId)}
+          onAnimationComplete={revealPanel}
           onClick={(event) => event.stopPropagation()}
+          ref={panel}
           transition={{
             duration: shouldReduceMotion ? 0.01 : 0.24,
             ease: [0.23, 1, 0.32, 1],
