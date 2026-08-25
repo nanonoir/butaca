@@ -64,6 +64,18 @@ export class ReviewRepository {
       .offset((page - 1) * PAGE_SIZE);
   }
 
+  /** The viewer's own reviews, newest first, for listing them away from the
+   * movies they belong to. No author join: it is the same person on every row. */
+  async findByUser(userId: string, page = 1): Promise<ReviewRecord[]> {
+    return this.db
+      .select()
+      .from(reviews)
+      .where(eq(reviews.userId, userId))
+      .orderBy(desc(reviews.createdAt))
+      .limit(PAGE_SIZE)
+      .offset((page - 1) * PAGE_SIZE);
+  }
+
   async create(
     userId: string,
     movieId: number,

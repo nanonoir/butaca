@@ -25,6 +25,7 @@ function createMovie(overrides: Partial<MovieSummary> = {}): MovieSummary {
 function createProfile(overrides: Partial<TasteProfile> = {}): TasteProfile {
   return {
     genreWeights: {},
+    genreCounts: { liked: {}, disliked: {} },
     preferredGenreIds: [],
     excludedGenreIds: [],
     keywordIds: [],

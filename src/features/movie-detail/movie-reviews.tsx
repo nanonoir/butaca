@@ -5,6 +5,10 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { Avatar } from "@/components/ui/avatar";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
+import {
+  ReviewVerdictLabel,
+  ThumbIcon,
+} from "@/components/shared/review-verdict";
 import { Pagination } from "@/features/movies/components/pagination";
 import {
   UpsertReviewRequestSchema,
@@ -38,31 +42,6 @@ interface MovieReviewsProps {
   onOpenCreate: () => void;
   onOpenEdit: () => void;
   onSaveReview: (review: UpsertReviewRequest) => void;
-}
-
-function ThumbIcon({
-  className,
-  direction = "up",
-}: {
-  className?: string;
-  direction?: "up" | "down";
-}) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={`${className ?? ""} ${direction === "down" ? "rotate-180" : ""}`}
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <path
-        d="M7.7 10.1 11.4 4c.5-.8 1.7-.5 1.7.5v4.3h4.8c1.2 0 2.1 1.1 1.8 2.3l-1.4 6.1c-.2.8-.9 1.4-1.8 1.4H7.7m0-8.5v8.5H4.9a.9.9 0 0 1-.9-.9V11c0-.5.4-.9.9-.9h2.8Z"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.7"
-      />
-    </svg>
-  );
 }
 
 function PencilIcon({ className }: { className?: string }) {
@@ -115,19 +94,6 @@ function formatReviewDate(value: string) {
   return REVIEW_DATE_FORMATTER.format(new Date(value));
 }
 
-function Verdict({ verdict }: { verdict: ReviewVerdict }) {
-  const recommended = verdict === "RECOMMENDED";
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 text-xs font-medium ${recommended ? "text-primary" : "text-muted"}`}
-    >
-      <ThumbIcon className="size-3.5" direction={recommended ? "up" : "down"} />
-      {recommended ? "Recomienda" : "No la recomienda"}
-    </span>
-  );
-}
-
 function ReviewCard({ review }: { review: Review }) {
   return (
     <article
@@ -147,7 +113,7 @@ function ReviewCard({ review }: { review: Review }) {
             <h3 className="font-display text-base font-semibold text-foreground">
               {review.author.displayName}
             </h3>
-            <Verdict verdict={review.verdict} />
+            <ReviewVerdictLabel verdict={review.verdict} />
           </div>
         </div>
         <time
@@ -233,7 +199,7 @@ function OwnReview({
         Tu reseña
       </p>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <Verdict verdict={review.verdict} />
+        <ReviewVerdictLabel verdict={review.verdict} />
         <div className="flex items-center gap-1">
           <Button
             aria-label="Editar"
