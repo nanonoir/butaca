@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { MovieSummary, PaginationMeta } from "@/contracts";
 import { MovieArtwork } from "@/components/shared/movie-artwork";
+import { StepPagination } from "./step-pagination";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
 import { fetchSimilarMovies } from "@/features/movies/movie-catalog-client";
@@ -223,25 +224,15 @@ export function SimilarMoviesSection({
       ) : null}
 
       {results && loadedMovies.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            disabled={!canGoBack || isLoading || isNavigating}
-            onClick={showPreviousSimilarMovies}
-            variant={BUTTON_VARIANT.OUTLINE}
-          >
-            Atrás
-          </Button>
-          <p aria-live="polite" className="text-sm text-muted">
-            Página {windowPage}
-          </p>
-          <Button
-            disabled={!canContinue || isLoading || isNavigating}
-            onClick={showNextSimilarMovies}
-            variant={BUTTON_VARIANT.OUTLINE}
-          >
-            Continuar
-          </Button>
-        </div>
+        <StepPagination
+          disabled={isLoading || isNavigating}
+          hasNextPage={canContinue}
+          hasPreviousPage={canGoBack}
+          label="Paginación de películas similares"
+          onNext={showNextSimilarMovies}
+          onPrevious={showPreviousSimilarMovies}
+          page={windowPage}
+        />
       ) : null}
     </section>
   );

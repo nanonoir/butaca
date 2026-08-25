@@ -319,7 +319,9 @@ describe("LikedMoviesScreen paging", () => {
       watched: "watched",
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Página 1" }));
+    // Stepping back off page two, which is the only way back to the first one
+    // now that there is no numbered button to jump to it.
+    fireEvent.click(screen.getByRole("button", { name: "Página anterior" }));
 
     expect(push).toHaveBeenLastCalledWith("/liked?watched=watched");
   });
@@ -328,7 +330,9 @@ describe("LikedMoviesScreen paging", () => {
     renderScreen();
 
     expect(
-      screen.queryByRole("navigation", { name: "Paginación de resultados" }),
+      screen.queryByRole("navigation", {
+        name: "Paginación de la biblioteca",
+      }),
     ).not.toBeInTheDocument();
   });
 });

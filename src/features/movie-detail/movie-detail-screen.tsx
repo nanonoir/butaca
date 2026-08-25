@@ -739,24 +739,33 @@ export function MovieDetailScreen({
               </section>
             ) : null}
 
+          </div>
+
+          {/* Second in the source, so on one column it reads right after the
+            * cast: what other people said about this movie comes before a list
+            * of other movies. Placed back beside them from lg up, where both
+            * columns are visible at once and order stops meaning sequence. */}
+          <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+            <MovieReviews
+              editorMode={editorMode}
+              myReview={myReview}
+              onCloseEditor={() => setEditorMode(null)}
+              onDeleteReview={handleDeleteReview}
+              onOpenCreate={() => setEditorMode("create")}
+              onOpenEdit={() => setEditorMode("edit")}
+              onSaveReview={handleSaveReview}
+              publicReviews={activeDetail.publicReviews}
+              summary={reviewSummary}
+            />
+          </div>
+
+          <div className="min-w-0 lg:col-start-1 lg:row-start-2">
             <SimilarMoviesSection
               key={movie.id}
               movieId={movie.id}
               onSelectMovie={handleSelectSimilarMovie}
             />
           </div>
-
-          <MovieReviews
-            editorMode={editorMode}
-            myReview={myReview}
-            onCloseEditor={() => setEditorMode(null)}
-            onDeleteReview={handleDeleteReview}
-            onOpenCreate={() => setEditorMode("create")}
-            onOpenEdit={() => setEditorMode("edit")}
-            onSaveReview={handleSaveReview}
-            publicReviews={activeDetail.publicReviews}
-            summary={reviewSummary}
-          />
         </div>
       </div>
 

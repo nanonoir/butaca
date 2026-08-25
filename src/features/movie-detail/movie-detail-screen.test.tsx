@@ -200,7 +200,7 @@ describe("MovieDetailScreen similar movies", () => {
       within(section).getByRole("button", { name: "Ver detalle de Similar 1" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(within(section).getByRole("button", { name: "Continuar" }));
+    fireEvent.click(within(section).getByRole("button", { name: "Página siguiente" }));
 
     await waitFor(() => {
       expect(
@@ -248,23 +248,23 @@ describe("MovieDetailScreen similar movies", () => {
 
     expect(within(section).getByText("Página 1")).toBeInTheDocument();
     expect(
-      within(section).getByRole("button", { name: "Atrás" }),
+      within(section).getByRole("button", { name: "Página anterior" }),
     ).toBeDisabled();
 
-    fireEvent.click(within(section).getByRole("button", { name: "Continuar" }));
+    fireEvent.click(within(section).getByRole("button", { name: "Página siguiente" }));
 
     await waitFor(() => {
       expect(within(section).getByText("Página 2")).toBeInTheDocument();
     });
     expect(
-      within(section).getByRole("button", { name: "Atrás" }),
+      within(section).getByRole("button", { name: "Página anterior" }),
     ).toBeEnabled();
     // Nothing left after the second window, so continuing is offered no more.
     expect(
-      within(section).getByRole("button", { name: "Continuar" }),
+      within(section).getByRole("button", { name: "Página siguiente" }),
     ).toBeDisabled();
 
-    fireEvent.click(within(section).getByRole("button", { name: "Atrás" }));
+    fireEvent.click(within(section).getByRole("button", { name: "Página anterior" }));
 
     await waitFor(() => {
       expect(within(section).getByText("Página 1")).toBeInTheDocument();
@@ -286,8 +286,8 @@ describe("MovieDetailScreen similar movies", () => {
       />,
     );
 
-    await screen.findByRole("button", { name: "Continuar" });
-    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("button", { name: "Página siguiente" });
+    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }));
 
     await waitFor(() => {
       expect(clientMocks.fetchSimilarMovies).toHaveBeenLastCalledWith(
@@ -407,6 +407,23 @@ describe("MovieDetailScreen viewer state", () => {
         .getAllByRole("button")
         .map((button) => button.getAttribute("aria-label")),
     ).toEqual(["Me gusta", "No me gusta", "Marcar vista"]);
+  });
+
+  /** On one column the page is a sequence, and what other people said about
+   * this movie belongs before a list of other movies. Side by side from lg up
+   * the order stops meaning anything, so only this one is worth pinning. */
+  it("puts the reviews before the similar movies in reading order", () => {
+    renderDetail();
+
+    const reviews = screen.getByRole("heading", { name: "La comunidad" });
+    const similar = screen.getByRole("heading", {
+      name: "Películas similares",
+    });
+
+    expect(
+      reviews.compareDocumentPosition(similar) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   /** The separate "Quitar reacción" button is gone: each control undoes

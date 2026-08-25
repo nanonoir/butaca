@@ -28,7 +28,7 @@ import type { Review } from "@/contracts/reviews";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
 import { fetchMovieReviews } from "@/features/reviews/review-client";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
-import { Pagination } from "@/features/movies/components/pagination";
+import { StepPagination } from "@/features/movies/components/step-pagination";
 
 const FILTER_OPTIONS: readonly {
   value: LikesWatchedFilter;
@@ -522,13 +522,20 @@ export function LikedMoviesScreen({
           </ul>
         )}
 
-        <Pagination
-          disabled={isNavigating}
-          hasNextPage={meta.hasNextPage}
-          onPageChange={(page) => goTo(page, watched, search)}
-          page={meta.page}
-          totalPages={meta.totalPages}
-        />
+        {/* The same control the similar movies use. A row of numbered pages
+          * spent its width on jumps almost nobody makes, and spent the most of
+          * it on the narrow screens least able to give it. */}
+        {meta.totalPages > 1 ? (
+          <StepPagination
+            disabled={isNavigating}
+            hasNextPage={meta.hasNextPage}
+            hasPreviousPage={meta.page > 1}
+            label="Paginación de la biblioteca"
+            onNext={() => goTo(meta.page + 1, watched, search)}
+            onPrevious={() => goTo(meta.page - 1, watched, search)}
+            page={meta.page}
+          />
+        ) : null}
       </section>
 
       <AnimatePresence>
