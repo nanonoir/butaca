@@ -181,7 +181,7 @@ describe("LikedMoviesPage", () => {
     render(await renderPage({ search: "matrix" }));
 
     expect(
-      screen.getByRole("textbox", { name: /Buscar en mis películas/i }),
+      screen.getByRole("textbox", { name: /Buscar películas/i }),
     ).toHaveValue("matrix");
   });
 });

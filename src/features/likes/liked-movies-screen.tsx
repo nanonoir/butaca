@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 
 import type { PaginationMeta } from "@/contracts/common";
 import type { LikedMovieItem, LikesWatchedFilter } from "@/contracts/likes";
@@ -12,7 +12,7 @@ import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { InlineMovieSearch } from "@/features/movies/components/inline-movie-search";
 import {
   removeMovieReaction,
   setMovieWatched,
@@ -68,49 +68,6 @@ interface LikedMoviesScreenProps {
   meta: PaginationMeta;
   watched: LikesWatchedFilter;
   search?: string;
-}
-
-function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <circle
-        cx="10.75"
-        cy="10.75"
-        r="5.75"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
-      <path
-        d="m15.5 15.5 3.5 3.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.8"
-      />
-    </svg>
-  );
-}
-
-function CrossIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <path
-        d="m6.5 6.5 11 11m0-11-11 11"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.8"
-      />
-    </svg>
-  );
 }
 
 function EyeIcon() {
@@ -245,7 +202,6 @@ export function LikedMoviesScreen({
   search,
 }: LikedMoviesScreenProps) {
   const router = useRouter();
-  const shouldReduceMotion = useReducedMotion();
   const [isNavigating, startNavigation] = useTransition();
   // Open when a search is already running, so a reload or a shared link lands
   // on the box that produced what is on screen rather than hiding it.
@@ -324,9 +280,14 @@ export function LikedMoviesScreen({
     goTo(1, watched, term || undefined);
   }
 
+  /** Closing the field clears it, so this also runs with no search behind it.
+   * Navigating then would reload the page the viewer is already reading. */
   function clearSearch() {
     setDraft("");
-    goTo(1, watched, undefined);
+
+    if (search) {
+      goTo(1, watched, undefined);
+    }
   }
 
   /** The overlay loads on demand: the list only carries a summary per movie,
@@ -412,25 +373,25 @@ export function LikedMoviesScreen({
   return (
     <div className="mx-auto flex w-full max-w-[90rem] flex-col gap-8 py-4 md:py-8">
       <PageHeader
-        eyebrow="Tu biblioteca"
-        title="Mis películas"
         action={
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              aria-controls="liked-search-panel"
-              aria-expanded={searchOpen}
-              aria-label={
-                searchOpen
-                  ? "Cerrar buscador de la biblioteca"
-                  : "Abrir buscador de la biblioteca"
-              }
-              className="rounded-full border-primary/25 bg-primary/5 px-4 text-primary hover:border-primary/45 hover:bg-primary/10 aria-expanded:border-primary/45 aria-expanded:bg-primary/15"
-              onClick={() => setSearchOpen((open) => !open)}
-              variant={BUTTON_VARIANT.OUTLINE}
-            >
-              <SearchIcon className="size-4" />
-              Buscar
-            </Button>
+          <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+            <InlineMovieSearch
+              clearLabel="Ver toda la biblioteca"
+              draft={draft}
+              helperText="Busca solamente entre las películas que ya guardaste."
+              inputId="liked-search-input"
+              isLoading={isNavigating}
+              isOpen={searchOpen}
+              layoutId="liked-search-control"
+              onClear={clearSearch}
+              onDraftChange={setDraft}
+              onOpenChange={setSearchOpen}
+              onSubmit={submitSearch}
+              searchAriaLabel="Buscar en mis películas"
+              submittedQuery={search ?? null}
+              triggerId="liked-search-trigger"
+              triggerLabel="Abrir buscador de la biblioteca"
+            />
             <p
               aria-live="polite"
               className="font-mono text-xs tracking-[0.08em] text-muted"
@@ -442,94 +403,9 @@ export function LikedMoviesScreen({
             </p>
           </div>
         }
+        eyebrow="Tu biblioteca"
+        title="Mis películas"
       />
-
-      {/* The same unfolding as Discover's, down to the numbers. The two are the
-       * same control on two screens and had no business moving differently. */}
-      <AnimatePresence initial={false} mode="popLayout">
-        {searchOpen ? (
-          <motion.div
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="rounded-xl border border-border bg-surface-elevated/75 p-4 shadow-floating backdrop-blur-sm"
-            exit={
-              shouldReduceMotion
-                ? { opacity: 0 }
-                : { opacity: 0, scale: 0.99, y: -8 }
-            }
-            id="liked-search-panel"
-            initial={
-              shouldReduceMotion
-                ? { opacity: 0 }
-                : { opacity: 0, scale: 0.985, y: -12 }
-            }
-            key="liked-search-panel"
-            transition={{
-              duration: shouldReduceMotion ? 0.01 : 0.3,
-              ease: [0.23, 1, 0.32, 1],
-            }}
-          >
-            <form
-              aria-label="Búsqueda en la biblioteca"
-              onSubmit={(event) => {
-                event.preventDefault();
-                submitSearch();
-              }}
-              role="search"
-            >
-              <div className="mb-3 flex items-center justify-between gap-4">
-                <label
-                  className="text-sm font-semibold text-foreground"
-                  htmlFor="liked-search-input"
-                >
-                  Buscar en mis películas
-                </label>
-                <Button
-                  aria-label="Cerrar búsqueda"
-                  className="rounded-full text-muted hover:text-foreground"
-                  onClick={() => setSearchOpen(false)}
-                  variant={BUTTON_VARIANT.ICON}
-                >
-                  <CrossIcon className="size-5" />
-                </Button>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                <Input
-                  aria-describedby="liked-search-helper"
-                  autoFocus
-                  id="liked-search-input"
-                  maxLength={80}
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Escribí un título"
-                  value={draft}
-                />
-                <Button
-                  className="w-full sm:w-auto sm:min-w-28"
-                  disabled={isNavigating}
-                  type="submit"
-                >
-                  <SearchIcon className="size-4" />
-                  Buscar
-                </Button>
-              </div>
-
-              <div className="mt-2 flex min-h-8 flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-muted" id="liked-search-helper">
-                  Busca solamente entre las películas que ya guardaste.
-                </p>
-                {search ? (
-                  <Button
-                    onClick={clearSearch}
-                    variant={BUTTON_VARIANT.OUTLINE}
-                  >
-                    Limpiar búsqueda
-                  </Button>
-                ) : null}
-              </div>
-            </form>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
 
       <section aria-labelledby="liked-movies-title" className="space-y-7">
         <h2 id="liked-movies-title" className="sr-only">

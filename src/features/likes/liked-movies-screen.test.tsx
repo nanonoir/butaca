@@ -427,6 +427,26 @@ describe("LikedMoviesScreen search", () => {
     );
   }
 
+  /** The library used to drop a panel of its own under the header, built to
+   * look like Descubrir's. It shares Descubrir's control now, so being the
+   * same control is the thing worth pinning rather than the numbers it moves
+   * by -- those cannot drift apart any more. */
+  it("shares Descubrir's field instead of dropping a panel of its own", () => {
+    renderScreen();
+
+    openSearch();
+
+    const field = screen.getByRole("search", {
+      name: "Buscar en mis películas",
+    });
+    expect(field.tagName).toBe("FORM");
+    expect(field).not.toHaveClass("absolute");
+    expect(
+      screen.getByRole("textbox", { name: /Buscar películas/i }),
+    ).toHaveFocus();
+    expect(document.getElementById("liked-search-panel")).toBeNull();
+  });
+
   it("keeps the box out of the way until it is asked for", () => {
     renderScreen();
 
@@ -435,7 +455,7 @@ describe("LikedMoviesScreen search", () => {
     openSearch();
 
     expect(
-      screen.getByRole("search", { name: "Búsqueda en la biblioteca" }),
+      screen.getByRole("search", { name: "Buscar en mis películas" }),
     ).toBeInTheDocument();
   });
 
@@ -449,7 +469,7 @@ describe("LikedMoviesScreen search", () => {
     openSearch();
 
     fireEvent.change(
-      screen.getByRole("textbox", { name: /Buscar en mis películas/i }),
+      screen.getByRole("textbox", { name: /Buscar películas/i }),
       { target: { value: "  matrix  " } },
     );
     fireEvent.submit(screen.getByRole("search"));
@@ -461,7 +481,7 @@ describe("LikedMoviesScreen search", () => {
     renderScreen({ search: "matrix" });
 
     expect(
-      screen.getByRole("textbox", { name: /Buscar en mis películas/i }),
+      screen.getByRole("textbox", { name: /Buscar películas/i }),
     ).toHaveValue("matrix");
   });
 
@@ -479,7 +499,9 @@ describe("LikedMoviesScreen search", () => {
   it("drops the term when the search is cleared", () => {
     renderScreen({ search: "matrix" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Limpiar búsqueda" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver toda la biblioteca" }),
+    );
 
     expect(push).toHaveBeenLastCalledWith("/liked");
   });
@@ -503,7 +525,7 @@ describe("LikedMoviesScreen search", () => {
     openSearch();
 
     fireEvent.change(
-      screen.getByRole("textbox", { name: /Buscar en mis películas/i }),
+      screen.getByRole("textbox", { name: /Buscar películas/i }),
       { target: { value: "   " } },
     );
     fireEvent.submit(screen.getByRole("search"));
