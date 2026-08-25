@@ -2,19 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-const clientMocks = vi.hoisted(() => ({
-  fetchMovieDetail: vi.fn(),
-  fetchMovieReviews: vi.fn(),
-}));
-
-vi.mock("@/features/movie-detail/movie-detail-client", () => ({
-  fetchMovieDetail: clientMocks.fetchMovieDetail,
-}));
-vi.mock("@/features/reviews/review-client", () => ({
-  fetchMovieReviews: clientMocks.fetchMovieReviews,
-}));
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { MyReview } from "@/contracts/profile";
 
@@ -101,52 +89,13 @@ describe("ProfileReviews", () => {
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
   });
 
-  /** The movie is where a review can be edited, so that is where a card goes. */
-  it("opens the movie a review was written about", async () => {
-    clientMocks.fetchMovieDetail.mockResolvedValue({
-      movie: {
-        id: 601,
-        title: "Película 1",
-        originalTitle: "Movie 1",
-        overview: "",
-        posterPath: null,
-        backdropPath: null,
-        genres: [{ id: 18, name: "Drama" }],
-        releaseDate: "2001-01-01",
-        originalLanguage: "en",
-        runtime: 100,
-        tmdbRating: 7.5,
-        tmdbVoteCount: 1000,
-        director: null,
-        cast: [],
-        keywords: [],
-        trailer: null,
-      },
-      viewerState: { reaction: null, watchedAt: null },
-      myReview: null,
-      reviewSummary: {
-        recommended: 0,
-        notWorthIt: 0,
-        total: 0,
-        recommendationRate: null,
-      },
-    });
-    clientMocks.fetchMovieReviews.mockResolvedValue({
-      data: [],
-      meta: {
-        page: 1,
-        pageSize: 20,
-        totalPages: 0,
-        totalResults: 0,
-        hasNextPage: false,
-      },
-    });
+  /** The movie is where a review can be edited, so that is where a card goes
+   * -- and it has an address now, so the card is a link to it. */
+  it("points a review at the film it was written about", () => {
     render(<ProfileReviews reviews={[createReview(1)]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Ver Película 1" }));
-
     expect(
-      await screen.findByRole("dialog", { name: "Detalle de Película 1" }),
-    ).toBeInTheDocument();
+      screen.getByRole("link", { name: "Ver Película 1" }),
+    ).toHaveAttribute("href", "/movies/601/pelicula-1");
   });
 });

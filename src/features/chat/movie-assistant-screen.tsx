@@ -10,7 +10,6 @@ import {
   type ChatTurn,
   type ChatUiMessage,
 } from "./chat-turns";
-import { AnimatePresence } from "motion/react";
 
 import {
   BUTI_ACTIVITY,
@@ -19,14 +18,10 @@ import {
 } from "@/components/shared/buti-mascot";
 import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { MoviePosterCard } from "@/components/shared/movie-poster-card";
+import { movieDetailPath } from "@/features/movie-detail/movie-slug";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ChatMovie } from "@/contracts/chat";
-import type { MovieDetailPageData } from "@/contracts/movie-detail";
-import type { Review } from "@/contracts/reviews";
-import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
-import { fetchMovieReviews } from "@/features/reviews/review-client";
-import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
 
 const SUGGESTED_PROMPTS = [
   "Algo para reírme",
@@ -136,20 +131,14 @@ function InitialPromptState({
   );
 }
 
-function RecommendationCard({
-  movie,
-  onSelect,
-}: {
-  movie: ChatMovie;
-  onSelect: () => void;
-}) {
+function RecommendationCard({ movie }: { movie: ChatMovie }) {
   const year = movie.releaseDate?.slice(0, 4);
 
   return (
     <MoviePosterCard
       actionLabel={`Ver detalle de ${movie.title}`}
       articleLabel={`Recomendación: ${movie.title}`}
-      onSelect={onSelect}
+      href={movieDetailPath(movie.id, movie.title)}
       poster={<MovieArtwork className="size-full" movie={movie} />}
       presentationSlot={
         <span className="inline-flex items-center gap-1 rounded-full bg-background/90 px-2.5 py-1.5 font-mono text-[0.625rem] text-primary shadow-floating backdrop-blur-sm">
@@ -163,13 +152,7 @@ function RecommendationCard({
   );
 }
 
-function Conversation({
-  turns,
-  onMovieSelect,
-}: {
-  turns: ChatTurn[];
-  onMovieSelect: (movie: ChatMovie) => void;
-}) {
+function Conversation({ turns }: { turns: ChatTurn[] }) {
   return (
     <section aria-label="Conversación" className="w-full">
       <ol className="space-y-12">
@@ -215,10 +198,7 @@ function Conversation({
                             className="min-w-0"
                             key={`${turn.id}-${movie.id}`}
                           >
-                            <RecommendationCard
-                              movie={movie}
-                              onSelect={() => onMovieSelect(movie)}
-                            />
+                            <RecommendationCard movie={movie} />
                           </li>
                         ))}
                       </ul>
@@ -301,35 +281,6 @@ export function MovieAssistantScreen() {
     (count, turn) => count + 1 + (turn.assistant ? 1 : 0),
     0,
   );
-  const [detailExperience, setDetailExperience] = useState<{
-    pageData: MovieDetailPageData;
-    publicReviews: Review[];
-  } | null>(null);
-
-  /** Loaded on demand: the tool hands back a summary, while the detail and its
-   * community reviews are their own endpoints. */
-  /** Only the id is used: the overlay fetches the full detail from the API,
-   * which is why the chat payload never needed to carry a synopsis. */
-  async function openMovieDetail(movie: ChatMovie): Promise<void> {
-    setDetailExperience(null);
-
-    try {
-      const [pageData, reviews] = await Promise.all([
-        fetchMovieDetail(movie.id),
-        fetchMovieReviews(movie.id),
-      ]);
-
-      setDetailExperience({ pageData, publicReviews: reviews.data });
-    } catch {
-      // The overlay simply does not open; the conversation stays usable.
-      setDetailExperience(null);
-    }
-  }
-
-  function closeMovieDetail(): void {
-    setDetailExperience(null);
-  }
-
   useEffect(() => {
     if (messageCount === 0) {
       return;
@@ -377,11 +328,7 @@ export function MovieAssistantScreen() {
 
   return (
     <div className="-mx-4 -mb-24 -mt-5 flex min-h-[calc(100dvh-1rem)] flex-col md:-mx-8 md:-my-8">
-      <div
-        aria-hidden={detailExperience ? true : undefined}
-        className="flex h-[calc(100dvh-1rem)] min-h-0 flex-col overflow-hidden"
-        inert={detailExperience ? true : undefined}
-      >
+      <div className="flex h-[calc(100dvh-1rem)] min-h-0 flex-col overflow-hidden">
         <AssistantHeader />
 
         <div
@@ -393,10 +340,7 @@ export function MovieAssistantScreen() {
             {turns.length === 0 ? (
               <InitialPromptState onPromptSelect={submitPrompt} />
             ) : (
-              <Conversation
-                onMovieSelect={(movie) => void openMovieDetail(movie)}
-                turns={turns}
-              />
+              <Conversation turns={turns} />
             )}
 
             {error ? (
@@ -416,17 +360,6 @@ export function MovieAssistantScreen() {
           onSubmit={() => submitPrompt(draft)}
         />
       </div>
-
-      <AnimatePresence>
-        {detailExperience ? (
-          <MovieDetailScreen
-            key={detailExperience.pageData.movie.id}
-            onClose={closeMovieDetail}
-            pageData={detailExperience.pageData}
-            publicReviews={detailExperience.publicReviews}
-          />
-        ) : null}
-      </AnimatePresence>
     </div>
   );
 }

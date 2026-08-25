@@ -1,20 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-const clientMocks = vi.hoisted(() => ({
-  fetchMovieDetail: vi.fn(),
-  fetchMovieReviews: vi.fn(),
-}));
-
-vi.mock("@/features/movie-detail/movie-detail-client", () => ({
-  fetchMovieDetail: clientMocks.fetchMovieDetail,
-}));
-vi.mock("@/features/reviews/review-client", () => ({
-  fetchMovieReviews: clientMocks.fetchMovieReviews,
-}));
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { LikedMovieItem } from "@/contracts/likes";
 
@@ -66,51 +54,13 @@ describe("ProfileRecentLikes", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
-  it("opens the movie behind a poster", async () => {
-    clientMocks.fetchMovieDetail.mockResolvedValue({
-      movie: {
-        id: 700,
-        title: "Película 0",
-        originalTitle: "Movie 0",
-        overview: "",
-        posterPath: null,
-        backdropPath: null,
-        genres: [{ id: 18, name: "Drama" }],
-        releaseDate: "2001-01-01",
-        originalLanguage: "en",
-        runtime: 100,
-        tmdbRating: 7.5,
-        tmdbVoteCount: 1000,
-        director: null,
-        cast: [],
-        keywords: [],
-        trailer: null,
-      },
-      viewerState: { reaction: null, watchedAt: null },
-      myReview: null,
-      reviewSummary: {
-        recommended: 0,
-        notWorthIt: 0,
-        total: 0,
-        recommendationRate: null,
-      },
-    });
-    clientMocks.fetchMovieReviews.mockResolvedValue({
-      data: [],
-      meta: {
-        page: 1,
-        pageSize: 20,
-        totalPages: 0,
-        totalResults: 0,
-        hasNextPage: false,
-      },
-    });
+  /** The detail has an address now, so a poster is a link: it opens in a new
+   * tab, and the middle mouse button works without anybody thinking about it. */
+  it("points each poster at the film's own address", () => {
     render(<ProfileRecentLikes items={[createItem(0)]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Ver Película 0" }));
-
     expect(
-      await screen.findByRole("dialog", { name: "Detalle de Película 0" }),
-    ).toBeInTheDocument();
+      screen.getByRole("link", { name: "Ver Película 0" }),
+    ).toHaveAttribute("href", "/movies/700/pelicula-0");
   });
 });

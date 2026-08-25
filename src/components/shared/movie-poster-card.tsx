@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 
 import { cn } from "@/lib/utils";
 
@@ -12,6 +13,12 @@ export interface MoviePosterCardProps {
   articleLabel?: string;
   actionLabel?: string;
   pressed?: boolean;
+  /** Where the tile goes, when it goes somewhere with an address. Given one it
+   * is a link, so opening in a new tab and the middle mouse button work
+   * without anybody having to think about it. `onSelect` stays for the tiles
+   * that pick rather than navigate -- onboarding chooses films, it does not
+   * open them. */
+  href?: string;
   onSelect?: () => void;
 }
 
@@ -39,8 +46,11 @@ export function MoviePosterCard({
   articleLabel,
   actionLabel,
   pressed,
+  href,
   onSelect,
 }: MoviePosterCardProps) {
+  const targetClassName =
+    "absolute inset-0 z-10 cursor-pointer rounded-lg bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
   return (
     <article
       aria-label={articleLabel}
@@ -108,13 +118,19 @@ export function MoviePosterCard({
       {expansionSlot ? (
         <div className="relative z-20">{expansionSlot}</div>
       ) : null}
-      {onSelect ? (
+      {/* Nothing is painted on the target: the frame reacts instead, so the
+       * title and year stay legible while the pointer is over the card. */}
+      {href ? (
+        <Link
+          aria-label={actionLabel ?? `Ver detalle de ${title}`}
+          className={targetClassName}
+          href={href}
+        />
+      ) : onSelect ? (
         <button
           aria-label={actionLabel ?? `Ver detalle de ${title}`}
           aria-pressed={pressed}
-          // Nothing is painted here any more: the frame reacts instead, so the
-          // title and year stay legible while the pointer is over the card.
-          className="absolute inset-0 z-10 cursor-pointer rounded-lg bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          className={targetClassName}
           onClick={onSelect}
           type="button"
         />
