@@ -12,6 +12,12 @@ const PREFERRED_GENRE_WEIGHT = 2;
  * most recent likes was a drama. */
 const LIKED_GENRE_WEIGHT = 1;
 const DISLIKED_GENRE_WEIGHT = -1;
+/** A swipe is one gesture; a review is somebody sitting down to write about a
+ * film. Weighing them the same throws away the strongest thing anybody here
+ * ever says about a movie. Written the other way it is stronger still: nobody
+ * spends two hundred characters explaining a film they merely shrugged at. */
+const REVIEWED_GENRE_WEIGHT = 3;
+const PANNED_GENRE_WEIGHT = -3;
 
 /** Exclusion is a pattern, not a sum. A genre has to have been turned down
  * repeatedly *and* clearly more often than it was chosen. A scalar threshold
@@ -59,8 +65,18 @@ export type TasteProfile = {
 
 export type TasteProfileInput = {
   preferredGenreIds: number[];
+  /** Reactions on movies the viewer did not review. A review replaces the
+   * reaction on the same film rather than adding to it: both are one opinion,
+   * and counting them twice pays the same gesture over again. */
   liked: MovieDetail[];
   disliked: MovieDetail[];
+  reviewed: MovieDetail[];
+  panned: MovieDetail[];
+  /** Counted over the whole history rather than derived from `liked`, which is
+   * a recent window. A taste in people accumulates too slowly for a window to
+   * see it, so it arrives already tallied. */
+  cast: TastePerson[];
+  crew: TastePerson[];
 };
 
 /** `order` exists because integer-like object keys iterate in ascending numeric
@@ -94,31 +110,6 @@ function topByFrequency(ids: number[], limit: number): number[] {
     .map(([id]) => id);
 }
 
-function topPeopleByFrequency(
-  people: TastePerson[],
-  limit: number,
-): TastePerson[] {
-  const counts = new Map<number, { person: TastePerson; count: number }>();
-
-  for (const person of people) {
-    const entry = counts.get(person.id);
-
-    if (entry) {
-      entry.count += 1;
-      continue;
-    }
-
-    counts.set(person.id, { person, count: 1 });
-  }
-
-  return [...counts.values()]
-    .sort(
-      (left, right) =>
-        right.count - left.count || left.person.id - right.person.id,
-    )
-    .slice(0, limit)
-    .map(({ person }) => person);
-}
 
 /** Content-based only: the profile is built from what this viewer stated and
  * reacted to, never from what other viewers did. */
@@ -149,6 +140,24 @@ export function buildTasteProfile(input: TasteProfileInput): TasteProfile {
     }
   }
 
+  for (const movie of input.reviewed) {
+    for (const genre of movie.genres) {
+      addWeight(genreWeights, genreOrder, genre.id, REVIEWED_GENRE_WEIGHT);
+      likedCount[genre.id] = (likedCount[genre.id] ?? 0) + 1;
+    }
+  }
+
+  // A panned film counts for the exclusion as much as it weighs. Somebody who
+  // wrote out why a film was not worth it has cleared the bar that three
+  // shrugged-off swipes were standing in for.
+  for (const movie of input.panned) {
+    for (const genre of movie.genres) {
+      addWeight(genreWeights, genreOrder, genre.id, PANNED_GENRE_WEIGHT);
+      dislikedCount[genre.id] =
+        (dislikedCount[genre.id] ?? 0) + MIN_DISLIKES_TO_EXCLUDE;
+    }
+  }
+
   /** Turned down repeatedly, and clearly more often than it was chosen. A genre
    * somebody keeps liking is a genre they like, whatever the arithmetic of a
    * dislike spraying across the three genres every movie carries. */
@@ -175,20 +184,8 @@ export function buildTasteProfile(input: TasteProfileInput): TasteProfile {
       input.liked.flatMap((movie) => movie.keywords.map(({ id }) => id)),
       MAX_KEYWORDS,
     ),
-    cast: topPeopleByFrequency(
-      input.liked.flatMap((movie) =>
-        movie.cast.map(({ id, name }) => ({ id, name })),
-      ),
-      MAX_PEOPLE,
-    ),
-    crew: topPeopleByFrequency(
-      input.liked.flatMap((movie) =>
-        movie.director
-          ? [{ id: movie.director.id, name: movie.director.name }]
-          : [],
-      ),
-      MAX_PEOPLE,
-    ),
+    cast: input.cast.slice(0, MAX_PEOPLE),
+    crew: input.crew.slice(0, MAX_PEOPLE),
     // Newest first, so the head is the most recent like and the tail is still
     // recent enough to be worth asking about.
     //

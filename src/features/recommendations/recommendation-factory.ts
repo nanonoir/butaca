@@ -2,6 +2,7 @@ import "server-only";
 
 import { getDatabase } from "../../db";
 import {
+  ReviewRepository,
   UserMovieInteractionRepository,
   UserPreferencesRepository,
 } from "../../db/repositories";
@@ -16,5 +17,6 @@ export function getRecommendationService(): RecommendationService {
     new UserPreferencesRepository(database),
     new UserMovieInteractionRepository(database),
     getTmdb(),
+    new ReviewRepository(database),
   );
 }
