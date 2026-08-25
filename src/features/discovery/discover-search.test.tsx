@@ -38,7 +38,6 @@ vi.mock("motion/react", async (importOriginal) => {
 });
 
 import { DISCOVER_MOVIES_FIXTURE } from "@/fixtures/discover-movies";
-import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
 
 import { DiscoverScreen } from "./discover-screen";
 
@@ -197,59 +196,26 @@ describe("DiscoverScreen search", () => {
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
 
-    await screen.findByRole("button", { name: "Ver detalle de Dune" });
+    await screen.findByRole("link", { name: "Ver detalle de Dune" });
     expect(screen.queryByTestId("movie-stack-column")).not.toBeInTheDocument();
     expect(clientMocks.fetchSearchMovies).toHaveBeenCalledTimes(3);
   });
 
-  it("opens real detail data, restores focus, and clears back to Discover", async () => {
+  /** A search result is a film in a list, so it is a link to that film. It
+   * used to fetch the detail into this screen's state and throw it over the
+   * results, which meant no address for anything anybody found. */
+  it("sends a result to the film's own address", async () => {
     clientMocks.fetchSearchMovies.mockResolvedValue(createResults());
-    const detail = getMovieDetailExperienceFixture(MOVIES[0].movie);
-    clientMocks.fetchMovieDetail.mockResolvedValue(detail.pageData);
-    clientMocks.fetchMovieReviews.mockResolvedValue({
-      data: detail.publicReviews,
-      meta: {
-        page: 1,
-        pageSize: 20,
-        totalPages: 1,
-        totalResults: 0,
-        hasNextPage: false,
-      },
-    });
     render(<DiscoverScreen movies={MOVIES} />);
 
-    fireEvent.change(openSearch(), {
-      target: { value: "dune" },
-    });
+    fireEvent.change(openSearch(), { target: { value: "dune" } });
     fireEvent.submit(screen.getByRole("search"));
     await screen.findByRole("heading", { name: "Resultados para “dune”" });
 
-    const trigger = screen.getByRole("button", {
-      name: "Ver detalle de Dune",
-    });
-    trigger.focus();
-    fireEvent.click(trigger);
-    await screen.findByRole("dialog", { name: "Detalle de Dune" });
-    expect(clientMocks.fetchMovieDetail).toHaveBeenCalledWith(
-      MOVIES[0].movie.id,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Cerrar detalle" }));
-    await waitFor(() => expect(trigger).toHaveFocus());
     expect(
-      screen.getByRole("heading", { name: "Resultados para “dune”" }),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Volver a descubrir" }));
-    expect(screen.getByTestId("movie-stack-column")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.queryByRole("search")).not.toBeInTheDocument(),
-    );
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Abrir buscador de películas" }),
-      ).toHaveFocus(),
-    );
+      screen.getByRole("link", { name: "Ver detalle de Dune" }),
+    ).toHaveAttribute("href", `/movies/${MOVIES[0].movie.id}/dune`);
+    expect(clientMocks.fetchMovieDetail).not.toHaveBeenCalled();
   });
 
   it("closes an active search and restores the swipe", async () => {

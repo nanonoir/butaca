@@ -17,10 +17,10 @@ import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
 import type { MovieReaction, ViewerMovieState } from "@/contracts/interactions";
 import type { RecommendedMovie } from "@/contracts/discover";
 import type { MovieSummary } from "@/contracts/movies";
-import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
 import { InlineMovieSearch } from "@/features/movies/components/inline-movie-search";
+import { movieDetailPath } from "@/features/movie-detail/movie-slug";
 import { SearchGrid } from "@/features/movies/components/search-grid";
 import { fetchSearchMovies } from "@/features/movies/movie-catalog-client";
 import { useMovieSearch } from "@/features/movies/hooks/use-movie-search";
@@ -425,20 +425,20 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   const [exhausted, setExhausted] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [searchActive, setSearchActive] = useState(false);
-  const [detailMovie, setDetailMovie] = useState<MovieSummary | null>(null);
+  /** The card in front of somebody, opened for a closer look. It used to be
+   * the summary padded with nulls -- no director, no cast, no trailer -- which
+   * is exactly what "Más información" promises and did not deliver. */
+  const [deckDetail, setDeckDetail] = useState<SearchDetailExperience | null>(
+    null,
+  );
   const movieSearch = useMovieSearch(fetchSearchMovies);
-  const [searchDetail, setSearchDetail] =
-    useState<SearchDetailExperience | null>(null);
   const [exitReaction, setExitReaction] = useState<MovieReaction | null>(null);
   const [lastAction, setLastAction] = useState("");
   const assistantTrigger = useRef<HTMLButtonElement | null>(null);
-  const searchDetailTrigger = useRef<HTMLElement | null>(null);
   const current = deck[currentIndex];
   const currentMovie = current?.movie;
   const nextMovie = deck[currentIndex + 1]?.movie;
-  const detailExperience = detailMovie
-    ? getMovieDetailExperienceFixture(detailMovie)
-    : null;
+  const detailExperience = deckDetail;
   useEffect(() => {
     if (!assistantOpen) {
       assistantTrigger.current?.focus();
@@ -486,6 +486,20 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
       });
   }, [currentIndex, deck, exhausted]);
 
+  /** Moves the deck on. Split out because a reaction can arrive already saved
+   * -- from the detail -- and re-sending it is a second write for one gesture. */
+  function advanceDeck(reaction: MovieReaction) {
+    if (!currentMovie) {
+      return;
+    }
+
+    setExitReaction(reaction);
+    setLastAction(
+      `${currentMovie.title}: ${reaction === SWIPE_INTENT.LIKE ? "Me gusta" : "Paso"}`,
+    );
+    setCurrentIndex((index) => index + 1);
+  }
+
   function handleReaction(reaction: MovieReaction) {
     if (!currentMovie) {
       return;
@@ -515,36 +529,35 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
     movieSearch.retry();
   }
 
-  function openSearchDetail(movie: MovieSummary) {
-    searchDetailTrigger.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-
+  /** The card in front of somebody stays an overlay on purpose: "Más
+   * información" discloses what is already there rather than navigating to it,
+   * and the deck is a queue being worked through. Sending somebody to an
+   * address and back would leave the card they just decided on still at the
+   * front of it. Everything that is a list links instead. */
+  function openDeckDetail(movie: MovieSummary) {
     void Promise.all([
       fetchMovieDetail(movie.id),
       fetchMovieReviews(movie.id),
     ]).then(
       ([pageData, reviews]) => {
-        setSearchDetail({ pageData, publicReviews: reviews.data });
+        setDeckDetail({ pageData, publicReviews: reviews.data });
       },
       () => {
-        // Search detail errors are intentionally kept local to the existing
-        // search presentation instead of discarding search state.
+        // A failed lookup leaves the deck exactly as it was rather than
+        // throwing an empty overlay over it.
       },
     );
   }
 
-  function handleSearchDetailClose() {
-    setSearchDetail(null);
-    queueMicrotask(() => searchDetailTrigger.current?.focus());
-  }
-
   function handleDetailClose(viewerState: ViewerMovieState) {
-    setDetailMovie(null);
+    const reactedMovieId = deckDetail?.pageData.movie.id;
+    setDeckDetail(null);
 
-    if (viewerState.reaction !== null && detailMovie?.id === currentMovie?.id) {
-      handleReaction(viewerState.reaction);
+    // The detail already saved it. Advancing used to go through the swipe
+    // handler, which wrote the same reaction a second time and announced a
+    // swipe nobody made.
+    if (viewerState.reaction !== null && reactedMovieId === currentMovie?.id) {
+      advanceDeck(viewerState.reaction);
     }
   }
 
@@ -557,13 +570,9 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   return (
     <div className="discover-screen relative mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-7 py-2 md:gap-8 md:py-4">
       <div
-        aria-hidden={
-          detailExperience || searchDetail || assistantOpen ? true : undefined
-        }
+        aria-hidden={detailExperience || assistantOpen ? true : undefined}
         className="contents"
-        inert={
-          detailExperience || searchDetail || assistantOpen ? true : undefined
-        }
+        inert={detailExperience || assistantOpen ? true : undefined}
       >
         <div className="discover-header relative z-30 shrink-0">
           <PageHeader
@@ -607,7 +616,8 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
               isLoading={movieSearch.isLoading}
               onPageChange={handleSearchPageChange}
               onRetry={retrySearch}
-              onSelectMovie={openSearchDetail}
+              movieHref={(movie) => movieDetailPath(movie.id, movie.title)}
+              onSelectMovie={() => undefined}
               query={movieSearch.submittedQuery}
               results={movieSearch.results}
             />
@@ -642,7 +652,7 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
                         key={currentMovie.id}
                         exitReaction={exitReaction}
                         movie={currentMovie}
-                        onOpenDetail={() => setDetailMovie(currentMovie)}
+                        onOpenDetail={() => openDeckDetail(currentMovie)}
                         onReact={handleReaction}
                       />
                     </AnimatePresence>
@@ -668,7 +678,7 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
 
                   <ReactionControls
                     movie={currentMovie}
-                    onOpenDetail={() => setDetailMovie(currentMovie)}
+                    onOpenDetail={() => openDeckDetail(currentMovie)}
                     onReact={handleReaction}
                   />
                 </>
@@ -713,17 +723,6 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
             onClose={handleDetailClose}
             pageData={detailExperience.pageData}
             publicReviews={detailExperience.publicReviews}
-          />
-        ) : null}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {searchDetail ? (
-          <MovieDetailScreen
-            key={searchDetail.pageData.movie.id}
-            onClose={handleSearchDetailClose}
-            pageData={searchDetail.pageData}
-            publicReviews={searchDetail.publicReviews}
           />
         ) : null}
       </AnimatePresence>
