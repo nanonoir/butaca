@@ -186,9 +186,9 @@ describe("LikedMoviesScreen", () => {
 
     expect(await openDetail(INTERSTELLAR!)).toBeInTheDocument();
     expect(
-      within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
+      within(screen.getByRole("group", { name: "Tu estado" })).getByRole(
         "button",
-        { name: "Me gusta" },
+        { name: "Quitar me gusta" },
       ),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
@@ -209,7 +209,7 @@ describe("LikedMoviesScreen", () => {
 
     await openDetail(INTERSTELLAR!);
     fireEvent.click(
-      within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
+      within(screen.getByRole("group", { name: "Tu estado" })).getByRole(
         "button",
         { name: "No me gusta" },
       ),

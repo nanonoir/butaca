@@ -320,7 +320,7 @@ describe("MovieDetailScreen similar movies", () => {
     await screen.findByRole("alert");
     expect(screen.getByText("Sinopsis")).toBeInTheDocument();
     expect(
-      screen.getByRole("group", { name: "Tu reacción" }),
+      screen.getByRole("group", { name: "Tu estado" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Ver trailer" }),
@@ -354,7 +354,7 @@ describe("MovieDetailScreen similar movies", () => {
     );
 
     fireEvent.click(
-      within(screen.getByRole("group", { name: "Tu reacción" })).getByRole(
+      within(screen.getByRole("group", { name: "Tu estado" })).getByRole(
         "button",
         { name: "Me gusta" },
       ),
@@ -369,5 +369,95 @@ describe("MovieDetailScreen similar movies", () => {
 
     expect(persistence.setReaction).toHaveBeenCalledWith("LIKE");
     expect(onClose).toHaveBeenCalledWith({ reaction: "LIKE", watchedAt: null });
+  });
+});
+
+describe("MovieDetailScreen viewer state", () => {
+  function renderDetail(persistence = createPersistence()) {
+    clientMocks.fetchSimilarMovies.mockResolvedValue({
+      data: [],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 0,
+        totalResults: 0,
+        hasNextPage: false,
+      },
+    });
+    render(
+      <MovieDetailScreen
+        createPersistence={() => persistence}
+        onClose={vi.fn()}
+        pageData={INITIAL.pageData}
+        publicReviews={INITIAL.publicReviews}
+      />,
+    );
+
+    return persistence;
+  }
+
+  /** They used to live in a card under the synopsis, past a scroll. */
+  it("puts the three controls on the artwork, above the synopsis", () => {
+    renderDetail();
+
+    const group = screen.getByRole("group", { name: "Tu estado" });
+    expect(group.closest("header")).not.toBeNull();
+    expect(
+      within(group)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Me gusta", "No me gusta", "Marcar vista"]);
+  });
+
+  /** The separate "Quitar reacción" button is gone: each control undoes
+   * itself, which is the only way an icon on its own can. */
+  it("clears the reaction when the one already on is pressed again", async () => {
+    const persistence = renderDetail();
+
+    fireEvent.click(screen.getByRole("button", { name: "Me gusta" }));
+
+    const liked = screen.getByRole("button", { name: "Quitar me gusta" });
+    expect(liked).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(liked);
+
+    await waitFor(() => {
+      expect(persistence.clearReaction).toHaveBeenCalled();
+    });
+    expect(
+      screen.getByRole("button", { name: "Me gusta" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("swaps one reaction for the other without clearing in between", async () => {
+    const persistence = renderDetail();
+
+    fireEvent.click(screen.getByRole("button", { name: "Me gusta" }));
+    fireEvent.click(screen.getByRole("button", { name: "No me gusta" }));
+
+    await waitFor(() => {
+      expect(persistence.setReaction).toHaveBeenLastCalledWith("DISLIKE");
+    });
+    expect(persistence.clearReaction).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Me gusta" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("keeps the eye answering for itself while a reaction is on", async () => {
+    const persistence = renderDetail();
+
+    fireEvent.click(screen.getByRole("button", { name: "Me gusta" }));
+    fireEvent.click(screen.getByRole("button", { name: "Marcar vista" }));
+
+    await waitFor(() => {
+      expect(persistence.setWatched).toHaveBeenCalledWith(true);
+    });
+    expect(
+      screen.getByRole("button", { name: "Quitar me gusta" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "Marcar no vista" }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 });
