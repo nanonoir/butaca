@@ -16,6 +16,19 @@ const { getCurrentSession, redirect, findByUserId, countInteractions } =
     countInteractions: vi.fn(),
   }));
 
+vi.mock("@/features/profile/profile-taste-factory", () => ({
+  getProfileTasteService: () => ({
+    getTasteSummary: async () => ({
+      hasEnough: false,
+      likedCount: 0,
+      genres: [],
+      avoidedGenres: [],
+      actors: [],
+      directors: [],
+    }),
+  }),
+}));
+
 vi.mock("@/features/profile/profile-likes-factory", () => ({
   getProfileLikesService: () => ({ listRecentLikes: async () => [] }),
 }));

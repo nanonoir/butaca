@@ -38,6 +38,14 @@ function createMyReview(id: string, title: string, movieTitle: string) {
 }
 
 const PROFILE = {
+  taste: {
+    hasEnough: true,
+    likedCount: 12,
+    genres: [{ id: 878, name: "Ciencia ficción" }],
+    avoidedGenres: [{ id: 27, name: "Terror", disliked: 4, liked: 0 }],
+    actors: [{ id: 6193, name: "Leonardo DiCaprio" }],
+    directors: [{ id: 525, name: "Christopher Nolan" }],
+  },
   reviews: [createMyReview("1", "Impecable", "Matrix")],
   recentLikes: [
     {

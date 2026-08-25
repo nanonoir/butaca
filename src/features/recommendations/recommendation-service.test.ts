@@ -737,7 +737,6 @@ describe("getDiscoverBatch rotation", () => {
     );
   }
 
-
   /** The deck used to ask about the first director and the first recent like
    * every time, so every batch named the same two things. */
   it("leans on different signals as the viewer works through the deck", async () => {
@@ -759,7 +758,9 @@ describe("getDiscoverBatch rotation", () => {
     const first = seedsOf(deps.catalog.getMovieRecommendations.mock.calls);
 
     deps.catalog.getMovieRecommendations.mockClear();
-    await service(deps).getDiscoverBatch(USER_ID, { excludeMovieIds: [98, 99] });
+    await service(deps).getDiscoverBatch(USER_ID, {
+      excludeMovieIds: [98, 99],
+    });
     const second = seedsOf(deps.catalog.getMovieRecommendations.mock.calls);
 
     expect(first).not.toEqual(second);

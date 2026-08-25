@@ -38,8 +38,17 @@ export type TasteSeed = { movieId: number; title: string };
  * film until the viewer liked something new. */
 const MAX_SEEDS = 6;
 
+/** How often each genre was chosen and turned down. The weights order the
+ * genres; these say why one of them ended up excluded, which is the only way
+ * that decision can be shown to the person it affects. */
+export type TasteGenreCounts = {
+  liked: Record<number, number>;
+  disliked: Record<number, number>;
+};
+
 export type TasteProfile = {
   genreWeights: Record<number, number>;
+  genreCounts: TasteGenreCounts;
   preferredGenreIds: number[];
   excludedGenreIds: number[];
   keywordIds: number[];
@@ -153,6 +162,7 @@ export function buildTasteProfile(input: TasteProfileInput): TasteProfile {
 
   return {
     genreWeights,
+    genreCounts: { liked: likedCount, disliked: dislikedCount },
     // Sort is stable, so genres of equal weight keep the order the viewer gave
     // them instead of collapsing to whichever id happens to be lowest.
     preferredGenreIds: genreOrder

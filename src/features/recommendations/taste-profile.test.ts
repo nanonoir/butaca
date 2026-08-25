@@ -201,6 +201,7 @@ describe("buildTasteProfile", () => {
   it("returns an empty profile for a viewer with nothing recorded", () => {
     expect(buildTasteProfile(EMPTY)).toEqual({
       genreWeights: {},
+      genreCounts: { liked: {}, disliked: {} },
       preferredGenreIds: [],
       excludedGenreIds: [],
       keywordIds: [],

@@ -6,6 +6,7 @@ export * from "./errors";
 export * from "./interactions";
 export * from "./likes";
 export * from "./profile";
+export * from "./taste";
 export * from "./chat";
 export * from "./movie-detail";
 export * from "./movies";

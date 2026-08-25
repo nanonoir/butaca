@@ -35,6 +35,7 @@ function createMovie(genreIds: number[]): MovieSummary {
 function createProfile(genreWeights: Record<number, number>): TasteProfile {
   return {
     genreWeights,
+    genreCounts: { liked: {}, disliked: {} },
     preferredGenreIds: [],
     excludedGenreIds: [],
     keywordIds: [],
@@ -114,9 +115,9 @@ describe("buildMatchInsight", () => {
   });
 
   it("still cools a mild match carrying a firm dislike", () => {
-    expect(
-      insightAt([878, 35], { 878: 1, 35: -1.5 }, TOP_POSITION).tier,
-    ).toBe(MATCH_TIER.LOW);
+    expect(insightAt([878, 35], { 878: 1, 35: -1.5 }, TOP_POSITION).tier).toBe(
+      MATCH_TIER.LOW,
+    );
   });
 
   it("keeps a clash off the top when it exactly cancels the match", () => {
