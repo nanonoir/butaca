@@ -14,13 +14,13 @@ import {
 import { MovieArtwork } from "@/components/shared/movie-artwork";
 import { PageHeader } from "@/components/shared/page-header";
 import { BUTTON_VARIANT, CONTROL_SIZE, Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type { MovieReaction, ViewerMovieState } from "@/contracts/interactions";
 import type { RecommendedMovie } from "@/contracts/discover";
 import type { MovieSummary } from "@/contracts/movies";
 import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
 import { MovieDetailScreen } from "@/features/movie-detail/movie-detail-screen";
+import { InlineMovieSearch } from "@/features/movies/components/inline-movie-search";
 import { SearchGrid } from "@/features/movies/components/search-grid";
 import { fetchSearchMovies } from "@/features/movies/movie-catalog-client";
 import { useMovieSearch } from "@/features/movies/hooks/use-movie-search";
@@ -83,24 +83,6 @@ const CARD_SPRING = {
   damping: 32,
 } as const;
 
-function CrossIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <path
-        d="m6.5 6.5 11 11m0-11-11 11"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.8"
-      />
-    </svg>
-  );
-}
-
 function HeartIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -162,7 +144,7 @@ function SparkIcon({ className }: { className?: string }) {
   );
 }
 
-function SearchIcon({ className }: { className?: string }) {
+function CrossIcon({ className }: { className?: string }) {
   return (
     <svg
       aria-hidden="true"
@@ -170,15 +152,8 @@ function SearchIcon({ className }: { className?: string }) {
       fill="none"
       viewBox="0 0 24 24"
     >
-      <circle
-        cx="10.75"
-        cy="10.75"
-        r="5.75"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
       <path
-        d="m15 15 4 4"
+        d="m6.5 6.5 11 11m0-11-11 11"
         stroke="currentColor"
         strokeLinecap="round"
         strokeWidth="1.8"
@@ -382,7 +357,7 @@ function ReactionControls({
   return (
     <div
       aria-label="Acciones de la película"
-      className="grid grid-cols-[1fr_auto_1fr] items-start gap-3 sm:gap-6"
+      className="discover-reaction-controls grid grid-cols-[1fr_auto_1fr] items-start gap-3 sm:gap-6"
       role="group"
     >
       <div className="flex flex-col items-center gap-2">
@@ -425,7 +400,7 @@ function ReactionControls({
 
 function EndOfStack({ onRestart }: { onRestart: () => void }) {
   return (
-    <div className="flex aspect-[2/3] h-[min(52svh,38rem)] max-h-[38rem] max-w-full flex-col items-center justify-center rounded-xl border border-border bg-surface-muted px-8 text-center">
+    <div className="flex aspect-[2/3] h-full min-h-0 max-h-[38rem] max-w-full flex-col items-center justify-center rounded-xl border border-border bg-surface-muted px-8 text-center">
       <span className="flex size-12 items-center justify-center rounded-full bg-primary/12 text-primary">
         <SparkIcon className="size-6" />
       </span>
@@ -449,7 +424,7 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   const loadingRef = useRef(false);
   const [exhausted, setExhausted] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchActive, setSearchActive] = useState(false);
   const [detailMovie, setDetailMovie] = useState<MovieSummary | null>(null);
   const movieSearch = useMovieSearch(fetchSearchMovies);
   const [searchDetail, setSearchDetail] =
@@ -457,7 +432,6 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   const [exitReaction, setExitReaction] = useState<MovieReaction | null>(null);
   const [lastAction, setLastAction] = useState("");
   const assistantTrigger = useRef<HTMLButtonElement | null>(null);
-  const searchTrigger = useRef<HTMLButtonElement | null>(null);
   const searchDetailTrigger = useRef<HTMLElement | null>(null);
   const current = deck[currentIndex];
   const currentMovie = current?.movie;
@@ -465,7 +439,6 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   const detailExperience = detailMovie
     ? getMovieDetailExperienceFixture(detailMovie)
     : null;
-
   useEffect(() => {
     if (!assistantOpen) {
       assistantTrigger.current?.focus();
@@ -534,34 +507,8 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
     });
   }
 
-  function handleSearchSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    movieSearch.submit();
-  }
-
   function handleSearchPageChange(page: number) {
     movieSearch.changePage(page);
-  }
-
-  function clearSearch() {
-    movieSearch.clear();
-  }
-
-  function closeSearch() {
-    clearSearch();
-    setSearchOpen(false);
-    queueMicrotask(() => searchTrigger.current?.focus());
-  }
-
-  function toggleSearch(event: React.MouseEvent<HTMLButtonElement>) {
-    searchTrigger.current = event.currentTarget;
-
-    if (searchOpen) {
-      closeSearch();
-      return;
-    }
-
-    setSearchOpen(true);
   }
 
   function retrySearch() {
@@ -608,7 +555,7 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-7 py-2 md:gap-8 md:py-4">
+    <div className="discover-screen relative mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-7 py-2 md:gap-8 md:py-4">
       <div
         aria-hidden={
           detailExperience || searchDetail || assistantOpen ? true : undefined
@@ -618,120 +565,30 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
           detailExperience || searchDetail || assistantOpen ? true : undefined
         }
       >
-        <PageHeader
-          action={
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                aria-controls="discover-search-panel"
-                aria-expanded={searchOpen}
-                aria-label={
-                  searchOpen
-                    ? "Cerrar buscador de películas"
-                    : "Abrir buscador de películas"
-                }
-                className="rounded-full border-primary/25 bg-primary/5 px-4 text-primary hover:border-primary/45 hover:bg-primary/10 aria-expanded:border-primary/45 aria-expanded:bg-primary/15"
-                onClick={toggleSearch}
-                size={CONTROL_SIZE.SM}
-                variant={BUTTON_VARIANT.OUTLINE}
-              >
-                <SearchIcon className="size-4" />
-                Buscar
-              </Button>
-              <span className="inline-flex min-h-9 items-center gap-2 rounded-full bg-primary/10 px-3.5 font-mono text-[0.6875rem] font-semibold text-primary">
-                <SparkIcon className="size-3.5" />
-                Afinado hoy
-              </span>
-            </div>
-          }
-          eyebrow="Para vos"
-          title="Descubrir"
-        />
-
-        <AnimatePresence initial={false} mode="popLayout">
-          {searchOpen ? (
-            <motion.div
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              className="rounded-xl border border-border bg-surface-elevated/75 p-4 shadow-floating backdrop-blur-sm"
-              exit={
-                shouldReduceMotion
-                  ? { opacity: 0 }
-                  : { opacity: 0, scale: 0.99, y: -8 }
-              }
-              id="discover-search-panel"
-              initial={
-                shouldReduceMotion
-                  ? { opacity: 0 }
-                  : { opacity: 0, scale: 0.985, y: -12 }
-              }
-              key="discover-search-panel"
-              transition={{
-                duration: shouldReduceMotion ? 0.01 : 0.3,
-                ease: [0.23, 1, 0.32, 1],
-              }}
-            >
-              <form
-                aria-label="Búsqueda de películas"
-                onSubmit={handleSearchSubmit}
-                role="search"
-              >
-                <div className="mb-3 flex items-center justify-between gap-4">
-                  <label
-                    className="text-sm font-semibold text-foreground"
-                    htmlFor="discover-search-input"
-                  >
-                    Buscar películas
-                  </label>
-                  <Button
-                    aria-label="Cerrar búsqueda"
-                    className="rounded-full text-muted hover:text-foreground"
-                    onClick={closeSearch}
-                    size={CONTROL_SIZE.SM}
-                    variant={BUTTON_VARIANT.ICON}
-                  >
-                    <CrossIcon className="size-5" />
-                  </Button>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                  <Input
-                    aria-describedby="discover-search-helper"
-                    autoFocus
-                    id="discover-search-input"
-                    onChange={(event) =>
-                      movieSearch.setDraft(event.target.value)
-                    }
-                    placeholder="Escribí un título"
-                    value={movieSearch.draft}
-                  />
-                  <Button
-                    className="w-full sm:min-w-28 sm:w-auto"
-                    disabled={movieSearch.isLoading}
-                    type="submit"
-                  >
-                    <SearchIcon className="size-4" />
-                    Buscar
-                  </Button>
-                </div>
-
-                <div className="mt-2 flex min-h-8 flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-muted" id="discover-search-helper">
-                    Buscá por título y presioná Enter para ver resultados.
-                  </p>
-                  {movieSearch.submittedQuery ? (
-                    <Button
-                      onClick={clearSearch}
-                      size={CONTROL_SIZE.SM}
-                      type="button"
-                      variant={BUTTON_VARIANT.GHOST}
-                    >
-                      Limpiar búsqueda
-                    </Button>
-                  ) : null}
-                </div>
-              </form>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
+        <div className="discover-header relative z-30 shrink-0">
+          <PageHeader
+            action={
+              <div className="w-full sm:w-auto">
+                <InlineMovieSearch
+                  clearLabel="Volver a descubrir"
+                  draft={movieSearch.draft}
+                  inputId="discover-search-input"
+                  isLoading={movieSearch.isLoading}
+                  isOpen={searchActive}
+                  layoutId="discover-search-control"
+                  onClear={movieSearch.clear}
+                  onDraftChange={movieSearch.setDraft}
+                  onOpenChange={setSearchActive}
+                  onSubmit={movieSearch.submit}
+                  submittedQuery={movieSearch.submittedQuery}
+                  triggerId="discover-search-trigger"
+                />
+              </div>
+            }
+            eyebrow="Para vos"
+            title="Descubrir"
+          />
+        </div>
 
         <p aria-live="polite" className="sr-only" role="status">
           {lastAction}
@@ -739,8 +596,8 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
 
         {movieSearch.submittedQuery ? (
           <motion.div
+            className="min-h-0 flex-1 overflow-y-auto pr-1"
             layout={shouldReduceMotion ? false : "position"}
-            layoutDependency={searchOpen}
             transition={{
               layout: { duration: 0.3, ease: [0.23, 1, 0.32, 1] },
             }}
@@ -758,9 +615,8 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
         ) : (
           <motion.section
             aria-labelledby="discover-stack-title"
-            className="grid min-h-0 flex-1 items-center gap-8 min-[980px]:grid-cols-[minmax(26rem,34rem)_minmax(15rem,17rem)] min-[1180px]:grid-cols-[13rem_minmax(26rem,34rem)_minmax(15rem,17rem)] min-[1180px]:gap-10"
+            className="grid min-h-0 min-w-0 flex-1 items-stretch gap-8 min-[980px]:grid-cols-[minmax(26rem,34rem)_minmax(15rem,17rem)] min-[1180px]:grid-cols-[13rem_minmax(26rem,34rem)_minmax(15rem,17rem)] min-[1180px]:gap-10"
             layout={shouldReduceMotion ? false : "position"}
-            layoutDependency={searchOpen}
             transition={{
               layout: { duration: 0.3, ease: [0.23, 1, 0.32, 1] },
             }}
@@ -771,13 +627,13 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
             <HowItWorks />
 
             <div
-              className="mx-auto flex w-full max-w-[34rem] flex-col gap-3 min-[980px]:col-start-1 min-[980px]:row-start-1 min-[1180px]:col-start-2"
+              className="discover-stack-column mx-auto grid h-full min-h-0 w-full max-w-[34rem] grid-rows-[minmax(0,1fr)_auto_auto_auto] gap-3 min-[980px]:col-start-1 min-[980px]:row-start-1 min-[1180px]:col-start-2"
               data-testid="movie-stack-column"
             >
               {currentMovie ? (
                 <>
                   <div
-                    className="relative mx-auto aspect-[2/3] h-[min(52svh,38rem)] max-h-[38rem] max-w-full min-[980px]:h-[min(66svh,42rem)] min-[980px]:max-h-[42rem]"
+                    className="relative mx-auto aspect-[2/3] h-full min-h-0 w-auto max-h-[38rem] max-w-full min-[980px]:max-h-[42rem]"
                     data-testid="discover-poster-frame"
                   >
                     {nextMovie ? <NextMovieCard movie={nextMovie} /> : null}
@@ -792,13 +648,15 @@ export function DiscoverScreen({ movies }: DiscoverScreenProps) {
                     </AnimatePresence>
                   </div>
 
-                  <ButiMobileRecommendation
-                    movie={currentMovie}
-                    insight={current!.insight}
-                    onOpenAssistant={openAssistant}
-                  />
+                  <div className="discover-mobile-buti min-[980px]:hidden">
+                    <ButiMobileRecommendation
+                      movie={currentMovie}
+                      insight={current!.insight}
+                      onOpenAssistant={openAssistant}
+                    />
+                  </div>
 
-                  <p className="text-center font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground lg:hidden">
+                  <p className="discover-mobile-hint text-center font-mono text-[0.625rem] tracking-[0.08em] text-muted-foreground lg:hidden">
                     Deslizá la card o usá los controles
                   </p>
                   <div className="hidden justify-center lg:flex">

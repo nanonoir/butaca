@@ -44,8 +44,15 @@ export class OnboardingPage {
   }
 
   async searchAndSelectMinimumMovies(query: string): Promise<void> {
-    await this.movieSearch.getByLabel("Buscar películas").fill(query);
-    await this.movieSearch.getByRole("button", { name: "Buscar" }).click();
+    await this.page
+      .getByRole("button", { name: "Abrir buscador de películas" })
+      .click();
+    await this.movieSearch
+      .getByRole("textbox", { name: "Buscar películas" })
+      .fill(query);
+    await this.movieSearch
+      .getByRole("button", { name: "Buscar películas" })
+      .click();
 
     const movieButtons = this.page.getByRole("button", {
       name: /^Seleccionar /,
