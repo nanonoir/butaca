@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setMovieReaction } from "@/features/interactions/interaction-client";
 import { fetchDiscoverBatch } from "@/features/recommendations/discover-client";
 import { DISCOVER_MOVIES_FIXTURE } from "@/fixtures/discover-movies";
+import { getMovieDetailExperienceFixture } from "@/fixtures/movie-details";
 
 import { DiscoverScreen } from "./discover-screen";
 import { resolveSwipeIntent } from "./resolve-swipe-intent";
@@ -61,17 +62,35 @@ vi.mock("@/features/interactions/interaction-client", () => ({
   setMovieWatched: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@/features/movie-detail/movie-detail-client", () => ({
+  fetchMovieDetail: vi.fn((movieId: number) =>
+    Promise.resolve(
+      getMovieDetailExperienceFixture(
+        DISCOVER_MOVIES_FIXTURE.data.movies.find(
+          ({ movie }) => movie.id === movieId,
+        )!.movie,
+      ).pageData,
+    ),
+  ),
+}));
+
 vi.mock("@/features/reviews/review-client", () => ({
-  fetchMovieReviews: vi.fn().mockResolvedValue({
-    data: [],
-    meta: {
-      page: 1,
-      pageSize: 20,
-      totalPages: 0,
-      totalResults: 0,
-      hasNextPage: false,
-    },
-  }),
+  fetchMovieReviews: vi.fn((movieId: number) =>
+    Promise.resolve({
+      data: getMovieDetailExperienceFixture(
+        DISCOVER_MOVIES_FIXTURE.data.movies.find(
+          ({ movie }) => movie.id === movieId,
+        )!.movie,
+      ).publicReviews,
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
+        totalResults: 0,
+        hasNextPage: false,
+      },
+    }),
+  ),
   upsertMovieReview: vi.fn((_movieId: number, draft: unknown) =>
     Promise.resolve({
       id: "20000000-0000-4000-8000-000000000001",
@@ -567,6 +586,7 @@ describe("DiscoverScreen", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Más información sobre Dune" }),
     );
+    await screen.findByRole("dialog", { name: "Detalle de Dune" });
 
     expect(
       screen.getByRole("dialog", { name: "Detalle de Dune" }),
@@ -603,6 +623,7 @@ describe("DiscoverScreen", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Más información sobre Dune" }),
     );
+    await screen.findByRole("dialog", { name: "Detalle de Dune" });
     fireEvent.click(
       within(screen.getByRole("group", { name: "Tu estado" })).getByRole(
         "button",
@@ -619,12 +640,13 @@ describe("DiscoverScreen", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Dune: Me gusta");
   });
 
-  it("keeps watched state independent from the personal reaction", () => {
+  it("keeps watched state independent from the personal reaction", async () => {
     render(<DiscoverScreen movies={MOVIES} />);
 
     fireEvent.click(
       screen.getByRole("button", { name: "Más información sobre Dune" }),
     );
+    await screen.findByRole("dialog", { name: "Detalle de Dune" });
 
     const reactionGroup = screen.getByRole("group", {
       name: "Tu estado",
@@ -657,6 +679,7 @@ describe("DiscoverScreen", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Más información sobre Dune" }),
     );
+    await screen.findByRole("dialog", { name: "Detalle de Dune" });
     fireEvent.click(screen.getByRole("button", { name: "Ver trailer" }));
 
     expect(
@@ -672,7 +695,7 @@ describe("DiscoverScreen", () => {
     });
   });
 
-  it("hides the trailer action when the movie has no trailer", () => {
+  it("hides the trailer action when the movie has no trailer", async () => {
     render(<DiscoverScreen movies={MOVIES} />);
 
     fireEvent.click(screen.getByRole("button", { name: "No me gusta" }));
@@ -683,7 +706,7 @@ describe("DiscoverScreen", () => {
     );
 
     expect(
-      screen.getByRole("dialog", { name: "Detalle de La llegada" }),
+      await screen.findByRole("dialog", { name: "Detalle de La llegada" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Título original: Arrival")).toBeInTheDocument();
     expect(
@@ -697,6 +720,7 @@ describe("DiscoverScreen", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Más información sobre Dune" }),
     );
+    await screen.findByRole("dialog", { name: "Detalle de Dune" });
     fireEvent.click(screen.getByRole("button", { name: "Escribir reseña" }));
 
     const editor = screen.getByRole("dialog", { name: "Escribir reseña" });

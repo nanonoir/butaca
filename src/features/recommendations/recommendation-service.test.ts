@@ -16,7 +16,10 @@ function createDependencies() {
       findLikesByUser: vi.fn().mockResolvedValue([]),
       findDislikesByUser: vi.fn().mockResolvedValue([]),
       findReactedMovieIds: vi.fn().mockResolvedValue([]),
+      findTopCastByUser: vi.fn().mockResolvedValue([]),
+      findTopDirectorsByUser: vi.fn().mockResolvedValue([]),
     },
+    reviews: { findByUser: vi.fn().mockResolvedValue([]) },
     catalog: {
       getMovieDetail: vi.fn(),
       discoverMovies: vi.fn().mockResolvedValue(paginated([])),
@@ -128,6 +131,7 @@ describe("getDiscoverBatch", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     ).getDiscoverBatch(USER_ID);
 
     expect(batch.batchSize).toBe(10);
@@ -148,6 +152,7 @@ describe("getDiscoverBatch", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     ).getDiscoverBatch(USER_ID);
 
     expect(batch.movies.map(({ movie }) => movie.id)).toEqual([2]);
@@ -165,6 +170,7 @@ describe("getDiscoverBatch", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     ).getDiscoverBatch(USER_ID);
 
     expect(batch.movies).toHaveLength(10);
@@ -181,6 +187,7 @@ describe("getDiscoverBatch", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     ).getDiscoverBatch(USER_ID);
 
     const genreQueries = deps.catalog.discoverMovies.mock.calls
@@ -203,6 +210,7 @@ describe("getDiscoverBatch", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     ).getDiscoverBatch(USER_ID);
 
     expect(batch.movies[0]?.movie.id).toBe(2);
@@ -223,6 +231,7 @@ describe("getDiscoverBatch", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     ).getDiscoverBatch(USER_ID);
 
     expect(batch.movies[0]?.movie.id).toBe(2);
@@ -238,6 +247,7 @@ describe("getDiscoverBatch", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     ).getDiscoverBatch(USER_ID);
 
     expect(deps.catalog.discoverMovies).toHaveBeenCalledTimes(1);
@@ -257,6 +267,7 @@ describe("getDiscoverBatch", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     ).getDiscoverBatch(USER_ID);
 
     expect(batch.movies.map(({ movie }) => movie.id)).toEqual([2]);
@@ -283,6 +294,7 @@ describe("getDiscoverBatch", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     ).getDiscoverBatch(USER_ID);
 
     expect(batch.movies).toHaveLength(1);
@@ -295,6 +307,7 @@ describe("getDiscoverBatch scope", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     );
   }
 
@@ -404,6 +417,7 @@ describe("getDiscoverBatch combined constraints", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     );
   }
 
@@ -496,6 +510,7 @@ describe("getDiscoverBatch with several actors", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     );
   }
 
@@ -549,6 +564,7 @@ describe("getDiscoverBatch and the profile's own defaults", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     );
   }
 
@@ -619,6 +635,7 @@ describe("getDiscoverBatch reasons", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     );
   }
 
@@ -657,6 +674,11 @@ describe("getDiscoverBatch reasons", () => {
 
   it("labels a card that came from the viewer's director", async () => {
     const deps = createDependencies();
+    // Directors come from the whole history now, counted by the repository,
+    // rather than from the window of liked movies.
+    deps.interactions.findTopDirectorsByUser.mockResolvedValue([
+      { id: 525, name: "Christopher Nolan" },
+    ]);
     deps.interactions.findLikesByUser.mockResolvedValue([{ movieId: 27_205 }]);
     deps.catalog.getMovieDetail.mockResolvedValue({
       ...summary(27_205),
@@ -686,6 +708,11 @@ describe("getDiscoverBatch reasons", () => {
    * says more than "it is science fiction". */
   it("keeps the most specific reason when a movie came from two queries", async () => {
     const deps = createDependencies();
+    // Directors come from the whole history now, counted by the repository,
+    // rather than from the window of liked movies.
+    deps.interactions.findTopDirectorsByUser.mockResolvedValue([
+      { id: 525, name: "Christopher Nolan" },
+    ]);
     deps.preferences.findByUserId.mockResolvedValue({
       preferredGenreIds: [878],
     });
@@ -734,9 +761,9 @@ describe("getDiscoverBatch rotation", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     );
   }
-
 
   /** The deck used to ask about the first director and the first recent like
    * every time, so every batch named the same two things. */
@@ -745,6 +772,12 @@ describe("getDiscoverBatch rotation", () => {
     const titles = ["Blade Runner", "Origen", "Alien", "Dunkerque"];
     deps.interactions.findLikesByUser.mockResolvedValue(
       titles.map((_unused, index) => ({ movieId: index + 1 })),
+    );
+    deps.interactions.findTopDirectorsByUser.mockResolvedValue(
+      titles.map((_unused, index) => ({
+        id: index + 1,
+        name: `Director ${index + 1}`,
+      })),
     );
     deps.catalog.getMovieDetail.mockImplementation(async (id: number) =>
       likedMovie(id, titles[id - 1]!, `Director ${id}`),
@@ -759,7 +792,9 @@ describe("getDiscoverBatch rotation", () => {
     const first = seedsOf(deps.catalog.getMovieRecommendations.mock.calls);
 
     deps.catalog.getMovieRecommendations.mockClear();
-    await service(deps).getDiscoverBatch(USER_ID, { excludeMovieIds: [98, 99] });
+    await service(deps).getDiscoverBatch(USER_ID, {
+      excludeMovieIds: [98, 99],
+    });
     const second = seedsOf(deps.catalog.getMovieRecommendations.mock.calls);
 
     expect(first).not.toEqual(second);
@@ -771,6 +806,12 @@ describe("getDiscoverBatch rotation", () => {
     const titles = ["Blade Runner", "Origen", "Alien", "Dunkerque"];
     deps.interactions.findLikesByUser.mockResolvedValue(
       titles.map((_unused, index) => ({ movieId: index + 1 })),
+    );
+    deps.interactions.findTopDirectorsByUser.mockResolvedValue(
+      titles.map((_unused, index) => ({
+        id: index + 1000,
+        name: `Director ${index + 1}`,
+      })),
     );
     deps.catalog.getMovieDetail.mockImplementation(async (id: number) =>
       likedMovie(id, titles[id - 1]!, `Director ${id}`),
@@ -816,6 +857,7 @@ describe("getDiscoverBatch composition", () => {
       deps.preferences,
       deps.interactions,
       deps.catalog,
+      deps.reviews,
     );
   }
 

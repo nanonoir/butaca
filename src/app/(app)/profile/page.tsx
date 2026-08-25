@@ -8,6 +8,9 @@ import {
 } from "@/db/repositories";
 import { getServerAuthService } from "@/features/auth/server-auth-factory";
 import { getProfileInitials } from "@/features/profile/profile-initials";
+import { getProfileLikesService } from "@/features/profile/profile-likes-factory";
+import { getProfileReviewsService } from "@/features/profile/profile-reviews-factory";
+import { getProfileTasteService } from "@/features/profile/profile-taste-factory";
 import { ProfileScreen } from "@/features/profile/profile-screen";
 import { PROFILE_GENRE_OPTIONS_FIXTURE } from "@/fixtures/profile";
 
@@ -22,10 +25,21 @@ export default async function ProfilePage() {
   }
 
   const database = getDatabase();
-  const [preferences, interactions, reviewCount] = await Promise.all([
+  const reviewRepository = new ReviewRepository(database);
+  const [
+    preferences,
+    interactions,
+    reviewCount,
+    myReviews,
+    recentLikes,
+    taste,
+  ] = await Promise.all([
     new UserPreferencesRepository(database).findByUserId(session.user.id),
     new UserMovieInteractionRepository(database).countByUser(session.user.id),
-    new ReviewRepository(database).countByUser(session.user.id),
+    reviewRepository.countByUser(session.user.id),
+    getProfileReviewsService().listMyReviews(session.user.id, 1),
+    getProfileLikesService().listRecentLikes(session.user.id),
+    getProfileTasteService().getTasteSummary(session.user.id),
   ]);
 
   return (
@@ -43,6 +57,9 @@ export default async function ProfilePage() {
           { label: "Vistas", value: interactions.watched, tone: "default" },
           { label: "Reseñas", value: reviewCount, tone: "default" },
         ],
+        reviews: myReviews.data,
+        recentLikes,
+        taste,
       }}
     />
   );

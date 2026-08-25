@@ -11,6 +11,7 @@ import {
 } from "@/contracts";
 
 import type {
+  ReviewRepository,
   UserMovieInteractionRepository,
   UserPreferencesRepository,
 } from "../../db/repositories";
@@ -22,7 +23,8 @@ import type {
 
 import { buildMatchInsight } from "./match-insight";
 import { excludeMovies, rankMovies } from "./ranking";
-import { buildTasteProfile, type TasteProfile } from "./taste-profile";
+import { loadTasteProfile } from "./taste-profile-loader";
+import type { TasteProfile } from "./taste-profile";
 
 /** How many of the profile's strongest genres get their own candidate query.
  * TMDB treats a comma separated `with_genres` as AND, so asking for five
@@ -55,15 +57,17 @@ const SIGNALS_PER_BATCH = 2;
  * before ranking even starts. */
 const MIN_CANDIDATE_VOTE_COUNT = 200;
 
-/** Interactions are read one page deep: recent taste is what should drive the
- * next batch, and it also caps how many detail lookups a request performs. */
-const PROFILE_INTERACTION_PAGE = 1;
-
 type PreferencesPort = Pick<UserPreferencesRepository, "findByUserId">;
+
+type ReviewsPort = Pick<ReviewRepository, "findByUser">;
 
 type InteractionsPort = Pick<
   UserMovieInteractionRepository,
-  "findLikesByUser" | "findDislikesByUser" | "findReactedMovieIds"
+  | "findLikesByUser"
+  | "findDislikesByUser"
+  | "findReactedMovieIds"
+  | "findTopCastByUser"
+  | "findTopDirectorsByUser"
 >;
 
 type CatalogPort = Pick<
@@ -263,27 +267,22 @@ export class RecommendationService {
     private readonly preferences: PreferencesPort,
     private readonly interactions: InteractionsPort,
     private readonly catalog: CatalogPort,
+    private readonly reviews: ReviewsPort,
   ) {}
 
   async getDiscoverBatch(
     userId: string,
     options: DiscoverBatchOptions = {},
   ): Promise<DiscoverBatch> {
-    const [preferences, liked, disliked, reactedMovieIds] = await Promise.all([
-      this.preferences.findByUserId(userId),
-      this.interactions.findLikesByUser(userId, PROFILE_INTERACTION_PAGE),
-      this.interactions.findDislikesByUser(userId, PROFILE_INTERACTION_PAGE),
+    const [{ profile }, reactedMovieIds] = await Promise.all([
+      loadTasteProfile(userId, {
+        interactions: this.interactions,
+        preferences: this.preferences,
+        reviews: this.reviews,
+        catalog: this.catalog,
+      }),
       this.interactions.findReactedMovieIds(userId),
     ]);
-    const [likedDetails, dislikedDetails] = await Promise.all([
-      this.resolveDetails(liked),
-      this.resolveDetails(disliked),
-    ]);
-    const profile = buildTasteProfile({
-      preferredGenreIds: preferences?.preferredGenreIds ?? [],
-      liked: likedDetails,
-      disliked: dislikedDetails,
-    });
     const candidates = await this.generateCandidates(
       profile,
       options.filters,

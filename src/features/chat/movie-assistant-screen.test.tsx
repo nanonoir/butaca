@@ -13,7 +13,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DISCOVER_MOVIES_FIXTURE } from "@/fixtures/discover-movies";
 
 import { fetchMovieDetail } from "@/features/movie-detail/movie-detail-client";
-import { fetchMovieReviews } from "@/features/reviews/review-client";
 
 import { MovieAssistantScreen } from "./movie-assistant-screen";
 
@@ -74,38 +73,6 @@ function assistantMessage(id: string, text: string, withMovies = true) {
   };
 }
 
-function stubDetail(movie: (typeof MOVIES)[number]) {
-  vi.mocked(fetchMovieDetail).mockResolvedValue({
-    movie: {
-      ...movie,
-      tagline: null,
-      runtime: 120,
-      genres: [{ id: 878, name: "Ciencia ficción" }],
-      director: null,
-      cast: [],
-      keywords: [],
-      trailer: null,
-    },
-    viewerState: { reaction: null, watchedAt: null },
-    reviewSummary: {
-      recommended: 0,
-      notWorthIt: 0,
-      total: 0,
-      recommendationRate: null,
-    },
-    myReview: null,
-  } as never);
-  vi.mocked(fetchMovieReviews).mockResolvedValue({
-    data: [],
-    meta: {
-      page: 1,
-      pageSize: 20,
-      totalPages: 0,
-      totalResults: 0,
-      hasNextPage: false,
-    },
-  } as never);
-}
 
 beforeEach(() => {
   chat.messages = [];
@@ -251,12 +218,15 @@ describe("MovieAssistantScreen", () => {
     );
   });
 
-  it("submits a custom request and opens a recommendation in Movie Detail", async () => {
+  /** What Buti recommends is a list of films, so each one is a link to that
+   * film. It used to fetch the detail into this screen and throw it over the
+   * conversation, which left the most shareable moment in the app with no
+   * address to share. */
+  it("submits a custom request and points a recommendation at its address", () => {
     chat.messages = [
       userMessage("u1", "Quiero algo parecido a Dune."),
       assistantMessage("a1", "Mirá estas."),
     ];
-    stubDetail(MOVIES[0]!);
     render(<MovieAssistantScreen />);
 
     const input = screen.getByRole("textbox", { name: "Pedime una película" });
@@ -269,18 +239,13 @@ describe("MovieAssistantScreen", () => {
     const recommendation = screen.getByRole("article", {
       name: `Recomendación: ${MOVIES[0]!.title}`,
     });
-    fireEvent.click(
-      within(recommendation).getByRole("button", {
-        name: `Ver detalle de ${MOVIES[0]!.title}`,
-      }),
-    );
 
     expect(
-      await screen.findByRole("dialog", {
-        name: `Detalle de ${MOVIES[0]!.title}`,
+      within(recommendation).getByRole("link", {
+        name: `Ver detalle de ${MOVIES[0]!.title}`,
       }),
-    ).toBeInTheDocument();
-    expect(vi.mocked(fetchMovieDetail)).toHaveBeenCalledWith(MOVIES[0]!.id);
+    ).toHaveAttribute("href", `/movies/${MOVIES[0]!.id}/dune`);
+    expect(vi.mocked(fetchMovieDetail)).not.toHaveBeenCalled();
   });
 
   it("keeps the beginning of the latest Buti response in view", () => {

@@ -22,6 +22,9 @@ interface SearchGridProps {
   onPageChange: (page: number) => void;
   onRetry: () => void;
   onSelectMovie: (movie: MovieSummary) => void;
+  /** Given, each tile is a link to the film rather than a button that reports
+   * a pick. Onboarding picks; searching navigates. */
+  movieHref?: (movie: MovieSummary) => string;
   selectedMovieIds?: ReadonlySet<number>;
   selectedActionLabel?: (movie: MovieSummary, selected: boolean) => string;
 }
@@ -57,6 +60,7 @@ export function SearchGrid({
   onPageChange,
   onRetry,
   onSelectMovie,
+  movieHref,
   selectedMovieIds,
   selectedActionLabel,
 }: SearchGridProps) {
@@ -129,6 +133,7 @@ export function SearchGrid({
                     selectedMovieIds?.has(movie.id) ?? false,
                   ) ?? `Ver detalle de ${movie.title}`
                 }
+                href={movieHref?.(movie)}
                 onSelect={() => onSelectMovie(movie)}
                 pressed={selectedMovieIds?.has(movie.id)}
                 poster={<MovieArtwork className="size-full" movie={movie} />}

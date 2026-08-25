@@ -1,8 +1,14 @@
 import type { Genre } from "@/contracts/movies";
+import type { LikedMovieItem } from "@/contracts/likes";
+import type { MyReview } from "@/contracts/profile";
+import type { TasteSummary } from "@/contracts/taste";
 
 import { LogoutButton } from "./logout-button";
 import { ProfileAvatarEditor } from "./profile-avatar-editor";
 import { ProfilePreferencesSummary } from "./profile-preferences-summary";
+import { ProfileRecentLikes } from "./profile-recent-likes";
+import { ProfileReviews } from "./profile-reviews";
+import { ProfileTaste } from "./profile-taste";
 
 interface ProfileActivityItem {
   label: string;
@@ -18,6 +24,9 @@ export interface ProfileScreenProps {
     initials: string;
     preferredGenreIds: readonly number[];
     activity: readonly ProfileActivityItem[];
+    reviews: MyReview[];
+    recentLikes: LikedMovieItem[];
+    taste: TasteSummary;
   };
 }
 
@@ -85,6 +94,27 @@ export function ProfileScreen({ genreOptions, profile }: ProfileScreenProps) {
               <ActivityStat key={item.label} item={item} divided={index > 0} />
             ))}
           </dl>
+        </section>
+
+        <section aria-labelledby="profile-recent-likes-title">
+          <SectionHeading id="profile-recent-likes-title">
+            Últimas que te gustaron
+          </SectionHeading>
+          <ProfileRecentLikes items={profile.recentLikes} />
+        </section>
+
+        <section aria-labelledby="profile-taste-title">
+          <SectionHeading id="profile-taste-title">
+            Cómo te leemos
+          </SectionHeading>
+          <ProfileTaste taste={profile.taste} />
+        </section>
+
+        <section aria-labelledby="profile-reviews-title">
+          <SectionHeading id="profile-reviews-title">
+            Mis reseñas
+          </SectionHeading>
+          <ProfileReviews reviews={profile.reviews} />
         </section>
 
         <section aria-labelledby="profile-account-title">

@@ -16,6 +16,38 @@ const { getCurrentSession, redirect, findByUserId, countInteractions } =
     countInteractions: vi.fn(),
   }));
 
+vi.mock("@/features/profile/profile-taste-factory", () => ({
+  getProfileTasteService: () => ({
+    getTasteSummary: async () => ({
+      hasEnough: false,
+      likedCount: 0,
+      genres: [],
+      avoidedGenres: [],
+      actors: [],
+      directors: [],
+    }),
+  }),
+}));
+
+vi.mock("@/features/profile/profile-likes-factory", () => ({
+  getProfileLikesService: () => ({ listRecentLikes: async () => [] }),
+}));
+
+vi.mock("@/features/profile/profile-reviews-factory", () => ({
+  getProfileReviewsService: () => ({
+    listMyReviews: async () => ({
+      data: [],
+      meta: {
+        page: 1,
+        pageSize: 20,
+        totalPages: 0,
+        totalResults: 0,
+        hasNextPage: false,
+      },
+    }),
+  }),
+}));
+
 vi.mock("next/navigation", () => ({
   redirect,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
