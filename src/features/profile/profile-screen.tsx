@@ -96,18 +96,18 @@ export function ProfileScreen({ genreOptions, profile }: ProfileScreenProps) {
           </dl>
         </section>
 
-        <section aria-labelledby="profile-taste-title">
-          <SectionHeading id="profile-taste-title">
-            Cómo te leemos
-          </SectionHeading>
-          <ProfileTaste taste={profile.taste} />
-        </section>
-
         <section aria-labelledby="profile-recent-likes-title">
           <SectionHeading id="profile-recent-likes-title">
             Últimas que te gustaron
           </SectionHeading>
           <ProfileRecentLikes items={profile.recentLikes} />
+        </section>
+
+        <section aria-labelledby="profile-taste-title">
+          <SectionHeading id="profile-taste-title">
+            Cómo te leemos
+          </SectionHeading>
+          <ProfileTaste taste={profile.taste} />
         </section>
 
         <section aria-labelledby="profile-reviews-title">
