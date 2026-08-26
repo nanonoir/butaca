@@ -43,6 +43,10 @@ const { similarToMovieId: _similarToMovieId, ...tmdbDiscoverFilterShape } =
   RecommendationFiltersSchema.shape;
 void _similarToMovieId;
 
+/** The same floor the candidate queries use. A keyword is only useful here if
+ * it holds films somebody might actually be offered. */
+const MIN_KEYWORD_FILMS_VOTE_COUNT = 200;
+
 const TmdbDiscoverOptionsSchema = z
   .object({
     ...tmdbDiscoverFilterShape,
@@ -371,9 +375,16 @@ export class TmdbAdapter {
    * Anderson and an actor called Anderson are different questions. Within a
    * department TMDB's own ordering decides, and its first result for a name a
    * viewer typed unprompted is the famous one. */
-  /** Turns a word somebody said into the tag TMDB filters on. The first
-   * result is the one: TMDB orders keywords by how much of the catalogue
-   * carries them, so "grief" comes back before "climate grief". */
+  /** Turns a word somebody said into the tag TMDB filters on.
+   *
+   * The name has to match exactly. Keyword search is not ordered by how much
+   * of the catalogue carries a tag -- asking for "joy" answers with "#joy",
+   * which nothing carries, ahead of "joy", which three films do -- so taking
+   * the first result is a coin toss dressed as a rule.
+   *
+   * Among exact matches the oldest wins. Ids climb over time, so a low one is
+   * a tag the catalogue has been using for years rather than one somebody
+   * added to a single film last month. */
   async findKeywordId(term: string): Promise<number | null> {
     const query = z.string().trim().min(2).max(60).parse(term);
     const response = await this.client.searchKeywords({ query, page: 1 });
@@ -381,8 +392,28 @@ export class TmdbAdapter {
       z.array(TmdbKeywordSummarySchema),
       response.results,
     );
+    const wanted = query.toLowerCase();
+    const exact = keywords
+      .filter((keyword) => keyword.name.toLowerCase() === wanted)
+      .sort((left, right) => left.id - right.id);
+    const id = exact[0]?.id;
 
-    return keywords[0]?.id ?? null;
+    if (id === undefined) {
+      return null;
+    }
+
+    // A tag that names something and holds nothing is worse than no tag: it
+    // resolves cleanly and then answers with an empty screen. "chill" and
+    // "relaxing" are both real keywords in TMDB that not one film carries.
+    // Saying so here is what lets the caller fall back to something that
+    // works.
+    const carried = await this.client.discoverMovies({
+      page: 1,
+      withKeywords: String(id),
+      minVoteCount: MIN_KEYWORD_FILMS_VOTE_COUNT,
+    });
+
+    return carried.results.length > 0 ? id : null;
   }
 
   async findPersonId(input: {

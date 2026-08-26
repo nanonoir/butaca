@@ -6,6 +6,7 @@ import { z } from "zod";
 import {
   ChatMovieSchema,
   RecommendationFiltersSchema,
+  type RecommendationFilters,
   type ChatMovie,
   type MovieSummary,
 } from "@/contracts";
@@ -134,7 +135,24 @@ const RecommendMoviesInputSchema = z.object({
     .max(2100)
     .optional()
     .describe("Latest release year."),
-});
+})
+  /** Asked for in the description first, and ignored every time. A tool
+   * description is a request the model may decline; the schema is the shape of
+   * the call, and a call that does not fit never happens.
+   *
+   * The genres matter because TMDB has no usable tag for a good half of how
+   * people ask. "chill" and "relaxing" name tags no film carries, and "joy"
+   * holds three -- the genres are what answers when the tag cannot. */
+  .refine(
+    (input) => !input.themes?.length || Boolean(input.genreIds?.length),
+    {
+      path: ["genreIds"],
+      error:
+        "Send genreIds alongside themes: the nearest genres to the same " +
+        "request. Many moods have no usable tag in TMDB, and the genres are " +
+        "what answers when the tag comes back empty.",
+    },
+  );
 
 export type ChatToolMovies = { movies: ChatMovie[] };
 
@@ -213,6 +231,51 @@ async function resolveFilters(
 /** Bound to the viewer resolved from the session, never to an id the model or
  * the request could supply. The model asks for recommendations; it cannot ask
  * for someone else's. */
+/** What the model asked for, what it resolved to, and how much came back.
+ *
+ * Everything about how this behaves is decided by the model: whether it turns
+ * "algo alegre" into a tag at all, which one, and how many. None of that is
+ * visible from the conversation -- an empty answer looks the same whether the
+ * model sent nothing or sent a word the catalogue has never heard of -- and
+ * tuning it by looking at the replies is guessing.
+ *
+ * Off unless asked for. `next start` runs a production build whatever the
+ * environment says, so keying this on NODE_ENV would have silenced it exactly
+ * where it is needed -- and a line about what somebody asked for has no
+ * business appearing in a log by default. Set BUTI_TRACE=1 to watch. */
+function traceRequest(
+  input: z.infer<typeof RecommendMoviesInputSchema>,
+  filters: RecommendationFilters,
+  returned: number,
+): void {
+  if (process.env.BUTI_TRACE !== "1") {
+    return;
+  }
+
+  console.log(
+    "[buti]",
+    JSON.stringify({
+      pidio: {
+        themes: input.themes ?? null,
+        genreIds: input.genreIds ?? null,
+        actorNames: input.actorNames ?? null,
+        directorName: input.directorName ?? null,
+        similarToTitle: input.similarToTitle ?? null,
+        wellReviewed: input.wellReviewed ?? null,
+      },
+      resolvio: {
+        keywordIds: filters.keywordIds ?? null,
+        keywordMatch: filters.keywordMatch ?? null,
+        genreIds: filters.genreIds ?? null,
+        castIds: filters.castIds ?? null,
+        crewIds: filters.crewIds ?? null,
+        similarToMovieId: filters.similarToMovieId ?? null,
+      },
+      devolvio: returned,
+    }),
+  );
+}
+
 export function createChatTools(
   recommendations: RecommendationPort,
   catalog: CatalogPort,
@@ -231,10 +294,30 @@ export function createChatTools(
       inputSchema: RecommendMoviesInputSchema,
       execute: async (input) => {
         const filters = await resolveFilters(catalog, input);
-        const batch = await recommendations.getDiscoverBatch(userId, {
-          filters,
-          limit: CHAT_RECOMMENDATION_LIMIT,
-        });
+        const ask = (applied: RecommendationFilters) =>
+          recommendations.getDiscoverBatch(userId, {
+            filters: applied,
+            limit: CHAT_RECOMMENDATION_LIMIT,
+            // Somebody asked. Marked here rather than worked out from the
+            // filters downstream, because a theme that resolves to nothing
+            // leaves a request indistinguishable from a plain batch.
+            requested: true,
+          });
+
+        let batch = await ask(filters);
+        let applied = filters;
+
+        // Two words are a description and the films carrying both are the ones
+        // described -- when both are tags the catalogue uses. Some are tiny:
+        // "joy" holds three films and "uplifting" two, and asking for both is
+        // asking for the overlap of three and two. Rather than answer nothing,
+        // the second try asks for either.
+        if (batch.movies.length === 0 && (filters.keywordIds?.length ?? 0) > 1) {
+          applied = { ...filters, keywordMatch: "any" as const };
+          batch = await ask(applied);
+        }
+
+        traceRequest(input, applied, batch.movies.length);
 
         // One payload rather than a side channel: the model talks about these
         // movies and the screen reads the same tool output from the stream to
