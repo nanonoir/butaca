@@ -6,11 +6,13 @@ import type { TmdbConfig } from "./config";
 import { TmdbError } from "./errors";
 import {
   TmdbGenresResponseSchema,
+  TmdbKeywordListResponseSchema,
   TmdbMovieDetailResponseSchema,
   TmdbMovieListResponseSchema,
   TmdbPersonCreditsResponseSchema,
   TmdbPersonListResponseSchema,
   type TmdbGenresResponse,
+  type TmdbKeywordListResponse,
   type TmdbMovieDetailResponse,
   type TmdbMovieListResponse,
   type TmdbPersonCreditsResponse,
@@ -114,6 +116,20 @@ export class TmdbClient {
         page: input.page,
       },
       TmdbMovieListResponseSchema,
+    );
+  }
+
+  /** TMDB's keywords are English regardless of the language asked for, so this
+   * one is not localised: querying "triste" finds a keyword with that name and
+   * no films behind it, while "sadness" finds the one every sad film carries. */
+  searchKeywords(input: {
+    query: string;
+    page: number;
+  }): Promise<TmdbKeywordListResponse> {
+    return this.request(
+      "/search/keyword",
+      { query: input.query, page: input.page },
+      TmdbKeywordListResponseSchema,
     );
   }
 

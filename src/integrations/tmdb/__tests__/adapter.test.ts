@@ -30,6 +30,7 @@ type ClientDouble = {
   getMovieDetail: ReturnType<typeof vi.fn<TmdbClient["getMovieDetail"]>>;
   discoverMovies: ReturnType<typeof vi.fn<TmdbClient["discoverMovies"]>>;
   getSimilarMovies: ReturnType<typeof vi.fn<TmdbClient["getSimilarMovies"]>>;
+  searchKeywords: ReturnType<typeof vi.fn<TmdbClient["searchKeywords"]>>;
 };
 
 function createClientDouble(): ClientDouble {
@@ -38,6 +39,7 @@ function createClientDouble(): ClientDouble {
   const getMovieDetail = vi.fn<TmdbClient["getMovieDetail"]>();
   const discoverMovies = vi.fn<TmdbClient["discoverMovies"]>();
   const getSimilarMovies = vi.fn<TmdbClient["getSimilarMovies"]>();
+  const searchKeywords = vi.fn<TmdbClient["searchKeywords"]>();
 
   return {
     client: {
@@ -46,12 +48,14 @@ function createClientDouble(): ClientDouble {
       getMovieDetail,
       discoverMovies,
       getSimilarMovies,
+      searchKeywords,
     } as unknown as TmdbClient,
     getGenres,
     searchMovies,
     getMovieDetail,
     discoverMovies,
     getSimilarMovies,
+    searchKeywords,
   };
 }
 
@@ -102,6 +106,73 @@ async function expectInputZodError(operation: Promise<unknown>) {
   expect(thrown).toBeInstanceOf(z.ZodError);
   expect(thrown).not.toBeInstanceOf(TmdbError);
 }
+
+describe("findKeywordId", () => {
+  /** Keyword search is not ordered by how much of the catalogue carries a
+   * tag: "joy" answers with "#joy", which nothing carries, ahead of "joy",
+   * which films do. */
+  it("takes the tag whose name matches, not the one listed first", async () => {
+    const client = createClientDouble();
+    client.discoverMovies.mockResolvedValue(cloneMovieList());
+    client.searchKeywords.mockResolvedValue({
+      results: [
+        { id: 335193, name: "#joy" },
+        { id: 277029, name: "joy" },
+        { id: 217321, name: "joy ride" },
+      ],
+    });
+
+    await expect(
+      new TmdbAdapter(client.client).findKeywordId("joy"),
+    ).resolves.toBe(277029);
+  });
+
+  /** Ids climb over time, so the low one is a tag the catalogue has used for
+   * years rather than one added to a single film last month. */
+  it("prefers the older of two tags with the same name", async () => {
+    const client = createClientDouble();
+    client.discoverMovies.mockResolvedValue(cloneMovieList());
+    client.searchKeywords.mockResolvedValue({
+      results: [
+        { id: 325045, name: "happiness" },
+        { id: 1647, name: "happiness" },
+      ],
+    });
+
+    await expect(
+      new TmdbAdapter(client.client).findKeywordId("happiness"),
+    ).resolves.toBe(1647);
+  });
+
+  /** A tag that names something and holds nothing resolves cleanly and then
+   * answers with an empty screen: "chill" is a real keyword in TMDB that not
+   * one film carries. */
+  it("gives back nothing when the tag holds no films", async () => {
+    const client = createClientDouble();
+    client.searchKeywords.mockResolvedValue({
+      results: [{ id: 267871, name: "chill" }],
+    });
+    client.discoverMovies.mockResolvedValue({
+      ...cloneMovieList(),
+      results: [],
+    });
+
+    await expect(
+      new TmdbAdapter(client.client).findKeywordId("chill"),
+    ).resolves.toBeNull();
+  });
+
+  it("gives back nothing when no tag carries the word", async () => {
+    const client = createClientDouble();
+    client.searchKeywords.mockResolvedValue({
+      results: [{ id: 379191, name: "zero chill" }],
+    });
+
+    await expect(
+      new TmdbAdapter(client.client).findKeywordId("chill"),
+    ).resolves.toBeNull();
+  });
+});
 
 describe("TMDB fixtures", () => {
   it("uses valid provider shapes with bounded test-data prerequisites", () => {

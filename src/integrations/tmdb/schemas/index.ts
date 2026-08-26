@@ -1,3 +1,4 @@
+export * from "./keyword-list";
 export {
   TmdbGenreSchema,
   TmdbGenresResponseSchema,

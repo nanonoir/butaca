@@ -56,6 +56,10 @@ const SIGNALS_PER_BATCH = 2;
 /** Keeps obscure entries with a handful of votes out of the candidate pool
  * before ranking even starts. */
 const MIN_CANDIDATE_VOTE_COUNT = 200;
+/** Low enough that a narrow theme still has something to answer with, high
+ * enough to keep the films nobody defends out of an answer somebody asked
+ * for. */
+const MIN_REQUESTED_RATING = 6;
 
 type PreferencesPort = Pick<UserPreferencesRepository, "findByUserId">;
 
@@ -85,6 +89,12 @@ export type DiscoverBatchOptions = {
    * the database cannot exclude them, and without this the next batch would
    * hand back cards already on screen. */
   excludeMovieIds?: number[];
+  /** Somebody asked out loud, rather than the deck asking on their behalf.
+   * Marked rather than inferred from which filters arrived: a theme that
+   * resolves to nothing leaves a request looking exactly like a plain batch,
+   * and the profile would take the wheel again on the one occasion it must
+   * not. */
+  requested?: boolean;
   limit?: number;
   filters?: RecommendationFilters;
 };
@@ -289,6 +299,7 @@ export class RecommendationService {
       // Grows as the viewer works through the deck, so a refill leans on a
       // different signal than the batch before it.
       reactedMovieIds.length + (options.excludeMovieIds?.length ?? 0),
+      options.requested ?? false,
     );
     // The ranking works on movies; the reason each one is here travels beside
     // it, keyed by id, so ranking and scoring stay untouched.
@@ -395,6 +406,7 @@ export class RecommendationService {
     profile: TasteProfile,
     filters: RecommendationFilters = {},
     rotation = 0,
+    requested = false,
   ): Promise<Candidate[]> {
     // Caller filters are extra constraints on top of the profile, never a
     // replacement for it: an explicit request narrows the pool, it does not
@@ -416,10 +428,15 @@ export class RecommendationService {
     // order, so which Spielberg films surface stays personal.
     const castIdList = castIds ?? [];
     const crewId = crewIds?.[0];
-    const subject =
+    // A theme is a subject too. Somebody asking for something sad is asking
+    // about sadness, and fanning out over their usual genres answers with
+    // their usual films: "algo triste" came back animated Batman, because the
+    // request had nowhere to go and the profile kept driving.
+    const namedSubject =
       castIdList.length > 0 ||
       crewId !== undefined ||
       similarToMovieId !== undefined;
+    const subject = namedSubject || requested;
     // The profile's own exclusions and the vote floor shape the pool for a
     // batch the profile is driving. They are not constraints on a question
     // somebody asked out loud, and applying them to one answers it wrongly:
@@ -429,19 +446,37 @@ export class RecommendationService {
     //
     // An exclusion the caller sent is a different thing and still applies: it
     // came from the same request.
+    // The floor comes off only for a subject somebody named. Asking for
+    // DiCaprio with Brad Pitt is asking for a particular film, and a floor
+    // that hides it answers wrongly. A theme names no film: "something sad"
+    // with no floor comes back with titles nobody has heard of, and dropping
+    // it there buys nothing.
     const shared = {
       page: 1,
-      ...(subject
+      ...(namedSubject
         ? {}
         : {
-            excludedGenreIds: profile.excludedGenreIds,
             minTmdbVoteCount: MIN_CANDIDATE_VOTE_COUNT,
+            // Votes say a film is known, not that it is any good, and the two
+            // are different questions. Asking for revenge with only the vote
+            // floor answered Cyborg at 5.7 and Ben-Hur at 5.8: both are
+            // famous enough to clear it, and neither is what anybody wants
+            // when they ask. A named film is exempt -- somebody asking for it
+            // by name is not asking whether it is good.
+            ...(requested ? { minTmdbRating: MIN_REQUESTED_RATING } : {}),
           }),
+      ...(subject ? {} : { excludedGenreIds: profile.excludedGenreIds }),
       ...candidateFilters,
     };
-    const requestedGenreIds = subject
+    // A request brings its own genres and never borrows the profile's. They
+    // are what carries it when the theme turns out to be a word TMDB has no
+    // films for: "algo alegre" is two films under `happiness` and a whole
+    // shelf under comedy.
+    const requestedGenreIds = namedSubject
       ? []
-      : (filters.genreIds ?? profile.preferredGenreIds);
+      : requested
+        ? (filters.genreIds ?? [])
+        : (filters.genreIds ?? profile.preferredGenreIds);
     // Each query carries the reason it exists, so a card can say why it is
     // there without anyone guessing afterwards.
     const queries: SourcedQuery[] = rotateWindow(
@@ -452,6 +487,14 @@ export class RecommendationService {
         query: { ...shared, genreIds: [genreId] },
       source: { kind: "genre", name: null } as const,
     }));
+    // A theme is asked for straight, not through a person or a film, so it
+    // needs a query of its own. Everything below this is a fan-out over the
+    // profile, and a request has just silenced all of it -- without this the
+    // batch would come back empty.
+    if ((candidateFilters.keywordIds?.length ?? 0) > 0) {
+      queries.push({ query: shared, source: { kind: "keyword", name: null } });
+    }
+
     const signals = <T,>(items: readonly T[]) =>
       subject
         ? []

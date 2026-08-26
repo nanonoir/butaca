@@ -6,6 +6,7 @@ import { z } from "zod";
 import {
   ChatMovieSchema,
   RecommendationFiltersSchema,
+  type RecommendationFilters,
   type ChatMovie,
   type MovieSummary,
 } from "@/contracts";
@@ -30,6 +31,7 @@ const WELL_REVIEWED_MIN_VOTES = 500;
 type RecommendationPort = Pick<RecommendationService, "getDiscoverBatch">;
 
 type CatalogPort = {
+  findKeywordId(term: string): Promise<number | null>;
   findPersonId(input: {
     name: string;
     department?: string;
@@ -45,6 +47,19 @@ type CatalogPort = {
  * budget the assistant already has to ration. It says the name, this resolves
  * it, one call. */
 const RecommendMoviesInputSchema = z.object({
+  themes: z
+    .array(z.string().min(2).max(40))
+    .max(3)
+    .optional()
+    .describe(
+      "What the viewer asked the film to be ABOUT or to feel like, as one to " +
+        "three single English words, most specific first. TMDB's tags are " +
+        "English whatever language the conversation is in: 'algo triste' is " +
+        "['sadness', 'grief'], not ['triste']. Use this for moods, subjects " +
+        "and situations -- sadness, revenge, friendship, heist, dystopia, " +
+        "coming of age. Not for genres, which have their own field. Fewer and " +
+        "more precise beats more: every word narrows the answer.",
+    ),
   genreIds: z
     .array(z.number().int().positive())
     .max(3)
@@ -120,18 +135,54 @@ const RecommendMoviesInputSchema = z.object({
     .max(2100)
     .optional()
     .describe("Latest release year."),
-});
+})
+  /** Asked for in the description first, and ignored every time. A tool
+   * description is a request the model may decline; the schema is the shape of
+   * the call, and a call that does not fit never happens.
+   *
+   * The genres matter because TMDB has no usable tag for a good half of how
+   * people ask. "chill" and "relaxing" name tags no film carries, and "joy"
+   * holds three -- the genres are what answers when the tag cannot. */
+  .refine(
+    (input) => !input.themes?.length || Boolean(input.genreIds?.length),
+    {
+      path: ["genreIds"],
+      error:
+        "Send genreIds alongside themes: the nearest genres to the same " +
+        "request. Many moods have no usable tag in TMDB, and the genres are " +
+        "what answers when the tag comes back empty.",
+    },
+  );
 
 export type ChatToolMovies = { movies: ChatMovie[] };
 
 /** Every name the model supplied, resolved in one round of lookups. A name that
  * matches nothing is dropped rather than failing the call: a viewer who
  * misspells an actor should still get recommendations, not an error. */
+/** A word that names nothing in TMDB drops out rather than emptying the
+ * answer: "sadness" and "grief" both resolving is the good case, and only one
+ * of them resolving still beats asking the profile what it always asks. */
+async function resolveKeywordIds(
+  catalog: CatalogPort,
+  themes: string[] | undefined,
+): Promise<number[]> {
+  if (!themes?.length) {
+    return [];
+  }
+
+  const resolved = await Promise.all(
+    themes.map((theme) => catalog.findKeywordId(theme)),
+  );
+
+  return resolved.filter((id): id is number => id !== null);
+}
+
 async function resolveFilters(
   catalog: CatalogPort,
   input: z.infer<typeof RecommendMoviesInputSchema>,
 ) {
-  const [castIds, crewId, similarMovies] = await Promise.all([
+  const [keywordIds, castIds, crewId, similarMovies] = await Promise.all([
+    resolveKeywordIds(catalog, input.themes),
     Promise.all(
       (input.actorNames ?? []).map((name) =>
         catalog.findPersonId({ name, department: ACTING_DEPARTMENT }),
@@ -149,6 +200,9 @@ async function resolveFilters(
   ]);
 
   return RecommendationFiltersSchema.parse({
+    // Matched on all of them. Two words somebody chose are a description; the
+    // films carrying both are the ones they described.
+    ...(keywordIds.length ? { keywordIds, keywordMatch: "all" as const } : {}),
     ...(input.genreIds?.length ? { genreIds: input.genreIds } : {}),
     ...(input.originalLanguage
       ? { originalLanguage: input.originalLanguage }
@@ -177,6 +231,51 @@ async function resolveFilters(
 /** Bound to the viewer resolved from the session, never to an id the model or
  * the request could supply. The model asks for recommendations; it cannot ask
  * for someone else's. */
+/** What the model asked for, what it resolved to, and how much came back.
+ *
+ * Everything about how this behaves is decided by the model: whether it turns
+ * "algo alegre" into a tag at all, which one, and how many. None of that is
+ * visible from the conversation -- an empty answer looks the same whether the
+ * model sent nothing or sent a word the catalogue has never heard of -- and
+ * tuning it by looking at the replies is guessing.
+ *
+ * Off unless asked for. `next start` runs a production build whatever the
+ * environment says, so keying this on NODE_ENV would have silenced it exactly
+ * where it is needed -- and a line about what somebody asked for has no
+ * business appearing in a log by default. Set BUTI_TRACE=1 to watch. */
+function traceRequest(
+  input: z.infer<typeof RecommendMoviesInputSchema>,
+  filters: RecommendationFilters,
+  returned: number,
+): void {
+  if (process.env.BUTI_TRACE !== "1") {
+    return;
+  }
+
+  console.log(
+    "[buti]",
+    JSON.stringify({
+      pidio: {
+        themes: input.themes ?? null,
+        genreIds: input.genreIds ?? null,
+        actorNames: input.actorNames ?? null,
+        directorName: input.directorName ?? null,
+        similarToTitle: input.similarToTitle ?? null,
+        wellReviewed: input.wellReviewed ?? null,
+      },
+      resolvio: {
+        keywordIds: filters.keywordIds ?? null,
+        keywordMatch: filters.keywordMatch ?? null,
+        genreIds: filters.genreIds ?? null,
+        castIds: filters.castIds ?? null,
+        crewIds: filters.crewIds ?? null,
+        similarToMovieId: filters.similarToMovieId ?? null,
+      },
+      devolvio: returned,
+    }),
+  );
+}
+
 export function createChatTools(
   recommendations: RecommendationPort,
   catalog: CatalogPort,
@@ -195,10 +294,30 @@ export function createChatTools(
       inputSchema: RecommendMoviesInputSchema,
       execute: async (input) => {
         const filters = await resolveFilters(catalog, input);
-        const batch = await recommendations.getDiscoverBatch(userId, {
-          filters,
-          limit: CHAT_RECOMMENDATION_LIMIT,
-        });
+        const ask = (applied: RecommendationFilters) =>
+          recommendations.getDiscoverBatch(userId, {
+            filters: applied,
+            limit: CHAT_RECOMMENDATION_LIMIT,
+            // Somebody asked. Marked here rather than worked out from the
+            // filters downstream, because a theme that resolves to nothing
+            // leaves a request indistinguishable from a plain batch.
+            requested: true,
+          });
+
+        let batch = await ask(filters);
+        let applied = filters;
+
+        // Two words are a description and the films carrying both are the ones
+        // described -- when both are tags the catalogue uses. Some are tiny:
+        // "joy" holds three films and "uplifting" two, and asking for both is
+        // asking for the overlap of three and two. Rather than answer nothing,
+        // the second try asks for either.
+        if (batch.movies.length === 0 && (filters.keywordIds?.length ?? 0) > 1) {
+          applied = { ...filters, keywordMatch: "any" as const };
+          batch = await ask(applied);
+        }
+
+        traceRequest(input, applied, batch.movies.length);
 
         // One payload rather than a side channel: the model talks about these
         // movies and the screen reads the same tool output from the stream to

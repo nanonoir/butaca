@@ -801,6 +801,90 @@ describe("getDiscoverBatch rotation", () => {
   });
 
   /** A deck that asked about one director could only ever mention one. */
+  /** Asking for something sad and getting the deck's usual is what the theme
+   * channel exists to stop: a request has to silence the profile the same way
+   * naming a director does. */
+  it("stops fanning out over the profile once a theme is asked for", async () => {
+    const deps = createDependencies();
+    deps.interactions.findTopDirectorsByUser.mockResolvedValue([
+      { id: 525, name: "Christopher Nolan" },
+    ]);
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(11)]));
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { keywordIds: [1647], keywordMatch: "all" },
+      requested: true,
+    });
+
+    const consultas = deps.catalog.discoverMovies.mock.calls.map(
+      ([query]) => query as { keywordIds?: number[]; crewIds?: number[] },
+    );
+
+    expect(consultas.some((q) => q.keywordIds?.[0] === 1647)).toBe(true);
+    expect(consultas.some((q) => q.crewIds !== undefined)).toBe(false);
+  });
+
+  /** The floor comes off for a film somebody named, not for a mood. Without
+   * it a themed request answers with titles nobody has heard of. */
+  it("keeps the vote floor on a themed request", async () => {
+    const deps = createDependencies();
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(11)]));
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { keywordIds: [1647], keywordMatch: "all" },
+      requested: true,
+    });
+
+    expect(deps.catalog.discoverMovies).toHaveBeenCalledWith(
+      expect.objectContaining({
+        minTmdbVoteCount: expect.any(Number),
+        minTmdbRating: expect.any(Number),
+      }),
+    );
+  });
+
+  /** A mood TMDB has no tag for used to answer with nothing at all: "chill"
+   * and "relaxing" both name tags no film carries. The genres that came with
+   * the request are what answers instead. */
+  it("falls back to the genres a request brought when its theme finds nothing", async () => {
+    const deps = createDependencies();
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(11)]));
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { keywordIds: [267871], keywordMatch: "all", genreIds: [35] },
+      requested: true,
+    });
+
+    const consultas = deps.catalog.discoverMovies.mock.calls.map(
+      ([query]) => query as { genreIds?: number[]; keywordIds?: number[] },
+    );
+
+    expect(consultas.some((q) => q.genreIds?.[0] === 35)).toBe(true);
+    expect(consultas.some((q) => q.keywordIds?.[0] === 267871)).toBe(true);
+  });
+
+  /** The profile's genres are not a fallback for a request. Answering "algo
+   * alegre" with somebody's usual thrillers is the failure this whole channel
+   * exists to stop. */
+  it("never borrows the profile's genres for a request", async () => {
+    const deps = createDependencies();
+    deps.preferences.findByUserId.mockResolvedValue({
+      preferredGenreIds: [53],
+    });
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(11)]));
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { keywordIds: [267871], keywordMatch: "all" },
+      requested: true,
+    });
+
+    const consultas = deps.catalog.discoverMovies.mock.calls.map(
+      ([query]) => query as { genreIds?: number[] },
+    );
+
+    expect(consultas.some((q) => q.genreIds?.includes(53))).toBe(false);
+  });
+
   it("asks about more than one director in the same batch", async () => {
     const deps = createDependencies();
     const titles = ["Blade Runner", "Origen", "Alien", "Dunkerque"];

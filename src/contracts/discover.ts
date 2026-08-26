@@ -62,6 +62,11 @@ export const RecommendationFiltersSchema = z
     genreIds: z.array(TmdbGenreIdSchema).optional(),
     excludedGenreIds: z.array(TmdbGenreIdSchema).optional(),
     keywordIds: z.array(TmdbKeywordIdSchema).optional(),
+    /** How to read the list. A film's own tags are matched on any -- carrying
+     * every one of a dozen is nothing at all -- while two or three words
+     * somebody asked for are matched on all, which is what makes the answer
+     * about what they asked rather than about one word of it. */
+    keywordMatch: z.enum(["any", "all"]).optional(),
     castIds: z.array(TmdbPersonIdSchema).optional(),
     crewIds: z.array(TmdbPersonIdSchema).optional(),
     originalLanguage: z.string().min(2).optional(),
