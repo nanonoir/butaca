@@ -30,6 +30,7 @@ function createCatalog(
   } = {},
 ) {
   return {
+    findKeywordId: vi.fn().mockResolvedValue(null),
     findPersonId: vi.fn().mockResolvedValue(overrides.personId ?? null),
     searchMovies: vi.fn().mockResolvedValue({ data: overrides.movies ?? [] }),
   };
@@ -68,6 +69,52 @@ function execute(
 }
 
 describe("recommendMovies tool", () => {
+  /** "Algo triste" had nowhere to go: the tool could say a genre, a person or
+   * a film to resemble, and nothing about what a film is about. The request
+   * fell through and the profile answered with its usual, which is how asking
+   * for something sad came back animated Batman. */
+  it("turns what was asked about into tags, matched on all of them", async () => {
+    const catalog = createCatalog();
+    catalog.findKeywordId.mockImplementation(async (term: string) =>
+      ({ sadness: 1647, grief: 9872 })[term] ?? null,
+    );
+    const recommendations = createRecommendations();
+
+    await execute(createChatTools(recommendations, catalog, USER_ID), {
+      themes: ["sadness", "grief"],
+    });
+
+    expect(recommendations.getDiscoverBatch).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({
+        filters: expect.objectContaining({
+          keywordIds: [1647, 9872],
+          keywordMatch: "all",
+        }),
+      }),
+    );
+  });
+
+  /** A word TMDB does not know drops out rather than emptying the answer. */
+  it("keeps the tags it could resolve", async () => {
+    const catalog = createCatalog();
+    catalog.findKeywordId.mockImplementation(async (term: string) =>
+      term === "grief" ? 9872 : null,
+    );
+    const recommendations = createRecommendations();
+
+    await execute(createChatTools(recommendations, catalog, USER_ID), {
+      themes: ["inventado", "grief"],
+    });
+
+    expect(recommendations.getDiscoverBatch).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({
+        filters: expect.objectContaining({ keywordIds: [9872] }),
+      }),
+    );
+  });
+
   it("asks the recommender for the viewer bound at construction", async () => {
     const recommendations = createRecommendations([createMovie(1, "Dune")]);
     const tools = createChatTools(recommendations, createCatalog(), USER_ID);

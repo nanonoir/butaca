@@ -801,6 +801,43 @@ describe("getDiscoverBatch rotation", () => {
   });
 
   /** A deck that asked about one director could only ever mention one. */
+  /** Asking for something sad and getting the deck's usual is what the theme
+   * channel exists to stop: a request has to silence the profile the same way
+   * naming a director does. */
+  it("stops fanning out over the profile once a theme is asked for", async () => {
+    const deps = createDependencies();
+    deps.interactions.findTopDirectorsByUser.mockResolvedValue([
+      { id: 525, name: "Christopher Nolan" },
+    ]);
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(11)]));
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { keywordIds: [1647], keywordMatch: "all" },
+    });
+
+    const consultas = deps.catalog.discoverMovies.mock.calls.map(
+      ([query]) => query as { keywordIds?: number[]; crewIds?: number[] },
+    );
+
+    expect(consultas.some((q) => q.keywordIds?.[0] === 1647)).toBe(true);
+    expect(consultas.some((q) => q.crewIds !== undefined)).toBe(false);
+  });
+
+  /** The floor comes off for a film somebody named, not for a mood. Without
+   * it a themed request answers with titles nobody has heard of. */
+  it("keeps the vote floor on a themed request", async () => {
+    const deps = createDependencies();
+    deps.catalog.discoverMovies.mockResolvedValue(paginated([summary(11)]));
+
+    await service(deps).getDiscoverBatch(USER_ID, {
+      filters: { keywordIds: [1647], keywordMatch: "all" },
+    });
+
+    expect(deps.catalog.discoverMovies).toHaveBeenCalledWith(
+      expect.objectContaining({ minTmdbVoteCount: expect.any(Number) }),
+    );
+  });
+
   it("asks about more than one director in the same batch", async () => {
     const deps = createDependencies();
     const titles = ["Blade Runner", "Origen", "Alien", "Dunkerque"];

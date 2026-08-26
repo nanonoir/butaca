@@ -30,6 +30,7 @@ const WELL_REVIEWED_MIN_VOTES = 500;
 type RecommendationPort = Pick<RecommendationService, "getDiscoverBatch">;
 
 type CatalogPort = {
+  findKeywordId(term: string): Promise<number | null>;
   findPersonId(input: {
     name: string;
     department?: string;
@@ -45,6 +46,19 @@ type CatalogPort = {
  * budget the assistant already has to ration. It says the name, this resolves
  * it, one call. */
 const RecommendMoviesInputSchema = z.object({
+  themes: z
+    .array(z.string().min(2).max(40))
+    .max(3)
+    .optional()
+    .describe(
+      "What the viewer asked the film to be ABOUT or to feel like, as one to " +
+        "three single English words, most specific first. TMDB's tags are " +
+        "English whatever language the conversation is in: 'algo triste' is " +
+        "['sadness', 'grief'], not ['triste']. Use this for moods, subjects " +
+        "and situations -- sadness, revenge, friendship, heist, dystopia, " +
+        "coming of age. Not for genres, which have their own field. Fewer and " +
+        "more precise beats more: every word narrows the answer.",
+    ),
   genreIds: z
     .array(z.number().int().positive())
     .max(3)
@@ -127,11 +141,30 @@ export type ChatToolMovies = { movies: ChatMovie[] };
 /** Every name the model supplied, resolved in one round of lookups. A name that
  * matches nothing is dropped rather than failing the call: a viewer who
  * misspells an actor should still get recommendations, not an error. */
+/** A word that names nothing in TMDB drops out rather than emptying the
+ * answer: "sadness" and "grief" both resolving is the good case, and only one
+ * of them resolving still beats asking the profile what it always asks. */
+async function resolveKeywordIds(
+  catalog: CatalogPort,
+  themes: string[] | undefined,
+): Promise<number[]> {
+  if (!themes?.length) {
+    return [];
+  }
+
+  const resolved = await Promise.all(
+    themes.map((theme) => catalog.findKeywordId(theme)),
+  );
+
+  return resolved.filter((id): id is number => id !== null);
+}
+
 async function resolveFilters(
   catalog: CatalogPort,
   input: z.infer<typeof RecommendMoviesInputSchema>,
 ) {
-  const [castIds, crewId, similarMovies] = await Promise.all([
+  const [keywordIds, castIds, crewId, similarMovies] = await Promise.all([
+    resolveKeywordIds(catalog, input.themes),
     Promise.all(
       (input.actorNames ?? []).map((name) =>
         catalog.findPersonId({ name, department: ACTING_DEPARTMENT }),
@@ -149,6 +182,9 @@ async function resolveFilters(
   ]);
 
   return RecommendationFiltersSchema.parse({
+    // Matched on all of them. Two words somebody chose are a description; the
+    // films carrying both are the ones they described.
+    ...(keywordIds.length ? { keywordIds, keywordMatch: "all" as const } : {}),
     ...(input.genreIds?.length ? { genreIds: input.genreIds } : {}),
     ...(input.originalLanguage
       ? { originalLanguage: input.originalLanguage }

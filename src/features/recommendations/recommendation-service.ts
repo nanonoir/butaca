@@ -416,10 +416,16 @@ export class RecommendationService {
     // order, so which Spielberg films surface stays personal.
     const castIdList = castIds ?? [];
     const crewId = crewIds?.[0];
-    const subject =
+    // A theme is a subject too. Somebody asking for something sad is asking
+    // about sadness, and fanning out over their usual genres answers with
+    // their usual films: "algo triste" came back animated Batman, because the
+    // request had nowhere to go and the profile kept driving.
+    const namedSubject =
       castIdList.length > 0 ||
       crewId !== undefined ||
       similarToMovieId !== undefined;
+    const themed = (candidateFilters.keywordIds?.length ?? 0) > 0;
+    const subject = namedSubject || themed;
     // The profile's own exclusions and the vote floor shape the pool for a
     // batch the profile is driving. They are not constraints on a question
     // somebody asked out loud, and applying them to one answers it wrongly:
@@ -429,14 +435,17 @@ export class RecommendationService {
     //
     // An exclusion the caller sent is a different thing and still applies: it
     // came from the same request.
+    // The floor comes off only for a subject somebody named. Asking for
+    // DiCaprio with Brad Pitt is asking for a particular film, and a floor
+    // that hides it answers wrongly. A theme names no film: "something sad"
+    // with no floor comes back with titles nobody has heard of, and dropping
+    // it there buys nothing.
     const shared = {
       page: 1,
-      ...(subject
+      ...(namedSubject
         ? {}
-        : {
-            excludedGenreIds: profile.excludedGenreIds,
-            minTmdbVoteCount: MIN_CANDIDATE_VOTE_COUNT,
-          }),
+        : { minTmdbVoteCount: MIN_CANDIDATE_VOTE_COUNT }),
+      ...(subject ? {} : { excludedGenreIds: profile.excludedGenreIds }),
       ...candidateFilters,
     };
     const requestedGenreIds = subject
@@ -452,6 +461,14 @@ export class RecommendationService {
         query: { ...shared, genreIds: [genreId] },
       source: { kind: "genre", name: null } as const,
     }));
+    // A theme is asked for straight, not through a person or a film, so it
+    // needs a query of its own. Everything below this is a fan-out over the
+    // profile, and a request has just silenced all of it -- without this the
+    // batch would come back empty.
+    if ((candidateFilters.keywordIds?.length ?? 0) > 0) {
+      queries.push({ query: shared, source: { kind: "keyword", name: null } });
+    }
+
     const signals = <T,>(items: readonly T[]) =>
       subject
         ? []

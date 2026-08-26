@@ -32,6 +32,7 @@ import type {
 } from "./schemas";
 import {
   TmdbMovieDetailResponseSchema,
+  TmdbKeywordSummarySchema,
   TmdbPersonSummarySchema,
 } from "./schemas";
 
@@ -330,17 +331,24 @@ export class TmdbAdapter {
     const options = TmdbDiscoverOptionsSchema.parse(input);
     const joinIds = (ids: number[] | undefined) =>
       ids && ids.length > 0 ? ids.join(",") : undefined;
-    /** TMDB reads a comma as "and" and a pipe as "or". Genres and people want
-     * "and" -- a comedy thriller is both. Keywords want "or": they describe
-     * one film from several angles, so a movie carrying every one of them at
-     * once is not a stricter match, it is nothing at all. */
+    /** TMDB reads a comma as "and" and a pipe as "or", and keywords want each
+     * in turn depending on where the list came from.
+     *
+     * A film's own tags arrive by the dozen and describe it from every angle;
+     * demanding all of them at once is not a stricter match, it is nothing at
+     * all. Two or three words somebody asked for are the opposite: "sadness"
+     * and "grief" together return Manchester by the Sea, while either alone,
+     * or the two of them with an "or", returns Frozen. */
     const joinAnyId = (ids: number[] | undefined) =>
       ids && ids.length > 0 ? ids.join("|") : undefined;
     const response = await this.client.discoverMovies({
       page: options.page,
       withGenres: joinIds(options.genreIds),
       withoutGenres: joinIds(options.excludedGenreIds),
-      withKeywords: joinAnyId(options.keywordIds),
+      withKeywords:
+        options.keywordMatch === "all"
+          ? joinIds(options.keywordIds)
+          : joinAnyId(options.keywordIds),
       withCast: joinIds(options.castIds),
       withCrew: joinIds(options.crewIds),
       withOriginalLanguage: options.originalLanguage,
@@ -363,6 +371,20 @@ export class TmdbAdapter {
    * Anderson and an actor called Anderson are different questions. Within a
    * department TMDB's own ordering decides, and its first result for a name a
    * viewer typed unprompted is the famous one. */
+  /** Turns a word somebody said into the tag TMDB filters on. The first
+   * result is the one: TMDB orders keywords by how much of the catalogue
+   * carries them, so "grief" comes back before "climate grief". */
+  async findKeywordId(term: string): Promise<number | null> {
+    const query = z.string().trim().min(2).max(60).parse(term);
+    const response = await this.client.searchKeywords({ query, page: 1 });
+    const keywords = parsePublicResult(
+      z.array(TmdbKeywordSummarySchema),
+      response.results,
+    );
+
+    return keywords[0]?.id ?? null;
+  }
+
   async findPersonId(input: {
     name: string;
     department?: string;
