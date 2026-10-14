@@ -315,7 +315,14 @@ describe("foundation database schema", () => {
       reviews: getForeignKeySummary(reviews),
       movieCache: getForeignKeySummary(movieCache),
     }).toEqual({
-      users: [],
+      users: [
+        {
+          columns: ["id"],
+          foreignTable: "auth_user",
+          foreignColumns: ["id"],
+          onDelete: "cascade",
+        },
+      ],
       userPreferences: [
         {
           columns: ["user_id"],

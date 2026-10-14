@@ -1,43 +1,57 @@
 import "server-only";
 
-import {
-  isAuthError,
-  type AuthUser,
-  type SupabaseClient,
-} from "@supabase/supabase-js";
+import { isAPIError } from "better-auth/api";
 
 import { UuidSchema } from "../../contracts/common";
+import {
+  isOperationalDatabaseError,
+  withDatabaseAvailability,
+} from "../../db/errors";
 import type { UserRepository } from "../../db/repositories/user-repository";
 import type { UserRecord } from "../../db/schema/users";
+import type { AuthApiPort } from "../../integrations/better-auth/api-port";
+import { EmailDeliveryError } from "../../integrations/email";
+import {
+  clientAddress,
+  type RateLimiter,
+  type RateLimitRule,
+} from "../../integrations/better-auth/rate-limit";
 
 import {
   AuthProviderError,
   AuthRateLimitedError,
+  EmailAlreadyRegisteredError,
+  InvalidAuthTokenError,
   InvalidCredentialsError,
+  ServiceUnavailableError,
   UnauthenticatedError,
   UserProfileNotProvisionedError,
+  VerificationEmailNotSentError,
+  WeakPasswordError,
 } from "./errors";
 
-export type AuthClientPort = Pick<
-  SupabaseClient["auth"],
-  | "signUp"
-  | "signInWithPassword"
-  | "signOut"
-  | "getClaims"
-  | "resetPasswordForEmail"
-  | "updateUser"
->;
+const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+const ONE_HOUR_MS = 60 * 60 * 1000;
 
-/** Supabase reports send-rate limits with a dedicated code; everything else is
- * an opaque provider failure. */
-const RATE_LIMIT_ERROR_CODES = new Set([
-  "over_email_send_rate_limit",
-  "over_request_rate_limit",
-]);
+/** Generous enough for shared addresses, tight enough to make guessing and mail
+ * abuse impractical. Per-email rules protect an account; per-address rules
+ * protect the service. */
+export const AUTH_RATE_LIMITS = {
+  signInAddress: { limit: 30, windowMs: FIFTEEN_MINUTES_MS },
+  signInEmail: { limit: 10, windowMs: FIFTEEN_MINUTES_MS },
+  signUpAddress: { limit: 10, windowMs: ONE_HOUR_MS },
+  resetRequestAddress: { limit: 10, windowMs: FIFTEEN_MINUTES_MS },
+  resetRequestEmail: { limit: 3, windowMs: FIFTEEN_MINUTES_MS },
+  tokenAddress: { limit: 20, windowMs: FIFTEEN_MINUTES_MS },
+} as const satisfies Record<string, RateLimitRule>;
 
-function isRateLimitError(code: string | undefined): boolean {
-  return code !== undefined && RATE_LIMIT_ERROR_CODES.has(code);
-}
+type UsersPort = Pick<UserRepository, "findById" | "upsertFromAuthUser">;
+
+export type ServerAuthServiceOptions = {
+  /** Headers of the request being served; forwarded to the provider. */
+  headers: Headers;
+  limiter: RateLimiter;
+};
 
 const MAX_DISPLAY_NAME_LENGTH = 80;
 const FALLBACK_DISPLAY_NAME = "Film Match user";
@@ -55,200 +69,316 @@ function normalizeDisplayName(value: unknown): string | null {
   return displayName || null;
 }
 
-function deriveDisplayName(user: AuthUser, inputEmail: string): string {
-  const metadataDisplayName = normalizeDisplayName(
-    user.user_metadata.display_name,
-  );
-
-  if (metadataDisplayName) {
-    return metadataDisplayName;
-  }
-
-  const providerEmailLocalPart = user.email?.split("@", 1)[0];
-  const inputEmailLocalPart = inputEmail.split("@", 1)[0];
-
+/** Only used to repair a missing profile; an existing one is never touched. */
+function deriveDisplayName(identity: { name: string; email: string }): string {
   return (
-    normalizeDisplayName(providerEmailLocalPart) ??
-    normalizeDisplayName(inputEmailLocalPart) ??
+    normalizeDisplayName(identity.name) ??
+    normalizeDisplayName(identity.email.split("@", 1)[0]) ??
     FALLBACK_DISPLAY_NAME
   );
 }
 
+function providerCode(error: unknown): string | undefined {
+  if (!isAPIError(error)) {
+    return undefined;
+  }
+
+  const code = (error.body as { code?: unknown } | undefined)?.code;
+
+  return typeof code === "string" ? code : undefined;
+}
+
+/** Everything unexpected collapses into a safe error: provider payloads,
+ * causes and SQL never cross this boundary. */
+function toUnavailable(error: unknown): Error {
+  if (error instanceof ServiceUnavailableError) {
+    return error;
+  }
+
+  if (isOperationalDatabaseError(error)) {
+    return new ServiceUnavailableError();
+  }
+
+  return new AuthProviderError();
+}
+
 export class ServerAuthService {
   constructor(
-    private readonly auth: AuthClientPort,
-    private readonly users: Pick<
-      UserRepository,
-      "findById" | "upsertFromAuthUser"
-    >,
+    private readonly api: AuthApiPort,
+    private readonly users: UsersPort,
+    private readonly options: ServerAuthServiceOptions,
   ) {}
+
+  private enforce(scope: string, key: string, rule: RateLimitRule) {
+    if (!this.options.limiter.consume(`${scope}:${key}`, rule)) {
+      throw new AuthRateLimitedError();
+    }
+  }
+
+  private get address(): string {
+    return clientAddress(this.options.headers);
+  }
 
   async signUp(input: {
     email: string;
     password: string;
     displayName: string;
   }): Promise<UserRecord> {
-    let response: Awaited<ReturnType<AuthClientPort["signUp"]>>;
+    const { user } = await this.registerAccount(input);
+
+    return user;
+  }
+
+  /** Creates the account, its profile and the session. The verification email
+   * is best effort: when it cannot be sent the account stays valid and
+   * `verificationEmail` is `"failed"`, so the caller must not claim delivery.
+   * `requestEmailVerification` is the retry. */
+  async registerAccount(input: {
+    email: string;
+    password: string;
+    displayName: string;
+  }): Promise<{ user: UserRecord; verificationEmail: "sent" | "failed" }> {
+    this.enforce("signup", this.address, AUTH_RATE_LIMITS.signUpAddress);
+
+    let userId: string;
+    let verificationEmailFailed: boolean;
 
     try {
-      response = await this.auth.signUp({
+      const result = await this.api.signUpEmail({
+        name: input.displayName,
         email: input.email,
         password: input.password,
-        options: { data: { display_name: input.displayName } },
+        headers: this.options.headers,
       });
-    } catch {
-      throw new AuthProviderError();
+      userId = result.user.id;
+      verificationEmailFailed = result.verificationEmailFailed;
+    } catch (error) {
+      const code = providerCode(error);
+
+      if (code?.startsWith("USER_ALREADY_EXISTS")) {
+        throw new EmailAlreadyRegisteredError();
+      }
+
+      if (code === "PASSWORD_TOO_LONG" || code === "PASSWORD_TOO_SHORT") {
+        throw new WeakPasswordError();
+      }
+
+      throw toUnavailable(error);
     }
 
-    if (response.error || !response.data.user) {
-      throw new AuthProviderError();
-    }
-
-    return this.users.upsertFromAuthUser({
-      id: response.data.user.id,
-      displayName: input.displayName,
-      avatarUrl: null,
+    // The database trigger creates the profile in the identity transaction;
+    // this only returns it (and repairs it if it was removed out of band).
+    const user = await this.provisionProfile(userId, {
+      name: input.displayName,
+      email: input.email,
     });
+
+    return {
+      user,
+      verificationEmail: verificationEmailFailed ? "failed" : "sent",
+    };
+  }
+
+  /** Sends the verification email again to the signed-in user. Throws
+   * `VerificationEmailNotSentError` when delivery fails, so the caller never
+   * reports a send that did not happen. Does nothing for a verified address. */
+  async requestEmailVerification(): Promise<void> {
+    this.enforce("verify-request", this.address, AUTH_RATE_LIMITS.tokenAddress);
+
+    const session = await this.getCurrentSession();
+
+    if (!session) {
+      throw new UnauthenticatedError();
+    }
+
+    if (!session.email || session.emailVerified) {
+      return;
+    }
+
+    try {
+      await this.api.sendVerificationEmail({
+        email: session.email,
+        headers: this.options.headers,
+      });
+    } catch (error) {
+      if (error instanceof EmailDeliveryError) {
+        throw new VerificationEmailNotSentError();
+      }
+
+      throw toUnavailable(error);
+    }
   }
 
   async signIn(input: {
     email: string;
     password: string;
   }): Promise<UserRecord> {
-    let response: Awaited<ReturnType<AuthClientPort["signInWithPassword"]>>;
+    this.enforce("signin-address", this.address, AUTH_RATE_LIMITS.signInAddress);
+    this.enforce("signin-email", input.email, AUTH_RATE_LIMITS.signInEmail);
+
+    let identity: { id: string; name: string; email: string };
 
     try {
-      response = await this.auth.signInWithPassword(input);
+      const result = await this.api.signInEmail({
+        email: input.email,
+        password: input.password,
+        headers: this.options.headers,
+      });
+      identity = result.user;
     } catch (error) {
-      if (isAuthError(error) && error.code === "invalid_credentials") {
+      const code = providerCode(error);
+
+      if (
+        code === "INVALID_EMAIL_OR_PASSWORD" ||
+        code === "INVALID_PASSWORD" ||
+        code === "USER_NOT_FOUND"
+      ) {
         throw new InvalidCredentialsError();
       }
 
-      throw new AuthProviderError();
+      throw toUnavailable(error);
     }
 
-    if (response.error) {
-      if (response.error.code === "invalid_credentials") {
-        throw new InvalidCredentialsError();
-      }
-
-      throw new AuthProviderError();
-    }
-
-    const authUser = response.data.user;
-
-    if (!authUser) {
-      throw new AuthProviderError();
-    }
-
-    return this.users.upsertFromAuthUser({
-      id: authUser.id,
-      displayName: deriveDisplayName(authUser, input.email),
-      avatarUrl: null,
-    });
+    return this.provisionProfile(identity.id, identity);
   }
 
   async signOut(): Promise<void> {
-    let response: Awaited<ReturnType<AuthClientPort["signOut"]>>;
-
     try {
-      response = await this.auth.signOut();
-    } catch {
-      throw new AuthProviderError();
-    }
-
-    if (response.error) {
-      throw new AuthProviderError();
+      await this.api.signOut({ headers: this.options.headers });
+    } catch (error) {
+      throw toUnavailable(error);
     }
   }
 
-  /** Supabase deliberately does not reveal whether the address exists, so a
-   * successful call proves nothing about the account and the caller must not
-   * branch on it. */
+  /** The provider does not reveal whether the address exists, so a successful
+   * call proves nothing about the account and the caller must not branch on it.
+   * `redirectTo` is the canonical page that will receive `?token=`. */
   async requestPasswordReset(input: {
     email: string;
     redirectTo: string;
   }): Promise<void> {
-    let response: Awaited<ReturnType<AuthClientPort["resetPasswordForEmail"]>>;
+    this.enforce(
+      "reset-request-address",
+      this.address,
+      AUTH_RATE_LIMITS.resetRequestAddress,
+    );
+    this.enforce(
+      "reset-request-email",
+      input.email,
+      AUTH_RATE_LIMITS.resetRequestEmail,
+    );
 
     try {
-      response = await this.auth.resetPasswordForEmail(input.email, {
+      await this.api.requestPasswordReset({
+        email: input.email,
         redirectTo: input.redirectTo,
+        headers: this.options.headers,
       });
     } catch (error) {
-      if (isAuthError(error) && isRateLimitError(error.code)) {
-        throw new AuthRateLimitedError();
-      }
-
-      throw new AuthProviderError();
-    }
-
-    if (response.error) {
-      if (isRateLimitError(response.error.code)) {
-        throw new AuthRateLimitedError();
-      }
-
-      throw new AuthProviderError();
+      throw toUnavailable(error);
     }
   }
 
-  /** Requires the recovery session established by the callback route; without
-   * it the update is rejected as unauthenticated. */
-  async updatePassword(input: { newPassword: string }): Promise<void> {
-    let response: Awaited<ReturnType<AuthClientPort["updateUser"]>>;
+  /** Consumes the emailed reset token. An unknown, expired or already used
+   * token is an `InvalidAuthTokenError`; the provider revokes other sessions. */
+  async updatePassword(input: {
+    newPassword: string;
+    token: string;
+  }): Promise<void> {
+    this.enforce("token", this.address, AUTH_RATE_LIMITS.tokenAddress);
 
     try {
-      response = await this.auth.updateUser({ password: input.newPassword });
-    } catch {
-      throw new AuthProviderError();
-    }
+      await this.api.resetPassword({
+        newPassword: input.newPassword,
+        token: input.token,
+        headers: this.options.headers,
+      });
+    } catch (error) {
+      const code = providerCode(error);
 
-    if (response.error) {
-      if (isRateLimitError(response.error.code)) {
-        throw new AuthRateLimitedError();
+      if (code === "INVALID_TOKEN" || code === "TOKEN_EXPIRED") {
+        throw new InvalidAuthTokenError();
       }
 
-      throw new UnauthenticatedError();
+      if (code === "PASSWORD_TOO_LONG" || code === "PASSWORD_TOO_SHORT") {
+        throw new WeakPasswordError();
+      }
+
+      throw toUnavailable(error);
     }
   }
 
-  /** Resolves the profile together with the verified email from the claims, so
-   * callers that need to display the account do not have to query Auth twice. */
+  /** Marks the address as verified. Failing here never affects the session:
+   * verification is informative and does not gate any flow. The caller owns the
+   * redirect, so no callback URL is handed to the provider. */
+  async verifyEmail(token: string): Promise<void> {
+    this.enforce("token", this.address, AUTH_RATE_LIMITS.tokenAddress);
+
+    try {
+      await this.api.verifyEmail({ token, headers: this.options.headers });
+    } catch (error) {
+      const code = providerCode(error);
+
+      if (
+        code === "INVALID_TOKEN" ||
+        code === "TOKEN_EXPIRED" ||
+        code === "USER_NOT_FOUND"
+      ) {
+        throw new InvalidAuthTokenError();
+      }
+
+      throw toUnavailable(error);
+    }
+  }
+
+  /** Resolves the profile together with the account email, so callers that need
+   * to display the account do not have to query Auth twice. */
   async getCurrentSession(): Promise<{
     user: UserRecord;
     email: string | null;
+    emailVerified: boolean;
   } | null> {
-    let response: Awaited<ReturnType<AuthClientPort["getClaims"]>>;
+    let session: Awaited<ReturnType<AuthApiPort["getSession"]>>;
 
     try {
-      response = await this.auth.getClaims();
-    } catch {
-      throw new AuthProviderError();
+      session = await this.api.getSession({ headers: this.options.headers });
+    } catch (error) {
+      // The provider swallows any lookup failure (the database cause included)
+      // into a 500 with this code; the 401 variant is a plain lost session.
+      if (
+        isAPIError(error) &&
+        error.statusCode === 500 &&
+        providerCode(error) === "FAILED_TO_GET_SESSION"
+      ) {
+        throw new ServiceUnavailableError();
+      }
+
+      throw toUnavailable(error);
     }
 
-    if (response.error) {
-      throw new AuthProviderError();
-    }
-
-    if (!response.data) {
+    if (!session) {
       return null;
     }
 
-    const userId = UuidSchema.safeParse(response.data.claims.sub);
+    const userId = UuidSchema.safeParse(session.user.id);
 
     if (!userId.success) {
       throw new AuthProviderError();
     }
 
-    const user = await this.users.findById(userId.data);
+    const user = await withDatabaseAvailability(() =>
+      this.users.findById(userId.data),
+    );
 
     if (!user) {
       throw new UserProfileNotProvisionedError();
     }
 
-    const email = response.data.claims.email;
-
-    return { user, email: typeof email === "string" ? email : null };
+    return {
+      user,
+      email: session.user.email || null,
+      emailVerified: session.user.emailVerified,
+    };
   }
 
   async getCurrentUser(): Promise<UserRecord | null> {
@@ -265,5 +395,18 @@ export class ServerAuthService {
     }
 
     return user;
+  }
+
+  private provisionProfile(
+    userId: string,
+    identity: { name: string; email: string },
+  ): Promise<UserRecord> {
+    return withDatabaseAvailability(() =>
+      this.users.upsertFromAuthUser({
+        id: userId,
+        displayName: deriveDisplayName(identity),
+        avatarUrl: null,
+      }),
+    );
   }
 }

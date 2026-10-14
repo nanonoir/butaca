@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiErrorSchema } from "@/contracts";
 import {
   AuthProviderError,
+  ServiceUnavailableError,
   UnauthenticatedError,
   UserProfileNotProvisionedError,
 } from "@/features/auth/errors";
@@ -58,6 +59,7 @@ describe("apiError", () => {
     expect(apiError("ONBOARDING_REQUIRED").status).toBe(403);
     expect(apiError("REACTION_REQUIRED").status).toBe(409);
     expect(apiError("TMDB_UNAVAILABLE").status).toBe(503);
+    expect(apiError("SERVICE_UNAVAILABLE").status).toBe(503);
     expect(apiError("INTERNAL_ERROR").status).toBe(500);
   });
 });
@@ -71,9 +73,29 @@ describe("toApiErrorCode", () => {
 
   it("maps a missing session to UNAUTHORIZED", () => {
     expect(toApiErrorCode(new UnauthenticatedError())).toBe("UNAUTHORIZED");
+  });
+
+  it("does not pose a valid session without a profile as a logout", () => {
     expect(toApiErrorCode(new UserProfileNotProvisionedError())).toBe(
-      "UNAUTHORIZED",
+      "SERVICE_UNAVAILABLE",
     );
+  });
+
+  it("maps raw operational database errors, wrapped or not, to SERVICE_UNAVAILABLE", () => {
+    const wrapped = new Error("Failed query", {
+      cause: Object.assign(new Error("connect"), { code: "ECONNREFUSED" }),
+    });
+
+    expect(toApiErrorCode(wrapped)).toBe("SERVICE_UNAVAILABLE");
+    expect(
+      toApiErrorCode(Object.assign(new Error("shutdown"), { code: "57P01" })),
+    ).toBe("SERVICE_UNAVAILABLE");
+  });
+
+  it("keeps constraint failures as INTERNAL_ERROR", () => {
+    expect(
+      toApiErrorCode(Object.assign(new Error("dup"), { code: "23505" })),
+    ).toBe("INTERNAL_ERROR");
   });
 
   it("separates an unknown movie from a catalog outage", () => {
@@ -86,6 +108,14 @@ describe("toApiErrorCode", () => {
     expect(toApiErrorCode(new TmdbError("UNAVAILABLE"))).toBe(
       "TMDB_UNAVAILABLE",
     );
+  });
+
+  it("maps an operational outage to SERVICE_UNAVAILABLE and nothing else", () => {
+    expect(toApiErrorCode(new ServiceUnavailableError())).toBe(
+      "SERVICE_UNAVAILABLE",
+    );
+    expect(toApiErrorCode(new Error("query failed"))).toBe("INTERNAL_ERROR");
+    expect(toApiErrorCode(new UnauthenticatedError())).toBe("UNAUTHORIZED");
   });
 
   it("maps contract validation failures", () => {

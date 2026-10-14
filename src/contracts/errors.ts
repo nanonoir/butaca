@@ -13,6 +13,7 @@ export const ApiErrorCodeSchema = z.enum([
   "REACTION_REQUIRED",
   "REVIEW_NOT_FOUND",
   "TMDB_UNAVAILABLE",
+  "SERVICE_UNAVAILABLE",
   "INTERNAL_ERROR",
 ]);
 

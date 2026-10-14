@@ -37,6 +37,7 @@ CLAUDE.md
 openspec
 docs
 tests
+playwright.config.ts
 *.md
 
 .DS_Store

@@ -11,13 +11,21 @@ import type {
 import { AuthUserSchema } from "@/contracts/auth";
 
 import type { UserRecord } from "../../db/schema/users";
+import { getAuthBaseUrl } from "../../integrations/better-auth";
+
+import { rejectUntrustedAuthRequest } from "./auth-request";
 
 import {
   AuthProviderError,
   AuthRateLimitedError,
+  EmailAlreadyRegisteredError,
+  InvalidAuthTokenError,
   InvalidCredentialsError,
+  ServiceUnavailableError,
   UnauthenticatedError,
   UserProfileNotProvisionedError,
+  VerificationEmailNotSentError,
+  WeakPasswordError,
 } from "./errors";
 
 const USERNAME_MIN_LENGTH = 3;
@@ -125,6 +133,10 @@ export async function runAuthRoute<T>(
   schema: z.ZodType<T>,
   action: (input: T) => Promise<Response>,
 ): Promise<Response> {
+  if (isUntrusted(request, true)) {
+    return authErrorResponse("VALIDATION_ERROR");
+  }
+
   let body: unknown;
 
   try {
@@ -142,12 +154,31 @@ export async function runAuthRoute<T>(
     );
   }
 
-  return runAuthAction(() => action(parsed.data));
+  return runAuthAction(request, () => action(parsed.data), { json: true });
 }
 
+function isUntrusted(request: Request, json: boolean): boolean {
+  try {
+    return (
+      rejectUntrustedAuthRequest(request, getAuthBaseUrl(), { json }) !== null
+    );
+  } catch {
+    // Unusable canonical origin: fail closed.
+    return true;
+  }
+}
+
+/** Every auth POST goes through here, so the origin gate cannot be skipped.
+ * `json` is false for the routes that take no body (logout, resend). */
 export async function runAuthAction(
+  request: Request,
   action: () => Promise<Response>,
+  options: { json: boolean } = { json: false },
 ): Promise<Response> {
+  if (isUntrusted(request, options.json)) {
+    return authErrorResponse("VALIDATION_ERROR");
+  }
+
   try {
     return await action();
   } catch (error) {
@@ -173,8 +204,24 @@ export function toAuthErrorCode(error: unknown): AuthErrorCode {
     return "AUTH_UNAVAILABLE";
   }
 
-  if (error instanceof AuthProviderError) {
+  if (
+    error instanceof AuthProviderError ||
+    error instanceof ServiceUnavailableError ||
+    error instanceof VerificationEmailNotSentError
+  ) {
     return "AUTH_UNAVAILABLE";
+  }
+
+  if (error instanceof EmailAlreadyRegisteredError) {
+    return "EMAIL_ALREADY_REGISTERED";
+  }
+
+  if (error instanceof WeakPasswordError) {
+    return "WEAK_PASSWORD";
+  }
+
+  if (error instanceof InvalidAuthTokenError) {
+    return "INVALID_RESET_LINK";
   }
 
   return "UNKNOWN_ERROR";

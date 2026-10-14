@@ -86,16 +86,26 @@ test.describe("Authentication routes", () => {
     ).toHaveAttribute("href", "/forgot-password");
   });
 
-  test("rejects a password reset that has no recovery session", async ({
+  test("offers recovery instead of a form when the link carries no token", async ({
     page,
   }) => {
     const authPage = new AuthPage(page);
 
-    // Reaching /reset-password directly, without following the emailed link,
-    // leaves no recovery session, so the backend refuses the update. The
-    // previous version of this test asserted success because the form was
-    // wired to a stub that could not tell the two situations apart.
     await authPage.goto("/reset-password");
+    await expect(
+      page.getByRole("heading", {
+        name: "Enlace de recuperación no disponible",
+      }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Nueva contraseña")).toHaveCount(0);
+  });
+
+  test("rejects a password reset with an unknown token", async ({ page }) => {
+    const authPage = new AuthPage(page);
+
+    // The token is one-time and owned by Better Auth: an unknown one is refused
+    // by the real backend, not by a stub that cannot tell the cases apart.
+    await authPage.goto("/reset-password?token=not-a-real-token");
     await page
       .getByLabel("Nueva contraseña", { exact: true })
       .fill("StrongPass1");

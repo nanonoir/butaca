@@ -31,19 +31,23 @@ FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# These two are not runtime configuration. Next inlines every NEXT_PUBLIC_ value
-# into the client bundle while building, and this project also validates them
-# during the build -- without them `next build` stops with
-# `Invalid public environment`. They have to be build arguments, and they end up
-# readable in the shipped JavaScript, which is what a publishable key is for.
-#
-# Everything else is read at runtime and must NOT be baked in.
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL} \
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
-
+# No build arguments and no secrets: configuration is read lazily at runtime
+# (database, auth, Resend, TMDB), so the build runs without any real value and
+# nothing sensitive can end up in a layer.
 RUN pnpm build
+
+# One-shot migration job: `docker compose run --rm migrate`. The runner image
+# deliberately has no drizzle-kit, schema or migrations, so this separate target
+# carries the dev dependencies and only what drizzle-kit reads. It is never
+# started by `up` and the web image never runs migrations on boot.
+FROM base AS migrate
+ENV NODE_ENV=development
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json drizzle.config.ts tsconfig.json ./
+COPY src/db ./src/db
+COPY src/lib/env/migration.ts ./src/lib/env/migration.ts
+USER node
+CMD ["./node_modules/.bin/drizzle-kit", "migrate"]
 
 # `output: "standalone"` would trim this a lot, and it was the first thing tried.
 # Next traces that bundle through the real paths of what it imports and does not
@@ -67,7 +71,7 @@ COPY --chown=node:node package.json next.config.ts ./
 USER node
 EXPOSE 3000
 
-# Answered by the process alone, so a TMDB or Supabase outage cannot talk Docker
+# Liveness. Answered by the process alone, so a TMDB or database outage cannot talk Docker
 # into restarting a server that is running fine.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

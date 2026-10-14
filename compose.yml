@@ -1,44 +1,107 @@
-# Runs the app against the managed Supabase project and TMDB. There is no
-# database service here on purpose: Auth and Postgres are the same Supabase
-# project, so a Postgres container would give the app a database its sessions
-# know nothing about.
+# Development stack: the web app plus its own private PostgreSQL.
 #
-#   cp .env.example .env          # then fill it in
+#   cp .env.example .env          # then replace every placeholder
 #   docker compose up -d --build
+#   docker compose run --rm migrate   # explicit; never runs on `up`
 #
 # `.env`, not the `.env.local` the rest of the project uses. Compose
 # interpolates the ${...} below from `.env` only, and pointing it elsewhere
-# needs `--env-file` on *every* command afterwards -- `ps`, `logs`, `exec` and
-# `down` all fail interpolation without it, not just `up`. A deployment host
-# runs nothing that wants `.env.local`, so it gets the name Compose expects.
+# needs `--env-file` on *every* command afterwards.
+#
+# Secrets are runtime configuration only: nothing here is a build argument and
+# nothing is copied into an image layer. The web service lists its variables
+# one by one instead of using `env_file`, so it never receives the database
+# owner password.
 
 services:
+  postgres:
+    # Pinned major. Moving to another major needs a dump/restore, not a tag bump.
+    image: postgres:17-bookworm
+    environment:
+      # Bootstrap superuser and migration owner. Only the migrate job uses it.
+      POSTGRES_USER: butaca_owner
+      POSTGRES_DB: butaca
+      POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD:?missing from .env}
+      # Read once by the init script to create the non-superuser app role.
+      BUTACA_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?missing from .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
+    # No `ports`: reachable only by name from the private `database` network.
+    networks:
+      - database
+    healthcheck:
+      # Over TCP on purpose. During first-boot initialisation the temporary
+      # server listens on the unix socket only, so a socket check would report
+      # healthy before the init script has run.
+      test: ["CMD-SHELL", "psql -h 127.0.0.1 -U butaca_owner -d butaca -tAc 'select 1' | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    mem_limit: 512m
+    stop_grace_period: 30s
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   web:
     build:
       context: .
-      # Inlined into the client bundle while building, not read at runtime.
-      # See the Dockerfile. The :? form fails the build with this message
-      # instead of quietly producing an image that cannot reach Supabase.
-      args:
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?missing from .env, and the client bundle is built with it}
-        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:?missing from .env, and the client bundle is built with it}
+      target: runner
     image: butaca:latest
-    env_file:
-      - .env
     environment:
       # Bound to the interface Docker publishes; the standalone server defaults
       # to localhost, which from outside the container answers nothing.
       HOSTNAME: 0.0.0.0
       PORT: 3000
+      DATABASE_URL: postgres://butaca_app:${POSTGRES_APP_PASSWORD:?missing from .env}@postgres:5432/butaca
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?missing from .env}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      RESEND_API_KEY: ${RESEND_API_KEY:?missing from .env}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-Butaca <no-reply@butaca.lat>}
+      TMDB_ACCESS_TOKEN: ${TMDB_ACCESS_TOKEN:?missing from .env}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      # `database` is internal (no route out); `default` gives the app the
+      # outbound access TMDB, Resend and the AI provider need.
+      - default
+      - database
     ports:
       # Bound to the loopback address. Put a reverse proxy in front on the
-      # Ubuntu host and let it hold the certificate, rather than exposing the
-      # Node server to the internet directly.
+      # host and let it hold the certificate, rather than exposing the Node
+      # server to the internet directly.
       - "127.0.0.1:3000:3000"
     restart: unless-stopped
     stop_grace_period: 20s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *logging
+
+  # One-shot explicit migration. Excluded from `up` by its profile; run it with
+  # `docker compose run --rm migrate`.
+  migrate:
+    profiles: ["migrate"]
+    build:
+      context: .
+      target: migrate
+    image: butaca-migrate:latest
+    environment:
+      DATABASE_MIGRATION_URL: postgres://butaca_owner:${POSTGRES_OWNER_PASSWORD:?missing from .env}@postgres:5432/butaca
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - database
+    restart: "no"
+
+volumes:
+  postgres-data:
+
+networks:
+  database:
+    internal: true

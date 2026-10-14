@@ -10,13 +10,16 @@ export const ONBOARDING_PATH = "/onboarding";
 const API_PREFIX = "/api";
 
 /** Reachable without a session. `/reset-password` is public because the user
- * arrives from the recovery link before the profile exists in context. */
+ * arrives from the recovery link before the profile exists in context.
+ * `/verify-email` is the callback of the verification email, which can be
+ * opened signed in or out and must not be bounced by onboarding. */
 const PUBLIC_PATHS = new Set([
   "/login",
   "/register",
   "/forgot-password",
   "/reset-password",
   "/confirm",
+  "/verify-email",
 ]);
 
 /** Design gallery. It carries no user data and only exists outside production,
@@ -27,7 +30,11 @@ const PUBLIC_PREFIXES = ["/ui-foundation"];
  * is deliberately absent: the recovery link authenticates the user, and
  * redirecting them would make the password change unreachable. */
 const GUEST_ONLY_PATHS = new Set(["/login", "/register", "/forgot-password"]);
-const AUTHENTICATED_EXEMPT_PATHS = new Set(["/reset-password", "/confirm"]);
+const AUTHENTICATED_EXEMPT_PATHS = new Set([
+  "/reset-password",
+  "/confirm",
+  "/verify-email",
+]);
 
 function isPublicPath(pathname: string): boolean {
   return (

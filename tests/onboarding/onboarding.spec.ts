@@ -39,7 +39,7 @@ test.describe("Onboarding", () => {
 
     await onboarding.register(createdUser);
     await onboarding.selectMinimumGenres();
-    await onboarding.searchAndSelectMinimumMovies("matrix");
+    await onboarding.searchAndSelectMinimumMovies("a");
 
     let transientFailuresRemaining = 2;
     await page.route("**/api/onboarding", async (route) => {

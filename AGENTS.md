@@ -2,16 +2,16 @@
 
 ## Project
 
-Movie discovery and recommendation MVP built with Next.js, TypeScript, Supabase (Auth + PostgreSQL), Drizzle, Zod, TMDB, Motion, and AI SDK.
+Movie discovery and recommendation MVP built with Next.js, TypeScript, PostgreSQL, Better Auth, Drizzle, Zod, TMDB, Motion, and AI SDK.
 
 ## Stack Summary
 
 - **Runtime & Framework**: Next.js 16.3.1 (React 19.2.8, React Compiler)
 - **Language**: TypeScript 5 (Strict mode)
 - **Styling & UI**: Tailwind CSS 4, Motion (`motion` 13.1.0), clsx, tailwind-merge
-- **Database & Persistence**: Supabase PostgreSQL, Drizzle ORM 0.45.2, `postgres` driver, Drizzle Kit 0.31.10
+- **Database & Persistence**: PostgreSQL (self-managed 17 in Docker), Drizzle ORM 0.45.2, `postgres` driver, Drizzle Kit 0.31.10
 - **Validation & Contracts**: Zod 4.4.3 (`src/contracts/` is single source of truth; types derived with `z.infer`)
-- **External Integrations**: TMDB API (movie catalog & metadata), Supabase Auth (`@supabase/ssr`, `@supabase/supabase-js`)
+- **External Integrations**: TMDB API (movie catalog & metadata), Better Auth 1.7.7 (Auth & session engine), Resend (Transactional email HTTP API)
 - **AI**: AI SDK (`ai` 7.0.66, `@ai-sdk/google` 4.0.49, `@ai-sdk/react` 4.0.69)
 - **Quality & Testing**: Vitest 4.1.10, Testing Library React 16.3.2, Playwright 1.62.1, ESLint 9, Prettier 3.9.6
 - **Package Manager**: pnpm 11.13.1
@@ -47,7 +47,7 @@ Repository / Integration
 ```
 
 - Keep business logic out of React components and route handlers.
-- Never accept `userId` from client requests; resolve identity server-side via `AuthService.getCurrentUser()` (Supabase `getClaims()`, never `getSession()`).
+- Never accept `userId` from client requests; resolve identity server-side via `AuthService.getCurrentUser()`.
 - Access TMDB only via `src/integrations/tmdb/`.
 - Local movie cache (`movie_cache`) is disposable with a 24-hour TTL and is never a source of truth.
 - Recommendation engine uses Content-Based Filtering only. TMDB generates candidates; Butaca owns ranking.
@@ -63,7 +63,7 @@ src/
   db/             # Drizzle schemas, migrations, client, and repositories
   features/       # Domain modules (auth, discovery, recommendations, onboarding, movies, profile, likes, reviews)
   fixtures/       # Development and test fixtures
-  integrations/   # TMDB adapter/client, Supabase clients and session proxy
+  integrations/   # TMDB adapter/client, Better Auth client/adapter, Resend client
   lib/            # Shared utilities (environment parsers, route helpers)
 ```
 
@@ -98,7 +98,7 @@ pnpm lint             # ESLint checks
 pnpm typecheck        # Strict TypeScript type check (next typegen && tsc --noEmit)
 pnpm test:run         # Unit test suite with Vitest
 pnpm build            # Production Next.js build
-pnpm test:integration # Integration tests against Supabase & TMDB
+pnpm test:integration # Integration tests against PostgreSQL & TMDB
 pnpm test:e2e         # End-to-end tests with Playwright
 pnpm db:generate      # Generate Drizzle migrations
 pnpm db:migrate       # Apply pending migrations

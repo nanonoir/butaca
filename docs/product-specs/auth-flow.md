@@ -23,14 +23,13 @@ This specification defines the MVP authentication experience:
 - **Shell Separation**: Auth screens do **not** render `AppShell`, `FloatingNavigation`, or `MainSurface`. They use a focused layout (`src/app/(auth)/layout.tsx`).
 - **Validation**:
   - Email: normalized/trimmed, standard email format.
-  - Password: minimum 8 characters, must include at least 1 uppercase letter, 1 lowercase letter, and 1 digit. The shared password schema imposes no maximum length.
+  - Password: minimum 8 characters, maximum 1024 characters, must include at least 1 uppercase letter, 1 lowercase letter, and 1 digit.
   - Username (registration): 3 to 30 characters, letters, digits, and underscores, trimmed.
 - **Security & Password Recovery**: Reset flows redirect through `/confirm` and `/reset-password`.
 - **Navigation Guard**: Incomplete authenticated users are redirected to `/onboarding`. Unauthenticated users attempting to access protected routes are redirected to `/login`.
 
 ## Registration Field UX
 
-- Order: username (visible label "Nombre de usuario"), email, password, confirmation.
-- Username uses `name="username"` and `autocomplete="username"`; email uses `autocomplete="email"`. Password and confirmation use `autocomplete="new-password"`.
-- The password requirements checklist is always visible, including before typing, and indicates which requirements are met as the password changes.
-- Fields validate on blur and submit; after a field has been touched or the form submitted, changes revalidate it. Invalid submission focuses the first invalid field in visual order. Provider errors remain visible as field or form feedback.
+The current form remains username-first with the existing always-visible
+password checklist. The approved email-first/nickname and progressive-feedback
+adjustment is delivered separately in part 6; it does not change the HTTP payload.

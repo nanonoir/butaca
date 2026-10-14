@@ -134,6 +134,7 @@ describe("httpAuthService", () => {
     ).resolves.toBeUndefined();
     await expect(
       httpAuthService.resetPassword({
+        token: "opaque-token",
         newPassword: "Test-password1",
         confirmPassword: "Test-password1",
       }),
@@ -141,6 +142,13 @@ describe("httpAuthService", () => {
     await expect(logoutRequest()).resolves.toBeUndefined();
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/reset-password",
+      expect.objectContaining({
+        body: expect.stringContaining('"token":"opaque-token"'),
+      }),
+    );
   });
 
   it("surfaces an expired recovery link from the reset endpoint", async () => {
@@ -153,6 +161,7 @@ describe("httpAuthService", () => {
 
     await expectAuthError(
       httpAuthService.resetPassword({
+        token: "opaque-token",
         newPassword: "Test-password1",
         confirmPassword: "Test-password1",
       }),

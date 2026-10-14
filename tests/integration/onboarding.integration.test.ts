@@ -7,7 +7,7 @@ import {
   UserRepository,
 } from "../../src/db/repositories";
 import { createIntegrationDatabase } from "./support/database";
-import { createTestAuthUser, deleteTestAuthUser } from "./support/supabase";
+import { createTestAuthUser, deleteTestAuthUser } from "./support/identity";
 
 let database: ReturnType<typeof createIntegrationDatabase> | undefined;
 
@@ -29,16 +29,19 @@ function getDatabase() {
 
 describe("OnboardingService integration", () => {
   it("commits genres, liked/watched movies, and one completion timestamp atomically", async () => {
-    const authUser = await createTestAuthUser();
+    const authUser = await createTestAuthUser(getDatabase(), {
+      displayName: "Onboarding service integration",
+    });
     const users = new UserRepository(getDatabase());
     const service = new OnboardingService(getDatabase());
 
     try {
-      const viewer = await users.create({
-        id: authUser.id,
-        displayName: "Onboarding service integration",
-        avatarUrl: null,
-      });
+      const viewer = await users.findById(authUser.id);
+
+      if (!viewer) {
+        throw new Error("The trigger did not provision the profile");
+      }
+
       const input = {
         preferredGenreIds: [28, 12],
         likedMovieIds: [550, 680, 155],
@@ -73,7 +76,7 @@ describe("OnboardingService integration", () => {
         onboardingCompletedAt: new Date(first.completedAt),
       });
     } finally {
-      await deleteTestAuthUser(authUser.id);
+      await deleteTestAuthUser(getDatabase(), authUser.id);
     }
   });
 });

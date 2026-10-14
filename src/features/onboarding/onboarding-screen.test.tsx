@@ -195,9 +195,11 @@ describe("OnboardingScreen", () => {
     );
   });
 
-  it("retries one transient completion failure and keeps selections after exhaustion", async () => {
+  it.each(["INTERNAL_ERROR", "TMDB_UNAVAILABLE", "SERVICE_UNAVAILABLE"] as const)(
+    "retries one transient %s completion failure and keeps selections after exhaustion",
+    async (code) => {
     mocks.complete.mockRejectedValue(
-      new (await import("@/lib/api/client")).ApiClientError("INTERNAL_ERROR"),
+      new (await import("@/lib/api/client")).ApiClientError(code),
     );
     render(<OnboardingScreen />);
     await screen.findByRole("button", { name: "Action" });
@@ -248,7 +250,8 @@ describe("OnboardingScreen", () => {
     );
     expect(screen.getByRole("button", { name: "Reintentar" })).toBeEnabled();
     expect(mocks.replace).not.toHaveBeenCalled();
-  });
+    },
+  );
 
   /** The shell prefetches "/" while onboarding is open, and the proxy answers
    * that prefetch by sending an unfinished profile straight back here. Replacing
