@@ -87,6 +87,7 @@ describe("ProfilePage", () => {
     getCurrentSession.mockResolvedValue({
       user: { id: USER_ID, displayName: "Sofía Ramírez", avatarUrl: null },
       email: "sofia.ramirez@correo.com",
+      emailVerified: false,
     });
 
     render(await ProfilePage());
@@ -100,12 +101,16 @@ describe("ProfilePage", () => {
     expect(screen.getByText("6")).toBeTruthy();
     expect(screen.getByText("4")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Reenviar verificación" }),
+    ).toBeEnabled();
   });
 
   it("derives the avatar initials from the stored display name", async () => {
     getCurrentSession.mockResolvedValue({
       user: { id: USER_ID, displayName: "Sofía Ramírez", avatarUrl: null },
       email: "sofia.ramirez@correo.com",
+      emailVerified: false,
     });
 
     render(await ProfilePage());
@@ -117,6 +122,7 @@ describe("ProfilePage", () => {
     getCurrentSession.mockResolvedValue({
       user: { id: USER_ID, displayName: "viewer", avatarUrl: null },
       email: null,
+      emailVerified: true,
     });
     findByUserId.mockResolvedValue(null);
 
