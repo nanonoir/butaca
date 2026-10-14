@@ -82,6 +82,10 @@ const getForeignKeySummary = (table: AnyPgTable) =>
 describe("foundation database schema", () => {
   it("exports only the approved runtime schema surface", () => {
     expect(Object.keys(schema).sort()).toEqual([
+      "authAccount",
+      "authSession",
+      "authUser",
+      "authVerification",
       "movieCache",
       "movieReactionEnum",
       "reviewVerdictEnum",

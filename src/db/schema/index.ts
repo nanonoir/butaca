@@ -1,3 +1,4 @@
+export * from "./auth";
 export * from "./enums";
 export * from "./movie-cache";
 export * from "./relations";
