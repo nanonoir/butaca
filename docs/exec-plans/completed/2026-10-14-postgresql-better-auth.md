@@ -36,7 +36,7 @@ Development only. Preserve Drizzle, UUID domain relationships, profile ownership
 - Use Resend HTTP API with the configured runtime key, sender `Butaca <no-reply@butaca.lat>`, and canonical production URLs `https://butaca.lat`. No build-time secrets or deployment-time mail activation flag. DNS/provider verification remains external and may block real delivery, not implementation.
 - Retain accepted password validation; introduce no new business rules. Any necessary provider length compatibility must be explicit and tested.
 - Existing uncommitted documentation reorganization and `pnpm-lock.yaml` changes are owner work and must not be reverted or silently included in commits.
-- Owner explicitly deferred Git delivery until implementation is complete. No commits, push, PRs or merges in this execution. Later compare `main`/`develop`, agree any baseline synchronization, then use chained PRs into `develop` and a validated promotion PR to `main`. No resets/force-push and no production operations.
+- Git delivery was deferred during the implementation session for manual review and baseline comparison. It was subsequently delivered through owner-approved PRs #44–#51 into `develop` on 2026-10-14 using normal merge commits; `main` remained unchanged. No production operations were performed.
 - Preserve the existing review description minimum of 3: both `src/contracts/reviews.ts` and the latest archived migration explicitly use 3–400. An old integration assertion still expected 10; corrected only that test to 2-invalid/3-valid. The pre-existing 10–400 documentation discrepancy must not silently change domain behavior during this migration.
 - Better Auth's default maximum password length (128) conflicts with the accepted existing contract. A shared `PASSWORD_POLICY.MAX_LENGTH=1024` now aligns Zod and the provider; overlong new passwords produce a precise field validation message. Existing complexity/minimum rules remain unchanged. This compatibility bound avoids silently adopting 72 or 128.
 - Server-side `auth.api` did not enforce the expected HTTP-origin checks in execution. All six auth mutation routes now have a small shared fail-closed HTTP guard: exact canonical Origin, same-origin Fetch Metadata when present, and JSON for body-bearing endpoints. No provider CSRF/origin protection is disabled.
@@ -44,7 +44,7 @@ Development only. Preserve Drizzle, UUID domain relationships, profile ownership
 
 ## Validation and verification
 
-Record commands and outcomes here as execution proceeds. Never load private application environment into integration/E2E by default; use isolated, explicitly selected development targets. Never log secrets, connection strings, cookies, reset links or tokens. No destructive operations on existing databases.
+Integration/E2E used an explicitly selected isolated local test database. Never load private application environment by default; never log secrets, connection strings, cookies, reset links or tokens. No destructive operations on existing databases.
 
 - Docker Desktop was stopped. Started the local `desktop-linux` engine (named-pipe endpoint); no pre-existing running containers were present.
 - Created task-owned PostgreSQL 17 containers only: `butaca-migration-dev-pg` (loopback ephemeral port, isolated test database), and Compose project `butaca-migration-compose` (private network, fresh volume). Generated test credentials live outside the repository in the approved temporary directory.
@@ -110,8 +110,8 @@ Record commands and outcomes here as execution proceeds. Never load private appl
    Per explicit owner approval on 2026-10-14, historical user accounts, passwords, and sessions from Supabase were not imported, and automated backup/restore infrastructure was excluded for this development phase.
 6. **External DNS & Email Delivery Verification**:
    During development, the read-only Resend domain metadata request (`GET /domains`) returned HTTP 401 without body inspection or sending attempts, indicating that the configured API key may be restricted to sending rather than being invalid for delivery. Live inbox delivery was therefore not tested, and the public DKIM record must be copied from the Resend web console. Email delivery will activate automatically upon DNS verification by the owner on 2026-10-15 and provision of a key authorized for send, without requiring code rebuild or redeploy.
-7. **Git Delivery Deferred**:
-   Git delivery (staging, commits, push, PR, merge) was explicitly postponed by the owner to allow manual review and branching comparison. Work remains locally on branch `feat/postgresql-better-auth`.
+ 7. **Git Delivery Deferred During Implementation**:
+    Staging, commits, push, PRs and merge were postponed during the implementation session. The owner later approved the baseline synchronization and an eight-PR chain; PRs #44–#51 merged into `develop` on 2026-10-14. This did not change `main` or authorize production operations.
 
 ### Validation
 
@@ -137,5 +137,5 @@ Record commands and outcomes here as execution proceeds. Never load private appl
   Better Auth error wrapping on concurrent duplicate registrations returns HTTP 503 instead of HTTP 409 because Better Auth swallows the underlying unique constraint violation cause. Uniqueness and data integrity remain intact.
 - **Technical Debt TD-003**:
   Under parallel heavy loads (such as concurrent Docker and native builds), Motion UI transition timers in Vitest can experience thread contention. `vitest --maxWorkers=2` is recommended during multi-process builds.
-- **Git Delivery Execution**:
-  Owner will handle the commit chain, synchronization between `develop` and `main`, and promotion PRs outside this subagent session.
+- **Git Delivery Outcome**:
+  The approved chain completed through PR #51 into `develop`. Promotion from `develop` to `main` remains a separate owner decision, and production migration/deployment remains out of scope.
