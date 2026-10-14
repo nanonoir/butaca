@@ -89,7 +89,7 @@ pnpm build        # Build de producción
 
 ### Base de datos e integración
 
-Estos comandos necesitan credenciales reales de Supabase y TMDB. La [guía de la Foundation Backend](./docs/foundation-backend.md) explica de dónde sale cada variable.
+Estos comandos necesitan credenciales reales de Supabase y TMDB. La [guía de la Foundation Backend](./docs/references/foundation-backend-ops.md) explica de dónde sale cada variable.
 
 ```bash
 pnpm db:generate      # Genera migraciones desde el schema de Drizzle
@@ -111,14 +111,15 @@ pnpm test:integration # Suite contra Supabase/PostgreSQL y TMDB reales
 
 ## Documentación de decisiones
 
-El desarrollo se organiza con Spec-Driven Development:
+Las especificaciones, decisiones y evidencia de ejecución se organizan en:
 
-- [`openspec/specs/`](./openspec/specs/) — comportamiento y contratos aprobados.
-- [`openspec/changes/archive/`](./openspec/changes/archive/) — cambios implementados y verificados.
+- [`docs/product-specs/`](./docs/product-specs/) — comportamiento y contratos aprobados.
+- [`docs/design-docs/`](./docs/design-docs/) — decisiones técnicas.
+- [`docs/exec-plans/completed/`](./docs/exec-plans/completed/) — cambios implementados y verificados.
 
 Guías operativas:
 
-- [Foundation Backend](./docs/foundation-backend.md) — environment, conexiones, Auth, migraciones, pruebas de integración y errores de TMDB.
+- [Foundation Backend](./docs/references/foundation-backend-ops.md) — environment, conexiones, Auth, migraciones, pruebas de integración y errores de TMDB.
 
 ## Calidad antes de integrar
 

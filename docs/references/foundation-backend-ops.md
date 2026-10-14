@@ -2,7 +2,7 @@
 
 Esta guía explica cómo configurar, migrar, probar y diagnosticar la Foundation Backend: environment server-side, Supabase Auth, PostgreSQL con Drizzle, los cinco repositorios y la integración TMDB.
 
-La Foundation **no** incluye rutas de negocio, Server Actions, pantallas, motor de recomendación ni chat. Documenta la base sobre la que esos módulos se construyen.
+Documenta la base (environment, conexiones, Auth, migraciones, pruebas y TMDB) sobre la que se construyen los módulos de producto.
 
 > Ningún comando de esta guía imprime valores de variables. Si necesitás verificar una credencial, revisá el dashboard correspondiente, nunca la consola ni los logs.
 
@@ -23,7 +23,7 @@ Se usan dos archivos locales, ambos ignorados por Git (`.gitignore` cubre `.env.
 | `TMDB_ACCESS_TOKEN`                    | TMDB → Settings → API → _API Read Access Token_               | Solo `TmdbClient`                     |
 
 `GOOGLE_GENERATIVE_AI_API_KEY` alimenta al asistente y la lee únicamente
-[`src/lib/env/ai.ts`](../src/lib/env/ai.ts). Se obtiene en Google AI Studio →
+[`src/lib/env/ai.ts`](../../src/lib/env/ai.ts). Se obtiene en Google AI Studio →
 _Get API key_, no requiere tarjeta y se valida por separado a propósito: si
 falta, falla el chat y no el resto de la aplicación, que comparte
 `getServerEnv()`.
@@ -42,10 +42,10 @@ La validación está separada a propósito, de modo que cada capa solo puede ver
 
 | Módulo                                                    | Valida                                              | Notas                                                             |
 | --------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
-| [`src/lib/env/public.ts`](../src/lib/env/public.ts)       | Las dos variables `NEXT_PUBLIC_*`                   | Único parser que puede correr en el browser                       |
-| [`src/lib/env/server.ts`](../src/lib/env/server.ts)       | Las públicas + `DATABASE_URL` + `TMDB_ACCESS_TOKEN` | `server-only`; `getServerEnv()` cachea y lanza si `window` existe |
-| [`src/lib/env/migration.ts`](../src/lib/env/migration.ts) | Solo `DATABASE_MIGRATION_URL`                       | Lo usa Drizzle Kit, no el runtime                                 |
-| [`src/lib/env/ai.ts`](../src/lib/env/ai.ts)               | Solo `GOOGLE_GENERATIVE_AI_API_KEY`                 | `server-only`; separado para que su ausencia no frene la app      |
+| [`src/lib/env/public.ts`](../../src/lib/env/public.ts)       | Las dos variables `NEXT_PUBLIC_*`                   | Único parser que puede correr en el browser                       |
+| [`src/lib/env/server.ts`](../../src/lib/env/server.ts)       | Las públicas + `DATABASE_URL` + `TMDB_ACCESS_TOKEN` | `server-only`; `getServerEnv()` cachea y lanza si `window` existe |
+| [`src/lib/env/migration.ts`](../../src/lib/env/migration.ts) | Solo `DATABASE_MIGRATION_URL`                       | Lo usa Drizzle Kit, no el runtime                                 |
+| [`src/lib/env/ai.ts`](../../src/lib/env/ai.ts)               | Solo `GOOGLE_GENERATIVE_AI_API_KEY`                 | `server-only`; separado para que su ausencia no frene la app      |
 
 Los tres construyen el mensaje de error con `formatInvalidKeys`, que enumera **únicamente los nombres** de las claves inválidas. Un valor de credencial nunca llega al mensaje de excepción ni a un log.
 
@@ -116,7 +116,7 @@ Los errores expuestos son estables y no filtran payloads del proveedor:
 | `UserProfileNotProvisionedError` | Existe en `auth.users` pero no en `public.users`              |
 | `AuthProviderError`              | Falla del proveedor que no corresponde a los casos anteriores |
 
-[`src/proxy.ts`](../src/proxy.ts) renueva la sesión en cada request y propaga las cookies al request y a la response. Todavía **no** protege rutas de producto; eso corresponde a los módulos que consuman la Foundation.
+[`src/proxy.ts`](../../src/proxy.ts) renueva la sesión en cada request, propaga las cookies al request y a la response y aplica el route guard (fail-closed, incluido el gating de onboarding).
 
 ---
 
@@ -142,12 +142,14 @@ pnpm db:migrate    # aplica las migraciones pendientes
 pnpm db:check      # valida la secuencia y busca colisiones
 ```
 
-Hay dos migraciones y cumplen roles distintos:
+Hay cuatro migraciones; las dos primeras definen la base y la frontera de seguridad:
 
 | Archivo                        | Origen                   | Contenido                                                     |
 | ------------------------------ | ------------------------ | ------------------------------------------------------------- |
 | `0000_foundation_schema.sql`   | Generada por Drizzle Kit | Cinco tablas públicas, dos enums, checks e índices            |
 | `0001_foundation_security.sql` | **Custom** (`--custom`)  | FK hacia `auth.users`, `ENABLE ROW LEVEL SECURITY` y `REVOKE` |
+| `0002_independent_watched_state.sql` | Generada por Drizzle Kit | `reaction` anulable y check de estado significativo (reacción o `watched_at`) |
+| `0003_plain_dagger.sql`        | Generada por Drizzle Kit | Check de descripción de review: 3–400 caracteres              |
 
 `0001` es custom porque Drizzle no debe administrar el schema `auth` de Supabase. Al regenerar migraciones, verificá que `db:generate` no intente crear ni modificar `auth.users`.
 
@@ -227,14 +229,9 @@ Para forzar un refresh, borrá la fila correspondiente: la próxima lectura la r
 
 ---
 
-## 8. Atribución TMDB (pendiente para la UI)
+## 8. Atribución TMDB
 
-TMDB exige atribución visible en cualquier producto que use su API. La Foundation no incluye UI, así que **esto queda como requisito obligatorio para el primer módulo con pantallas**:
-
-- Mostrar el **logo aprobado de TMDB** (sin alterar colores ni proporciones).
-- Incluir en About / Credits el aviso requerido por TMDB: "This product uses the TMDB API but is not endorsed or certified by TMDB."
-
-Además, en base de datos y contratos guardamos **solo paths de imagen**, nunca URLs completas de TMDB. La construcción de la URL final es responsabilidad de la capa de presentación.
+La pantalla About muestra el logo aprobado de TMDB y el aviso requerido ("This product uses the TMDB API but is not endorsed or certified by TMDB."); ver [`docs/design-docs/about-page.md`](../design-docs/about-page.md). En base de datos y contratos guardamos **solo paths de imagen**, nunca URLs completas de TMDB; la URL final la construye la capa de presentación.
 
 ---
 
