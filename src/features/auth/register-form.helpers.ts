@@ -5,8 +5,8 @@ import { getAuthErrorMapping } from "./auth-error-messages";
 import { AUTH_SERVICE_OPERATION } from "./auth-service";
 
 export const REGISTER_FIELDS = [
-  "username",
   "email",
+  "username",
   "password",
   "confirmPassword",
 ] as const;
@@ -15,7 +15,7 @@ export type RegisterField = (typeof REGISTER_FIELDS)[number];
 export type RegisterFieldErrors = AuthFieldErrors<RegisterField>;
 
 export const REGISTER_FIELD_IDS: Record<RegisterField, string> = {
-  username: "register-username",
+  username: "register-nickname",
   email: "register-email",
   password: "register-password",
   confirmPassword: "register-confirm-password",
