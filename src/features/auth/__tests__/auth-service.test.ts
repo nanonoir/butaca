@@ -1,43 +1,43 @@
-import {
-  AuthApiError,
-  type AuthSession,
-  type AuthUser,
-} from "@supabase/supabase-js";
+import { APIError } from "better-auth/api";
 import { describe, expect, it, vi } from "vitest";
 
 import type { UserRepository } from "@/db/repositories/user-repository";
 import type { UserRecord } from "@/db/schema/users";
+import type { AuthApiPort } from "@/integrations/better-auth/api-port";
+import { createRateLimiter } from "@/integrations/better-auth/rate-limit";
 
-import {
-  ServerAuthService,
-  type AuthClientPort,
-} from "../server-auth-service";
 import {
   AuthProviderError,
   AuthRateLimitedError,
+  EmailAlreadyRegisteredError,
+  InvalidAuthTokenError,
   InvalidCredentialsError,
+  ServiceUnavailableError,
   UnauthenticatedError,
   UserProfileNotProvisionedError,
+  VerificationEmailNotSentError,
+  WeakPasswordError,
 } from "../errors";
+import { EmailDeliveryError } from "@/integrations/email";
+import { ServerAuthService } from "../server-auth-service";
 
-type AuthPort = AuthClientPort;
 type UsersPort = Pick<UserRepository, "findById" | "upsertFromAuthUser">;
-type SignUpResult = Awaited<ReturnType<AuthPort["signUp"]>>;
-type GetClaimsResult = Awaited<ReturnType<AuthPort["getClaims"]>>;
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
-const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 const CREATED_AT = "2026-08-20T12:00:00.000Z";
+const REQUEST_HEADERS = new Headers({ "x-forwarded-for": "203.0.113.7" });
 
-function createAuthDouble() {
+function createApiDouble() {
   return {
-    signUp: vi.fn<AuthPort["signUp"]>(),
-    signInWithPassword: vi.fn<AuthPort["signInWithPassword"]>(),
-    signOut: vi.fn<AuthPort["signOut"]>(),
-    getClaims: vi.fn<AuthPort["getClaims"]>(),
-    resetPasswordForEmail: vi.fn<AuthPort["resetPasswordForEmail"]>(),
-    updateUser: vi.fn<AuthPort["updateUser"]>(),
-  } satisfies AuthPort;
+    signUpEmail: vi.fn<AuthApiPort["signUpEmail"]>(),
+    signInEmail: vi.fn<AuthApiPort["signInEmail"]>(),
+    signOut: vi.fn<AuthApiPort["signOut"]>(),
+    getSession: vi.fn<AuthApiPort["getSession"]>(),
+    requestPasswordReset: vi.fn<AuthApiPort["requestPasswordReset"]>(),
+    resetPassword: vi.fn<AuthApiPort["resetPassword"]>(),
+    verifyEmail: vi.fn<AuthApiPort["verifyEmail"]>(),
+    sendVerificationEmail: vi.fn<AuthApiPort["sendVerificationEmail"]>(),
+  } satisfies AuthApiPort;
 }
 
 function createUsersDouble() {
@@ -45,29 +45,6 @@ function createUsersDouble() {
     findById: vi.fn<UsersPort["findById"]>(),
     upsertFromAuthUser: vi.fn<UsersPort["upsertFromAuthUser"]>(),
   } satisfies UsersPort;
-}
-
-function createAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
-  return {
-    id: USER_ID,
-    app_metadata: {},
-    user_metadata: { display_name: "Auth display name" },
-    aud: "authenticated",
-    email: "viewer@example.test",
-    created_at: CREATED_AT,
-    ...overrides,
-  };
-}
-
-function createSession(user: AuthUser): AuthSession {
-  return {
-    access_token: "test-access-token",
-    refresh_token: "test-refresh-token",
-    expires_in: 3_600,
-    expires_at: 1_787_229_600,
-    token_type: "bearer",
-    user,
-  };
 }
 
 function createUserRecord(overrides: Partial<UserRecord> = {}): UserRecord {
@@ -82,45 +59,33 @@ function createUserRecord(overrides: Partial<UserRecord> = {}): UserRecord {
   };
 }
 
-function createProviderError(message: string, code?: string) {
-  return Object.assign(new AuthApiError(message, 400, code), {
-    payload: { provider: "private-payload" },
-  }) satisfies NonNullable<SignUpResult["error"]>;
+function providerError(code: string, status: "BAD_REQUEST" | "UNPROCESSABLE_ENTITY" | "UNAUTHORIZED" = "BAD_REQUEST") {
+  return new APIError(status, { code, message: "provider-private-message" });
 }
 
-function createClaimsResult(sub: string): GetClaimsResult {
-  return {
-    data: {
-      claims: {
-        iss: "https://example.test/auth/v1",
-        sub,
-        aud: "authenticated",
-        exp: 1_787_229_600,
-        iat: 1_787_226_000,
-        role: "authenticated",
-        aal: "aal1",
-        session_id: SESSION_ID,
-        email: "viewer@example.test",
-      },
-      header: {
-        alg: "RS256",
-        kid: "test-key-id",
-        typ: "JWT",
-      },
-      signature: new Uint8Array([1, 2, 3]),
-    },
-    error: null,
-  };
+function setup() {
+  const api = createApiDouble();
+  const users = createUsersDouble();
+  const service = new ServerAuthService(api, users, {
+    headers: REQUEST_HEADERS,
+    limiter: createRateLimiter(),
+  });
+
+  return { api, users, service };
 }
 
-async function expectSafeProviderFailure(operation: Promise<unknown>) {
-  let thrown: unknown;
-
+async function rejection(operation: Promise<unknown>): Promise<unknown> {
   try {
     await operation;
   } catch (error) {
-    thrown = error;
+    return error;
   }
+
+  throw new Error("Expected the operation to reject");
+}
+
+async function expectSafeProviderFailure(operation: Promise<unknown>) {
+  const thrown = await rejection(operation);
 
   expect(thrown).toBeInstanceOf(AuthProviderError);
   expect(thrown).toMatchObject({
@@ -128,34 +93,29 @@ async function expectSafeProviderFailure(operation: Promise<unknown>) {
     message: "Authentication provider operation failed",
   });
   expect(thrown).not.toHaveProperty("cause");
-  expect(thrown).not.toHaveProperty("code");
-  expect(thrown).not.toHaveProperty("payload");
+  expect(thrown).not.toHaveProperty("body");
   expect(thrown).not.toHaveProperty("status");
   expect(String(thrown)).not.toContain("provider-private-message");
 }
 
-describe("ServerAuthService", () => {
-  it("signUp provisions public.users with the Auth UUID", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    const authUser = createAuthUser();
+describe("ServerAuthService sign-up and sign-in", () => {
+  it("signUp registers with the display name and returns the profile for the Auth UUID", async () => {
+    const { api, users, service } = setup();
     const profile = createUserRecord({ displayName: "Gonzalo" });
-    auth.signUp.mockResolvedValue({
-      data: { user: authUser, session: null },
-      error: null,
-    });
+    api.signUpEmail.mockResolvedValue({ user: { id: USER_ID }, verificationEmailFailed: false });
     users.upsertFromAuthUser.mockResolvedValue(profile);
 
-    const result = await new ServerAuthService(auth, users).signUp({
+    const result = await service.signUp({
       email: "viewer@example.test",
       password: "test-password",
       displayName: "Gonzalo",
     });
 
-    expect(auth.signUp).toHaveBeenCalledWith({
+    expect(api.signUpEmail).toHaveBeenCalledWith({
+      name: "Gonzalo",
       email: "viewer@example.test",
       password: "test-password",
-      options: { data: { display_name: "Gonzalo" } },
+      headers: REQUEST_HEADERS,
     });
     expect(users.upsertFromAuthUser).toHaveBeenCalledWith({
       id: USER_ID,
@@ -165,77 +125,90 @@ describe("ServerAuthService", () => {
     expect(result).toBe(profile);
   });
 
-  it("signUp maps an impossible success without a user to a safe provider error", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.signUp.mockResolvedValue({
-      data: { user: null, session: null },
-      error: null,
-    });
+  it("signUp maps an existing email to EmailAlreadyRegisteredError", async () => {
+    const { api, users, service } = setup();
+    api.signUpEmail.mockRejectedValue(
+      providerError("USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL", "UNPROCESSABLE_ENTITY"),
+    );
 
-    const operation = new ServerAuthService(auth, users).signUp({
-      email: "viewer@example.test",
-      password: "test-password",
-      displayName: "Gonzalo",
-    });
-
-    await expectSafeProviderFailure(operation);
+    await expect(
+      service.signUp({
+        email: "viewer@example.test",
+        password: "test-password",
+        displayName: "Gonzalo",
+      }),
+    ).rejects.toBeInstanceOf(EmailAlreadyRegisteredError);
     expect(users.upsertFromAuthUser).not.toHaveBeenCalled();
   });
 
-  it("signUp maps returned provider failures to a safe provider error", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.signUp.mockResolvedValue({
-      data: { user: null, session: null },
-      error: createProviderError("provider-private-message"),
-    });
+  it("signUp maps provider length rejections to WeakPasswordError", async () => {
+    const { api, service } = setup();
+    api.signUpEmail.mockRejectedValue(providerError("PASSWORD_TOO_LONG"));
 
-    const operation = new ServerAuthService(auth, users).signUp({
-      email: "viewer@example.test",
-      password: "test-password",
-      displayName: "Gonzalo",
-    });
+    await expect(
+      service.signUp({
+        email: "viewer@example.test",
+        password: "test-password",
+        displayName: "Gonzalo",
+      }),
+    ).rejects.toBeInstanceOf(WeakPasswordError);
+  });
 
-    await expectSafeProviderFailure(operation);
+  it("signUp hides unexpected provider failures behind a safe error", async () => {
+    const { api, users, service } = setup();
+    api.signUpEmail.mockRejectedValue(providerError("SOMETHING_ELSE"));
+
+    await expectSafeProviderFailure(
+      service.signUp({
+        email: "viewer@example.test",
+        password: "test-password",
+        displayName: "Gonzalo",
+      }),
+    );
     expect(users.upsertFromAuthUser).not.toHaveBeenCalled();
   });
 
-  it("signUp lets repository failures bubble unchanged", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
+  it("signUp lets non-operational repository failures bubble unchanged", async () => {
+    const { api, users, service } = setup();
     const repositoryError = new Error("repository failure");
-    auth.signUp.mockResolvedValue({
-      data: { user: createAuthUser(), session: null },
-      error: null,
-    });
+    api.signUpEmail.mockResolvedValue({ user: { id: USER_ID }, verificationEmailFailed: false });
     users.upsertFromAuthUser.mockRejectedValue(repositoryError);
 
-    const operation = new ServerAuthService(auth, users).signUp({
-      email: "viewer@example.test",
-      password: "test-password",
-      displayName: "Gonzalo",
-    });
-
-    await expect(operation).rejects.toBe(repositoryError);
+    await expect(
+      service.signUp({
+        email: "viewer@example.test",
+        password: "test-password",
+        displayName: "Gonzalo",
+      }),
+    ).rejects.toBe(repositoryError);
   });
 
-  it("signIn repairs a missing local profile without overwriting an existing one", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    const authUser = createAuthUser({
-      user_metadata: { display_name: "  Auth display name  " },
-    });
+  it("signUp maps an unreachable database to ServiceUnavailableError", async () => {
+    const { api, users, service } = setup();
+    api.signUpEmail.mockRejectedValue(
+      Object.assign(new Error("connect"), { code: "ECONNREFUSED" }),
+    );
+
+    await expect(
+      service.signUp({
+        email: "viewer@example.test",
+        password: "test-password",
+        displayName: "Gonzalo",
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableError);
+    expect(users.upsertFromAuthUser).not.toHaveBeenCalled();
+  });
+
+  it("signIn repairs a missing profile without overwriting an existing one", async () => {
+    const { api, users, service } = setup();
     let storedProfile: UserRecord | null = null;
-    auth.signInWithPassword.mockResolvedValue({
-      data: { user: authUser, session: createSession(authUser) },
-      error: null,
+    api.signInEmail.mockResolvedValue({
+      user: { id: USER_ID, name: "  Auth display name  ", email: "viewer@example.test" },
     });
     users.upsertFromAuthUser.mockImplementation(async (input) => {
       storedProfile ??= createUserRecord(input);
       return storedProfile;
     });
-    const service = new ServerAuthService(auth, users);
 
     const repaired = await service.signIn({
       email: "viewer@example.test",
@@ -255,39 +228,24 @@ describe("ServerAuthService", () => {
       displayName: "Auth display name",
       avatarUrl: null,
     });
-    expect(users.upsertFromAuthUser).toHaveBeenNthCalledWith(2, {
-      id: USER_ID,
-      displayName: "Auth display name",
-      avatarUrl: null,
-    });
     expect(repaired.displayName).toBe("Auth display name");
-    expect(preserved).toBe(storedProfile);
     expect(preserved).toMatchObject({
       displayName: "Edited locally",
       avatarUrl: "https://example.test/edited.png",
     });
   });
 
-  it("signIn derives a bounded display name from the email local part", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
+  it("signIn derives a bounded display name from the email when the name is blank", async () => {
+    const { api, users, service } = setup();
     const longLocalPart = "viewer".repeat(16);
-    const authUser = createAuthUser({
-      email: `  ${longLocalPart}  @example.test`,
-      user_metadata: { display_name: "   " },
-    });
-    auth.signInWithPassword.mockResolvedValue({
-      data: { user: authUser, session: createSession(authUser) },
-      error: null,
+    api.signInEmail.mockResolvedValue({
+      user: { id: USER_ID, name: "   ", email: `${longLocalPart}@example.test` },
     });
     users.upsertFromAuthUser.mockImplementation(async (input) =>
       createUserRecord(input),
     );
 
-    await new ServerAuthService(auth, users).signIn({
-      email: "viewer@example.test",
-      password: "test-password",
-    });
+    await service.signIn({ email: "viewer@example.test", password: "x" });
 
     expect(users.upsertFromAuthUser).toHaveBeenCalledWith({
       id: USER_ID,
@@ -296,52 +254,16 @@ describe("ServerAuthService", () => {
     });
   });
 
-  it("signIn derives a display name from the input email when the provider email is unavailable", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    const authUser = createAuthUser({
-      email: undefined,
-      user_metadata: { display_name: null },
-    });
-    auth.signInWithPassword.mockResolvedValue({
-      data: { user: authUser, session: createSession(authUser) },
-      error: null,
+  it("signIn falls back to a fixed non-empty display name", async () => {
+    const { api, users, service } = setup();
+    api.signInEmail.mockResolvedValue({
+      user: { id: USER_ID, name: "", email: "@example.test" },
     });
     users.upsertFromAuthUser.mockImplementation(async (input) =>
       createUserRecord(input),
     );
 
-    await new ServerAuthService(auth, users).signIn({
-      email: "viewer@example.test",
-      password: "test-password",
-    });
-
-    expect(users.upsertFromAuthUser).toHaveBeenCalledWith({
-      id: USER_ID,
-      displayName: "viewer",
-      avatarUrl: null,
-    });
-  });
-
-  it("signIn uses a fixed non-empty display name when both emails are unusable", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    const authUser = createAuthUser({
-      email: undefined,
-      user_metadata: { display_name: null },
-    });
-    auth.signInWithPassword.mockResolvedValue({
-      data: { user: authUser, session: createSession(authUser) },
-      error: null,
-    });
-    users.upsertFromAuthUser.mockImplementation(async (input) =>
-      createUserRecord(input),
-    );
-
-    await new ServerAuthService(auth, users).signIn({
-      email: "@example.test",
-      password: "test-password",
-    });
+    await service.signIn({ email: "viewer@example.test", password: "x" });
 
     expect(users.upsertFromAuthUser).toHaveBeenCalledWith({
       id: USER_ID,
@@ -350,313 +272,359 @@ describe("ServerAuthService", () => {
     });
   });
 
-  it("maps invalid credentials to InvalidCredentialsError", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.signInWithPassword.mockResolvedValue({
-      data: { user: null, session: null },
-      error: createProviderError(
-        "provider-private-message",
-        "invalid_credentials",
-      ),
-    });
-
-    const operation = new ServerAuthService(auth, users).signIn({
-      email: "viewer@example.test",
-      password: "test-password",
-    });
-
-    let thrown: unknown;
-
-    try {
-      await operation;
-    } catch (error) {
-      thrown = error;
-    }
-
-    expect(thrown).toBeInstanceOf(InvalidCredentialsError);
-    expect(thrown).toMatchObject({
-      name: "InvalidCredentialsError",
-      message: "Invalid email or password",
-    });
-    expect(thrown).not.toHaveProperty("cause");
-    expect(thrown).not.toHaveProperty("code");
-    expect(thrown).not.toHaveProperty("payload");
-    expect(thrown).not.toHaveProperty("status");
-    expect(String(thrown)).not.toContain("provider-private-message");
-    expect(users.upsertFromAuthUser).not.toHaveBeenCalled();
-  });
-
-  it("maps rejected invalid credentials to InvalidCredentialsError", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.signInWithPassword.mockRejectedValue(
-      createProviderError("provider-private-message", "invalid_credentials"),
+  it("maps invalid credentials without leaking provider detail", async () => {
+    const { api, users, service } = setup();
+    api.signInEmail.mockRejectedValue(
+      providerError("INVALID_EMAIL_OR_PASSWORD", "UNAUTHORIZED"),
     );
 
-    const operation = new ServerAuthService(auth, users).signIn({
-      email: "viewer@example.test",
-      password: "test-password",
-    });
-
-    let thrown: unknown;
-
-    try {
-      await operation;
-    } catch (error) {
-      thrown = error;
-    }
+    const thrown = await rejection(
+      service.signIn({ email: "viewer@example.test", password: "x" }),
+    );
 
     expect(thrown).toBeInstanceOf(InvalidCredentialsError);
     expect(thrown).toMatchObject({
       name: "InvalidCredentialsError",
       message: "Invalid email or password",
     });
-    expect(thrown).not.toHaveProperty("cause");
-    expect(thrown).not.toHaveProperty("code");
-    expect(thrown).not.toHaveProperty("payload");
-    expect(thrown).not.toHaveProperty("status");
     expect(String(thrown)).not.toContain("provider-private-message");
     expect(users.upsertFromAuthUser).not.toHaveBeenCalled();
   });
 
-  it("maps non-credential signIn failures to a safe provider error", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.signInWithPassword.mockResolvedValue({
-      data: { user: null, session: null },
-      error: createProviderError(
-        "provider-private-message",
-        "provider_internal_error",
-      ),
-    });
+  it("maps other signIn failures to a safe provider error", async () => {
+    const { api, service } = setup();
+    api.signInEmail.mockRejectedValue(providerError("INTERNAL"));
 
-    const operation = new ServerAuthService(auth, users).signIn({
-      email: "viewer@example.test",
-      password: "test-password",
-    });
-
-    await expectSafeProviderFailure(operation);
+    await expectSafeProviderFailure(
+      service.signIn({ email: "viewer@example.test", password: "x" }),
+    );
   });
 
-  it("getCurrentUser returns null when getClaims has no identity", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.getClaims.mockResolvedValue({ data: null, error: null });
+  it("signOut forwards the request headers and hides provider failures", async () => {
+    const { api, service } = setup();
+    api.signOut.mockResolvedValueOnce();
 
-    const result = await new ServerAuthService(auth, users).getCurrentUser();
+    await service.signOut();
+    expect(api.signOut).toHaveBeenCalledWith({ headers: REQUEST_HEADERS });
 
-    expect(result).toBeNull();
+    api.signOut.mockRejectedValueOnce(providerError("INTERNAL"));
+    await expectSafeProviderFailure(service.signOut());
+  });
+});
+
+describe("ServerAuthService current session", () => {
+  it("returns null for a guest without querying the profile", async () => {
+    const { api, users, service } = setup();
+    api.getSession.mockResolvedValue(null);
+
+    await expect(service.getCurrentSession()).resolves.toBeNull();
+    await expect(service.getCurrentUser()).resolves.toBeNull();
     expect(users.findById).not.toHaveBeenCalled();
   });
 
-  it("getCurrentUser evaluates provider errors before treating missing data as a guest", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.getClaims.mockResolvedValue({
-      data: null,
-      error: createProviderError("provider-private-message"),
-    });
-
-    const operation = new ServerAuthService(auth, users).getCurrentUser();
-
-    await expectSafeProviderFailure(operation);
-    expect(users.findById).not.toHaveBeenCalled();
-  });
-
-  it("getCurrentUser validates claims.sub and loads users.id", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
+  it("returns the profile with the account email and verification state", async () => {
+    const { api, users, service } = setup();
     const profile = createUserRecord();
-    auth.getClaims
-      .mockResolvedValueOnce(createClaimsResult("not-a-uuid"))
-      .mockResolvedValueOnce(createClaimsResult(USER_ID));
+    api.getSession.mockResolvedValue({
+      user: { id: USER_ID, email: "viewer@example.test", emailVerified: false },
+    });
     users.findById.mockResolvedValue(profile);
-    const service = new ServerAuthService(auth, users);
 
-    const malformedOperation = service.getCurrentUser();
-    await expectSafeProviderFailure(malformedOperation);
-    expect(users.findById).not.toHaveBeenCalled();
-
-    await expect(service.getCurrentUser()).resolves.toBe(profile);
-    expect(users.findById).toHaveBeenCalledOnce();
+    await expect(service.getCurrentSession()).resolves.toEqual({
+      user: profile,
+      email: "viewer@example.test",
+      emailVerified: false,
+    });
+    expect(api.getSession).toHaveBeenCalledWith({ headers: REQUEST_HEADERS });
     expect(users.findById).toHaveBeenCalledWith(USER_ID);
   });
 
-  it("getCurrentUser throws UserProfileNotProvisionedError for an Auth-only user", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.getClaims.mockResolvedValue(createClaimsResult(USER_ID));
+  it("rejects a malformed identity id as a provider failure", async () => {
+    const { api, users, service } = setup();
+    api.getSession.mockResolvedValue({
+      user: { id: "not-a-uuid", email: "viewer@example.test", emailVerified: true },
+    });
+
+    await expect(service.getCurrentUser()).rejects.toBeInstanceOf(
+      AuthProviderError,
+    );
+    expect(users.findById).not.toHaveBeenCalled();
+  });
+
+  it("throws UserProfileNotProvisionedError for an identity without profile", async () => {
+    const { api, users, service } = setup();
+    api.getSession.mockResolvedValue({
+      user: { id: USER_ID, email: "viewer@example.test", emailVerified: true },
+    });
     users.findById.mockResolvedValue(null);
 
-    const operation = new ServerAuthService(auth, users).getCurrentUser();
-
-    await expect(operation).rejects.toBeInstanceOf(
+    await expect(service.getCurrentUser()).rejects.toBeInstanceOf(
       UserProfileNotProvisionedError,
     );
-    await expect(operation).rejects.toMatchObject({
-      name: "UserProfileNotProvisionedError",
-      message: "User profile is not provisioned",
+  });
+
+  it("maps database outages on the session lookup to ServiceUnavailableError", async () => {
+    const { api, users, service } = setup();
+    api.getSession.mockResolvedValueOnce({
+      user: { id: USER_ID, email: "viewer@example.test", emailVerified: true },
     });
+    users.findById.mockRejectedValueOnce(
+      new Error("query failed", { cause: { code: "57P01" } }),
+    );
+
+    await expect(service.getCurrentUser()).rejects.toBeInstanceOf(
+      ServiceUnavailableError,
+    );
+
+    api.getSession.mockRejectedValueOnce(
+      Object.assign(new Error("down"), { code: "CONNECT_TIMEOUT" }),
+    );
+    await expect(service.getCurrentUser()).rejects.toBeInstanceOf(
+      ServiceUnavailableError,
+    );
+  });
+
+  it("maps the provider's wrapped session failure (500) to ServiceUnavailableError, not the 401 variant", async () => {
+    const { api, service } = setup();
+    api.getSession.mockRejectedValueOnce(
+      new APIError("INTERNAL_SERVER_ERROR", {
+        code: "FAILED_TO_GET_SESSION",
+        message: "Failed to get session",
+      }),
+    );
+
+    await expect(service.getCurrentSession()).rejects.toBeInstanceOf(
+      ServiceUnavailableError,
+    );
+
+    api.getSession.mockRejectedValueOnce(
+      providerError("FAILED_TO_GET_SESSION", "UNAUTHORIZED"),
+    );
+    await expect(service.getCurrentSession()).rejects.not.toBeInstanceOf(
+      ServiceUnavailableError,
+    );
+
+    api.getSession.mockRejectedValueOnce(
+      new APIError("INTERNAL_SERVER_ERROR", {
+        code: "SOMETHING_ELSE",
+        message: "x",
+      }),
+    );
+    await expect(service.getCurrentSession()).rejects.not.toBeInstanceOf(
+      ServiceUnavailableError,
+    );
   });
 
   it("requireCurrentUser throws UnauthenticatedError for a guest", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.getClaims.mockResolvedValue({ data: null, error: null });
+    const { api, service } = setup();
+    api.getSession.mockResolvedValue(null);
 
-    const operation = new ServerAuthService(auth, users).requireCurrentUser();
+    const thrown = await rejection(service.requireCurrentUser());
 
-    await expect(operation).rejects.toBeInstanceOf(UnauthenticatedError);
-    await expect(operation).rejects.toMatchObject({
+    expect(thrown).toBeInstanceOf(UnauthenticatedError);
+    expect(thrown).toMatchObject({
       name: "UnauthenticatedError",
       message: "Authentication required",
     });
   });
-
-  it("signOut maps returned provider failures without exposing provider payloads", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.signOut.mockResolvedValue({
-      error: createProviderError("provider-private-message"),
-    });
-
-    const operation = new ServerAuthService(auth, users).signOut();
-
-    await expectSafeProviderFailure(operation);
-    expect(auth.signOut).toHaveBeenCalledOnce();
-  });
-
-  it("signOut maps thrown provider failures without exposing provider payloads", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.signOut.mockRejectedValue(
-      createProviderError("provider-private-message"),
-    );
-
-    const operation = new ServerAuthService(auth, users).signOut();
-
-    await expectSafeProviderFailure(operation);
-    expect(auth.signOut).toHaveBeenCalledOnce();
-  });
 });
 
-type ResetPasswordResult = Awaited<
-  ReturnType<AuthPort["resetPasswordForEmail"]>
->;
-type UpdateUserResult = Awaited<ReturnType<AuthPort["updateUser"]>>;
+describe("ServerAuthService password reset and email verification", () => {
+  it("requests a reset link with the canonical redirect", async () => {
+    const { api, service } = setup();
+    api.requestPasswordReset.mockResolvedValue();
 
-describe("ServerAuthService password recovery", () => {
-  it("requests a reset link with the callback redirect", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.resetPasswordForEmail.mockResolvedValue({
-      data: {},
-      error: null,
-    } as ResetPasswordResult);
-
-    await new ServerAuthService(auth, users).requestPasswordReset({
+    await service.requestPasswordReset({
       email: "viewer@example.test",
-      redirectTo: "https://app.example.test/confirm",
+      redirectTo: "https://butaca.lat/reset-password",
     });
 
-    expect(auth.resetPasswordForEmail).toHaveBeenCalledWith(
-      "viewer@example.test",
-      { redirectTo: "https://app.example.test/confirm" },
-    );
+    expect(api.requestPasswordReset).toHaveBeenCalledWith({
+      email: "viewer@example.test",
+      redirectTo: "https://butaca.lat/reset-password",
+      headers: REQUEST_HEADERS,
+    });
   });
 
-  it("maps a send rate limit to AuthRateLimitedError", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.resetPasswordForEmail.mockResolvedValue({
-      data: null,
-      error: new AuthApiError(
-        "rate limited",
-        429,
-        "over_email_send_rate_limit",
-      ),
-    } as ResetPasswordResult);
-
-    await expect(
-      new ServerAuthService(auth, users).requestPasswordReset({
+  it("limits reset requests per email without revealing account existence", async () => {
+    const { api, service } = setup();
+    api.requestPasswordReset.mockResolvedValue();
+    const request = () =>
+      service.requestPasswordReset({
         email: "viewer@example.test",
-        redirectTo: "https://app.example.test/confirm",
-      }),
-    ).rejects.toBeInstanceOf(AuthRateLimitedError);
+        redirectTo: "https://butaca.lat/reset-password",
+      });
+
+    await request();
+    await request();
+    await request();
+
+    await expect(request()).rejects.toBeInstanceOf(AuthRateLimitedError);
+    expect(api.requestPasswordReset).toHaveBeenCalledTimes(3);
   });
 
-  it("maps any other recovery failure to AuthProviderError", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.resetPasswordForEmail.mockResolvedValue({
-      data: null,
-      error: new AuthApiError("boom", 500, "unexpected_failure"),
-    } as ResetPasswordResult);
+  it("updates the password with the explicit token", async () => {
+    const { api, service } = setup();
+    api.resetPassword.mockResolvedValue();
 
-    await expectSafeProviderFailure(
-      new ServerAuthService(auth, users).requestPasswordReset({
-        email: "viewer@example.test",
-        redirectTo: "https://app.example.test/confirm",
-      }),
-    );
-  });
+    await service.updatePassword({ newPassword: "NewPassword1", token: "tok" });
 
-  it("updates the password through the recovery session", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.updateUser.mockResolvedValue({
-      data: { user: createAuthUser() },
-      error: null,
-    } as UpdateUserResult);
-
-    await new ServerAuthService(auth, users).updatePassword({
+    expect(api.resetPassword).toHaveBeenCalledWith({
       newPassword: "NewPassword1",
+      token: "tok",
+      headers: REQUEST_HEADERS,
     });
-
-    expect(auth.updateUser).toHaveBeenCalledWith({ password: "NewPassword1" });
   });
 
-  it("maps a missing recovery session to UnauthenticatedError", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    auth.updateUser.mockResolvedValue({
-      data: { user: null },
-      error: new AuthApiError("missing session", 401, "session_not_found"),
-    } as UpdateUserResult);
+  it("maps an invalid or expired reset token to InvalidAuthTokenError", async () => {
+    const { api, service } = setup();
+    api.resetPassword.mockRejectedValue(providerError("INVALID_TOKEN"));
 
     await expect(
-      new ServerAuthService(auth, users).updatePassword({
-        newPassword: "NewPassword1",
-      }),
-    ).rejects.toBeInstanceOf(UnauthenticatedError);
+      service.updatePassword({ newPassword: "NewPassword1", token: "bad" }),
+    ).rejects.toBeInstanceOf(InvalidAuthTokenError);
+  });
+
+  it("verifies the email token and maps invalid ones", async () => {
+    const { api, service } = setup();
+    api.verifyEmail.mockResolvedValueOnce();
+
+    await service.verifyEmail("tok");
+    expect(api.verifyEmail).toHaveBeenCalledWith({
+      token: "tok",
+      headers: REQUEST_HEADERS,
+    });
+
+    api.verifyEmail.mockRejectedValueOnce(
+      providerError("TOKEN_EXPIRED", "UNAUTHORIZED"),
+    );
+    await expect(service.verifyEmail("old")).rejects.toBeInstanceOf(
+      InvalidAuthTokenError,
+    );
   });
 });
 
-describe("ServerAuthService getCurrentSession", () => {
-  it("returns the profile together with the verified claim email", async () => {
-    const auth = createAuthDouble();
-    const users = createUsersDouble();
-    const profile = createUserRecord();
-    auth.getClaims.mockResolvedValue(createClaimsResult(USER_ID));
-    users.findById.mockResolvedValue(profile);
+describe("ServerAuthService verification email delivery", () => {
+  const input = {
+    email: "viewer@example.test",
+    password: "test-password",
+    displayName: "Gonzalo",
+  };
 
-    await expect(
-      new ServerAuthService(auth, users).getCurrentSession(),
-    ).resolves.toEqual({ user: profile, email: "viewer@example.test" });
+  it("keeps the account and profile when the verification email fails, and says so", async () => {
+    const { api, users, service } = setup();
+    const profile = createUserRecord({ displayName: "Gonzalo" });
+    api.signUpEmail.mockResolvedValue({
+      user: { id: USER_ID },
+      verificationEmailFailed: true,
+    });
+    users.upsertFromAuthUser.mockResolvedValue(profile);
+
+    await expect(service.registerAccount(input)).resolves.toEqual({
+      user: profile,
+      verificationEmail: "failed",
+    });
+    await expect(service.signUp(input)).resolves.toBe(profile);
   });
 
-  it("returns null for a guest without querying the profile", async () => {
-    const auth = createAuthDouble();
+  it("reports a delivered verification email as sent", async () => {
+    const { api, users, service } = setup();
+    api.signUpEmail.mockResolvedValue({
+      user: { id: USER_ID },
+      verificationEmailFailed: false,
+    });
+    users.upsertFromAuthUser.mockResolvedValue(createUserRecord());
+
+    await expect(service.registerAccount(input)).resolves.toMatchObject({
+      verificationEmail: "sent",
+    });
+  });
+
+  it("retries the verification email for the signed-in user", async () => {
+    const { api, users, service } = setup();
+    api.getSession.mockResolvedValue({
+      user: { id: USER_ID, email: "viewer@example.test", emailVerified: false },
+    });
+    users.findById.mockResolvedValue(createUserRecord());
+    api.sendVerificationEmail.mockResolvedValue();
+
+    await service.requestEmailVerification();
+
+    expect(api.sendVerificationEmail).toHaveBeenCalledWith({
+      email: "viewer@example.test",
+      headers: REQUEST_HEADERS,
+    });
+  });
+
+  it("never claims a send that failed during the retry", async () => {
+    const { api, users, service } = setup();
+    api.getSession.mockResolvedValue({
+      user: { id: USER_ID, email: "viewer@example.test", emailVerified: false },
+    });
+    users.findById.mockResolvedValue(createUserRecord());
+    api.sendVerificationEmail.mockRejectedValue(
+      new EmailDeliveryError("status 403"),
+    );
+
+    await expect(service.requestEmailVerification()).rejects.toBeInstanceOf(
+      VerificationEmailNotSentError,
+    );
+  });
+
+  it("skips the retry for a verified address and rejects guests", async () => {
+    const { api, users, service } = setup();
+    users.findById.mockResolvedValue(createUserRecord());
+    api.getSession.mockResolvedValueOnce({
+      user: { id: USER_ID, email: "viewer@example.test", emailVerified: true },
+    });
+
+    await service.requestEmailVerification();
+    expect(api.sendVerificationEmail).not.toHaveBeenCalled();
+
+    api.getSession.mockResolvedValueOnce(null);
+    await expect(service.requestEmailVerification()).rejects.toBeInstanceOf(
+      UnauthenticatedError,
+    );
+  });
+});
+
+describe("ServerAuthService rate limiting", () => {
+  it("limits sign-in attempts per email before reaching the provider", async () => {
+    const { api, service } = setup();
+    api.signInEmail.mockRejectedValue(
+      providerError("INVALID_EMAIL_OR_PASSWORD", "UNAUTHORIZED"),
+    );
+    const attempt = () =>
+      service.signIn({ email: "viewer@example.test", password: "x" });
+
+    for (let index = 0; index < 10; index += 1) {
+      await expect(attempt()).rejects.toBeInstanceOf(InvalidCredentialsError);
+    }
+
+    await expect(attempt()).rejects.toBeInstanceOf(AuthRateLimitedError);
+    expect(api.signInEmail).toHaveBeenCalledTimes(10);
+  });
+
+  it("buckets by the first forwarded address", async () => {
+    const api = createApiDouble();
     const users = createUsersDouble();
-    auth.getClaims.mockResolvedValue({
-      data: null,
-      error: null,
-    } as GetClaimsResult);
+    const limiter = createRateLimiter();
+    api.resetPassword.mockResolvedValue();
+    const service = (address: string) =>
+      new ServerAuthService(api, users, {
+        headers: new Headers({ "x-forwarded-for": `${address}, 10.0.0.1` }),
+        limiter,
+      });
+
+    for (let index = 0; index < 20; index += 1) {
+      await service("198.51.100.1").updatePassword({ newPassword: "a", token: "t" });
+    }
 
     await expect(
-      new ServerAuthService(auth, users).getCurrentSession(),
-    ).resolves.toBeNull();
-    expect(users.findById).not.toHaveBeenCalled();
+      service("198.51.100.1").updatePassword({ newPassword: "a", token: "t" }),
+    ).rejects.toBeInstanceOf(AuthRateLimitedError);
+    await expect(
+      service("198.51.100.2").updatePassword({ newPassword: "a", token: "t" }),
+    ).resolves.toBeUndefined();
   });
 });

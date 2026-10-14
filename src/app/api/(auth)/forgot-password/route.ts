@@ -1,6 +1,7 @@
 import { ForgotPasswordRequestSchema } from "@/contracts/auth";
 import { runAuthRoute } from "@/features/auth/auth-http";
 import { getServerAuthService } from "@/features/auth/server-auth-factory";
+import { getAuthBaseUrl } from "@/integrations/better-auth";
 
 export async function POST(request: Request): Promise<Response> {
   return runAuthRoute(request, ForgotPasswordRequestSchema, async (input) => {
@@ -8,7 +9,7 @@ export async function POST(request: Request): Promise<Response> {
 
     await authService.requestPasswordReset({
       email: input.email,
-      redirectTo: new URL("/confirm", request.url).toString(),
+      redirectTo: new URL("/confirm", getAuthBaseUrl()).toString(),
     });
 
     // Always 204: revealing whether the address exists would turn this route

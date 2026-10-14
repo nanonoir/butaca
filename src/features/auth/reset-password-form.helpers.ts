@@ -1,6 +1,4 @@
-import {
-  type ResetPasswordRequest,
-} from "@/contracts";
+import { type ResetPasswordForm } from "@/contracts";
 
 import type { AuthFieldErrors } from "./auth-form.helpers";
 import { getAuthErrorMapping } from "./auth-error-messages";
@@ -24,7 +22,7 @@ export const RESET_FIELD_IDS: Record<ResetField, string> = {
   confirmPassword: "reset-confirm-password",
 };
 
-export const INITIAL_RESET_VALUES: ResetPasswordRequest = {
+export const INITIAL_RESET_VALUES: ResetPasswordForm = {
   newPassword: "",
   confirmPassword: "",
 };

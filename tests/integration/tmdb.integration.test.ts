@@ -18,12 +18,18 @@ import {
 import { TmdbError } from "../../src/integrations/tmdb/errors";
 import { TmdbMovieDetailResponseSchema } from "../../src/integrations/tmdb/schemas";
 import { createIntegrationDatabase } from "./support/database";
-import { getIntegrationEnv } from "./support/env";
+import { getIntegrationEnv, isLiveTmdbEnabled } from "./support/env";
 
 const INTERSTELLAR_MOVIE_ID = 157_336;
 const DRAMA_GENRE_ID = 18;
 const SCIENCE_FICTION_GENRE_ID = 878;
 const UNKNOWN_MOVIE_ID = 999_999_999;
+
+// These checks reach the real TMDB API, so they are opt-in: they need
+// BUTACA_TEST_TMDB_LIVE=1 and a TMDB_ACCESS_TOKEN in the selected test env.
+// Domain tests never depend on them.
+const live = isLiveTmdbEnabled();
+const tmdbToken = getIntegrationEnv().TMDB_ACCESS_TOKEN ?? "";
 
 let database: ReturnType<typeof createIntegrationDatabase> | undefined;
 let movieCacheRepository: MovieCacheRepository | undefined;
@@ -36,11 +42,15 @@ const countingFetch: typeof fetch = (input, init) => {
 };
 
 beforeAll(() => {
+  if (!live) {
+    return;
+  }
+
   database = createIntegrationDatabase();
   movieCacheRepository = new MovieCacheRepository(database.db);
   tmdb = new TmdbAdapter(
     new TmdbClient(
-      createTmdbConfig(getIntegrationEnv().TMDB_ACCESS_TOKEN),
+      createTmdbConfig(tmdbToken),
       countingFetch,
     ),
     movieCacheRepository,
@@ -86,7 +96,7 @@ async function countMovieCacheRows() {
   return row?.rows ?? 0;
 }
 
-describe("live TMDB operations", () => {
+describe.skipIf(!live)("live TMDB operations", () => {
   it("getGenres returns the shared genre contract", async () => {
     const genres = await getTmdbAdapter().getGenres();
 
@@ -164,7 +174,7 @@ describe("live TMDB operations", () => {
     expect(rejection).toBeInstanceOf(TmdbError);
     expect((rejection as TmdbError).code).toBe("NOT_FOUND");
     expect(
-      String(rejection).includes(getIntegrationEnv().TMDB_ACCESS_TOKEN),
+      String(rejection).includes(tmdbToken),
     ).toBe(false);
     expect(
       await getMovieCacheRepository().get(UNKNOWN_MOVIE_ID, TMDB_LANGUAGE),
@@ -172,7 +182,7 @@ describe("live TMDB operations", () => {
   });
 });
 
-describe("live movie cache", () => {
+describe.skipIf(!live)("live movie cache", () => {
   it("stores a validatable detail payload and serves the next call from PostgreSQL", async () => {
     const repository = getMovieCacheRepository();
 

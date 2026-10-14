@@ -44,7 +44,9 @@ const MOVIE_STEP: SelectionStep = {
 function isTransient(error: unknown) {
   return (
     error instanceof ApiClientError &&
-    (error.code === "INTERNAL_ERROR" || error.code === "TMDB_UNAVAILABLE")
+    (error.code === "INTERNAL_ERROR" ||
+      error.code === "TMDB_UNAVAILABLE" ||
+      error.code === "SERVICE_UNAVAILABLE")
   );
 }
 

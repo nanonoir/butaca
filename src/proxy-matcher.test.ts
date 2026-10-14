@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { config } from "./proxy";
+vi.mock("@/integrations/better-auth", () => ({ getSessionWithHeaders: vi.fn() }));
+
+const { config } = await import("./proxy");
 
 /** The matcher is a string Next compiles itself, and nothing here had ever
  * exercised it. A path that slips through the negative lookahead reaches the

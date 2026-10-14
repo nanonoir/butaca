@@ -12,6 +12,7 @@ export const AUTH_ENDPOINT = {
   LOGOUT: "/api/logout",
   FORGOT_PASSWORD: "/api/forgot-password",
   RESET_PASSWORD: "/api/reset-password",
+  RESEND_VERIFICATION: "/api/resend-verification",
 } as const;
 
 const NO_CONTENT_STATUS = 204;
@@ -89,4 +90,8 @@ export const httpAuthService: AuthService = {
 
 export async function logoutRequest(): Promise<void> {
   await postAuth(AUTH_ENDPOINT.LOGOUT, {});
+}
+
+export async function resendVerificationRequest(): Promise<void> {
+  await postAuth(AUTH_ENDPOINT.RESEND_VERIFICATION, {});
 }

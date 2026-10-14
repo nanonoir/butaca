@@ -1,8 +1,7 @@
-import { config } from "dotenv";
+import { getIntegrationEnv, loadTestEnvironmentFile } from "./support/env";
 
-import { getIntegrationEnv } from "./support/env";
-
-config({ path: ".env.local", quiet: true });
-config({ path: ".env.integration.local", override: true, quiet: true });
-
+// Deliberately no `.env`/`.env.local` fallback: the target must be selected
+// explicitly (BUTACA_TEST_ENV_FILE or exported variables) and pass the
+// isolation guard before any test touches a database.
+loadTestEnvironmentFile();
 getIntegrationEnv();

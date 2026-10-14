@@ -7,6 +7,7 @@ import {
   ForgotPasswordRequestSchema,
   LoginRequestSchema,
   RegisterRequestSchema,
+  ResetPasswordFormSchema,
   ResetPasswordRequestSchema,
   PasswordSchema,
   PASSWORD_POLICY,
@@ -51,10 +52,28 @@ describe("auth contracts", () => {
   it("requires matching reset passwords", () => {
     expect(
       ResetPasswordRequestSchema.safeParse({
+        token: "opaque-token",
         newPassword: "StrongPass1",
         confirmPassword: "DifferentPass1",
       }).success,
     ).toBe(false);
+  });
+
+  it("requires the recovery token in the reset request but not in the form", () => {
+    const passwords = {
+      newPassword: "StrongPass1",
+      confirmPassword: "StrongPass1",
+    };
+
+    expect(ResetPasswordRequestSchema.safeParse(passwords).success).toBe(false);
+    expect(
+      ResetPasswordRequestSchema.safeParse({ ...passwords, token: "" }).success,
+    ).toBe(false);
+    expect(
+      ResetPasswordRequestSchema.safeParse({ ...passwords, token: "t0ken" })
+        .success,
+    ).toBe(true);
+    expect(ResetPasswordFormSchema.safeParse(passwords).success).toBe(true);
   });
 
   it("normalizes recovery emails without exposing account state", () => {
@@ -70,6 +89,7 @@ describe("auth contracts", () => {
 
   it("requires the reset password policy before matching confirmation", () => {
     const result = ResetPasswordRequestSchema.safeParse({
+      token: "opaque-token",
       newPassword: "short",
       confirmPassword: "short",
     });
@@ -87,6 +107,13 @@ describe("auth contracts", () => {
 
     expect(PasswordSchema.safeParse(validPassword).success).toBe(true);
     expect(PasswordSchema.safeParse(shortPassword).success).toBe(false);
+    const atLimit = `Aa1${"a".repeat(PASSWORD_POLICY.MAX_LENGTH - 3)}`;
+    const overLimit = `${atLimit}a`;
+
+    expect(PasswordSchema.safeParse(atLimit).success).toBe(true);
+    expect(PasswordSchema.safeParse(overLimit).error?.issues[0]?.message).toBe(
+      "La contraseña debe tener como máximo 1024 caracteres",
+    );
     expect(PASSWORD_POLICY.UPPERCASE.test(validPassword)).toBe(true);
     expect(PASSWORD_POLICY.LOWERCASE.test(validPassword)).toBe(true);
     expect(PASSWORD_POLICY.NUMBER.test(validPassword)).toBe(true);

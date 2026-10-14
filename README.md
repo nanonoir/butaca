@@ -29,7 +29,7 @@ Encontrar una buena película no debería sentirse como navegar infinitamente en
 | --- | --- |
 | Aplicación | Next.js 16 · React 19 · TypeScript |
 | Estilos y motion | Tailwind CSS 4 · Motion |
-| Datos | Supabase · Drizzle ORM · PostgreSQL |
+| Datos | PostgreSQL 17 · Drizzle ORM · Better Auth |
 | Validación | Zod 4 · contratos compartidos |
 | Catálogo | TMDB |
 | IA | AI SDK |
@@ -55,7 +55,7 @@ src/
 ├── contracts/      # Shared Zod schemas and inferred types
 ├── db/             # Drizzle schema and migrations
 ├── features/       # Domain-focused application logic
-├── integrations/   # Supabase and TMDB adapters
+├── integrations/   # TMDB, Better Auth and Resend integrations
 ├── fixtures/       # Validated development and test data
 └── lib/            # Shared infrastructure utilities
 ```
@@ -66,7 +66,7 @@ src/
 
 - Node.js 20+
 - pnpm 11+
-- Variables de entorno de Supabase, TMDB y los servicios de IA cuando sus módulos estén habilitados
+- Variables de entorno de PostgreSQL, Better Auth, Resend, TMDB e IA según la [guía de backend](./docs/references/foundation-backend-ops.md)
 
 ### Instalación
 
@@ -89,16 +89,16 @@ pnpm build        # Build de producción
 
 ### Base de datos e integración
 
-Estos comandos necesitan credenciales reales de Supabase y TMDB. La [guía de la Foundation Backend](./docs/references/foundation-backend-ops.md) explica de dónde sale cada variable.
+Las migraciones requieren una conexión explícita; integración necesita una base aislada de prueba y configuración explícita. La [guía de backend](./docs/references/foundation-backend-ops.md) detalla variables y pruebas seguras.
 
 ```bash
 pnpm db:generate      # Genera migraciones desde el schema de Drizzle
 pnpm db:migrate       # Aplica las migraciones pendientes
 pnpm db:check         # Valida la secuencia de migraciones
-pnpm test:integration # Suite contra Supabase/PostgreSQL y TMDB reales
+pnpm test:integration # PostgreSQL aislado; TMDB live requiere opt-in
 ```
 
-> La suite de integración crea y borra usuarios reales de Auth. No la apuntes a un proyecto con datos valiosos.
+> La suite crea y elimina únicamente fixtures en una base de prueba explícita. Nunca la apuntes a datos valiosos. Para el stack con PostgreSQL privado, seguí la [guía Docker](./docs/references/docker-deployment.md).
 
 ## Principios del producto
 

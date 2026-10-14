@@ -14,9 +14,9 @@ Repository / Integration Adapter (Persistence & External Providers)
 
 ### Invariants:
 - **No business logic in UI or routes**: React components, Server Components, and Next.js Route Handlers strictly delegate domain logic and orchestration to application services.
-- **Explicit authentication & user boundaries**: No endpoint accepts a client-provided `userId`. The user identity is extracted server-side through Supabase Auth `getClaims()` (`AuthService.getCurrentUser()`) and passed down to repositories explicitly. `getSession()` is never used to authorize.
+- **Explicit authentication & user boundaries**: No endpoint accepts a client-provided `userId`. The user identity is extracted server-side via Better Auth sessions (`auth.api.getSession` / `AuthService.getCurrentUser()`) and passed down to repositories explicitly.
 - **Single source of truth for contracts**: Zod schemas (`src/contracts/`) define canonical input/output types. All TypeScript types are inferred using `z.infer`. Never duplicate contract types manually.
-- **Provider isolation**: External integrations and providers (Supabase and TMDB) are isolated within `src/integrations/`. No provider-specific types, raw URLs, or SDK calls leak into React components or Application Services.
+- **Provider isolation**: External integrations and providers (Better Auth, Resend, and TMDB) are completely isolated within `src/integrations/`. No provider-specific types, raw URLs, or SDK calls leak into React components or Application Services.
 
 ---
 
@@ -30,7 +30,7 @@ src/
 ├── db/             # Database layer: Drizzle schemas, migrations, and repository implementations
 ├── features/       # Domain modules (auth, discovery, recommendations, onboarding, movies, profile, likes, reviews)
 ├── fixtures/       # Validated fixtures and dev/test data
-├── integrations/   # External provider clients and adapters (Supabase clients/session proxy, TMDB adapter)
+├── integrations/   # External provider clients and adapters (Better Auth, Resend HTTP client, TMDB adapter)
 └── lib/            # Shared cross-cutting utilities (environment parsers, API route helpers)
 ```
 
@@ -39,33 +39,35 @@ src/
 ## 3. Data & Persistence Architecture
 
 ### 3.1 Database Technology
-- **Engine**: Supabase-managed PostgreSQL. Auth and the application database are the same Supabase project.
+- **Engine**: PostgreSQL 17 self-managed in Docker container (internal network, no public port).
 - **ORM & Migrations**: Drizzle ORM (`drizzle-orm`) and Drizzle Kit (`drizzle-kit`).
 - **Connection Strategy**:
-  - `DATABASE_URL`: Runtime connection through the Supabase pooler (transaction mode); the client is created with `prepare: false`.
-  - `DATABASE_MIGRATION_URL`: Direct (session mode) connection used only by `drizzle-kit`.
+  - `DATABASE_URL`: Runtime connection used by Next.js via the non-superuser application role (`butaca_app`).
+  - `DATABASE_MIGRATION_URL`: Direct connection used by the migration container target or `drizzle-kit` via the owner role (`butaca_owner`).
 
 ### 3.2 Public Tables & Invariants
-- `users`: Profile entity. PK `id` reuses `auth.users(id)` (UUID) through a foreign key with `ON DELETE CASCADE`, added by custom migration `0001`.
+- `users`: Profile entity. PK `id` directly matches Better Auth `auth_user(id)` UUID with `ON DELETE CASCADE`. Synchronized atomically on `auth_user` creation via PostgreSQL trigger.
 - `user_preferences`: User genre tastes. Must contain at least 2 positive genre IDs.
-- `user_movie_interactions`: User reaction (`LIKE` / `DISLIKE`, nullable) and `watchedAt` timestamp. Reaction and watched state are independent; at least one must be present. Unique constraint on `(user_id, movie_id)`.
+- `user_movie_interactions`: User reaction (`LIKE` / `DISLIKE`) and `watchedAt` timestamp. Reaction and watched state are independent. Unique constraint on `(user_id, movie_id)`.
 - `reviews`: User movie review with verdict (`RECOMMENDED` / `NOT_WORTH_IT`), title (3–30 chars), and description (3–400 chars). Unique constraint on `(user_id, movie_id)`.
 - `movie_cache`: Disposable global cache for TMDB movie details keyed by `(movie_id, language)`. TTL of 24 hours.
 
-### 3.3 Security & Access Boundary
-- Supabase Data API is disabled; there is no REST/GraphQL surface over `public`.
-- Row Level Security is enabled on all five tables with **no policies**, and `anon` / `authenticated` have all privileges revoked (migration `0001`).
-- The runtime reaches the database only through server-side Drizzle; tenant isolation is enforced in repositories by qualifying every private query with `userId`.
+### 3.3 Security & Role Isolation
+- PostgreSQL runs in a private internal Docker network without exposing port 5432 to the host.
+- Application runtime connects using a dedicated non-superuser role (`butaca_app`) with minimal privileges.
+- Schemas and migrations are owned by `butaca_owner`.
+- Tenant isolation is strictly enforced in application repositories by qualifying queries with `userId`.
 
 ---
 
 ## 4. Key Integrations
 
-### 4.1 Supabase Auth & Identity
-- Supabase Auth owns identity (`auth.users`), credentials, sessions, and email flows (email + password).
-- `AuthService` resolves identity with `getClaims()` and validates `claims.sub` as a UUID; a user present in `auth.users` without a `public.users` row raises `UserProfileNotProvisionedError`.
-- `src/proxy.ts` renews the session on every request (`src/integrations/supabase/proxy.ts`) and applies the route guard fail-closed, including onboarding gating.
-- Password and form rules live in [`docs/product-specs/auth-flow.md`](./docs/product-specs/auth-flow.md).
+### 4.1 Better Auth & Identity
+- Better Auth handles user identity (`auth_user`), credentials (`auth_account`), sessions (`auth_session`), and tokens (`auth_verification`).
+- Passwords are securely hashed by Better Auth; password policy enforces minimum 8, maximum 1024 characters with complexity checks.
+- Middleware / Proxy (`src/proxy.ts`) and server-side route guards validate sessions and protect routes fail-closed.
+- Reset password uses explicit single-use tokens with expiration; email verification is non-gating for login and onboarding.
+- Transactional emails (verification and password reset) are dispatched via Resend HTTP API (`Butaca <no-reply@butaca.lat>`).
 
 ### 4.2 TMDB API
 - Acts as the canonical movie catalog (`movieId: number` from TMDB).

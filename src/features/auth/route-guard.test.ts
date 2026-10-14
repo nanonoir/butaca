@@ -30,6 +30,7 @@ describe("resolveRouteGuard for a guest", () => {
       "/forgot-password",
       "/reset-password",
       "/confirm",
+      "/verify-email",
     ]) {
       expect(resolveRouteGuard(pathname, GUEST)).toEqual({ type: "continue" });
     }
@@ -64,6 +65,14 @@ describe("resolveRouteGuard for an authenticated user", () => {
     expect(resolveRouteGuard("/reset-password", AUTHENTICATED)).toEqual({
       type: "continue",
     });
+  });
+
+  it("lets the email callbacks through even before onboarding", () => {
+    for (const pathname of ["/confirm", "/verify-email"]) {
+      expect(resolveRouteGuard(pathname, AUTHENTICATED, null)).toEqual({
+        type: "continue",
+      });
+    }
   });
 
   it("gates incomplete users to onboarding without looping", () => {

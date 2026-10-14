@@ -4,5 +4,6 @@ Curated technical and domain reference material for Butaca.
 
 ## Operational & Deployment References
 
-- [Docker Deployment Guide](./docker-deployment.md): Building and running the app image with Docker Compose on Ubuntu against the managed Supabase project, environment variable scoping, port/TLS, and migration workflow.
-- [Foundation Backend Operational Guide](./foundation-backend-ops.md): Environment setup, Supabase connections and Auth, migration verification, integration tests, and TMDB integration.
+- [Docker Deployment Guide](./docker-deployment.md): Instructions for building and running Butaca via Docker Compose on Ubuntu, environment variable scoping, port mapping, and migration workflow.
+- [Resend DNS Handoff](./resend-dns.md): Sending records, the domain-specific DKIM value to copy, and pending provider verification.
+- [Foundation Backend Operational Guide](./foundation-backend-ops.md): Operations guide detailing server environment setup, self-managed PostgreSQL in Docker, Better Auth configuration, migration verification, and TMDB integration.
