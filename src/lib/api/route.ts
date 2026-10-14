@@ -4,10 +4,11 @@ import { z } from "zod";
 
 import type { ApiErrorCode } from "@/contracts";
 import {
-  AuthProviderError,
+  ServiceUnavailableError,
   UnauthenticatedError,
   UserProfileNotProvisionedError,
 } from "@/features/auth/errors";
+import { isOperationalDatabaseError } from "@/db/errors";
 import { getServerAuthService } from "@/features/auth/server-auth-factory";
 import { TmdbError } from "@/integrations/tmdb";
 
@@ -26,6 +27,7 @@ const API_ERROR_STATUS: Record<ApiErrorCode, number> = {
   REACTION_REQUIRED: 409,
   REVIEW_NOT_FOUND: 404,
   TMDB_UNAVAILABLE: 503,
+  SERVICE_UNAVAILABLE: 503,
   INTERNAL_ERROR: 500,
 };
 
@@ -42,6 +44,7 @@ const API_ERROR_MESSAGE: Record<ApiErrorCode, string> = {
   REACTION_REQUIRED: "A reaction is required first",
   REVIEW_NOT_FOUND: "Review not found",
   TMDB_UNAVAILABLE: "The movie catalog is unavailable",
+  SERVICE_UNAVAILABLE: "The service is temporarily unavailable",
   INTERNAL_ERROR: "Unexpected error",
 };
 
@@ -89,10 +92,7 @@ export function toApiErrorCode(error: unknown): ApiErrorCode {
     return "VALIDATION_ERROR";
   }
 
-  if (
-    error instanceof UnauthenticatedError ||
-    error instanceof UserProfileNotProvisionedError
-  ) {
+  if (error instanceof UnauthenticatedError) {
     return "UNAUTHORIZED";
   }
 
@@ -100,8 +100,13 @@ export function toApiErrorCode(error: unknown): ApiErrorCode {
     return tmdbErrorCode(error);
   }
 
-  if (error instanceof AuthProviderError) {
-    return "INTERNAL_ERROR";
+  // A valid session without a profile row is a server-side gap, not a logout.
+  if (
+    error instanceof ServiceUnavailableError ||
+    error instanceof UserProfileNotProvisionedError ||
+    isOperationalDatabaseError(error)
+  ) {
+    return "SERVICE_UNAVAILABLE";
   }
 
   return "INTERNAL_ERROR";

@@ -1,5 +1,6 @@
 import type { ComponentPropsWithoutRef } from "react";
 
+import { PasswordSchema } from "@/contracts/auth";
 import { PASSWORD_POLICY } from "@/contracts/password-policy";
 import { cn } from "@/lib/utils";
 
@@ -18,10 +19,12 @@ export interface PasswordRequirementsProps extends Omit<
   "children"
 > {
   password: string;
+  unmetOnly?: boolean;
 }
 
 export function PasswordRequirements({
   password,
+  unmetOnly = false,
   className,
   ...props
 }: PasswordRequirementsProps) {
@@ -48,6 +51,21 @@ export function PasswordRequirements({
     },
   ];
 
+  const validation = unmetOnly ? PasswordSchema.safeParse(password) : undefined;
+  const visibleRequirements = validation
+    ? validation.success
+      ? []
+      : validation.error.issues.map((issue, index) => ({
+          key: `unmet-${index}`,
+          label: issue.message,
+          isMet: false,
+        }))
+    : requirements;
+
+  if (visibleRequirements.length === 0) {
+    return null;
+  }
+
   const classes = cn("flex flex-col gap-2 text-sm", className);
 
   return (
@@ -57,20 +75,28 @@ export function PasswordRequirements({
       aria-label="Requisitos de la contraseña"
       aria-live="polite"
     >
-      {requirements.map((requirement) => (
+      {visibleRequirements.map((requirement) => (
         <li
           key={requirement.key}
-          className="flex items-center gap-2 text-muted-foreground"
+          className={cn(
+            "flex items-center gap-2",
+            unmetOnly ? "text-primary" : "text-muted-foreground",
+          )}
           data-valid={requirement.isMet}
         >
           <span
             aria-hidden="true"
-            className={requirement.isMet ? "text-primary" : "text-muted"}
+            className={
+              unmetOnly || requirement.isMet ? "text-primary" : "text-muted"
+            }
           >
             {requirement.isMet ? "✓" : "○"}
           </span>
           <span>
-            {requirement.label}: {requirement.isMet ? "cumplido" : "no cumplido"}
+            {requirement.label}
+            {unmetOnly
+              ? ""
+              : `: ${requirement.isMet ? "cumplido" : "no cumplido"}`}
           </span>
         </li>
       ))}

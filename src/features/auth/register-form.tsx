@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import {
   RegisterRequestSchema,
+  PasswordSchema,
   type AuthUser,
   type RegisterRequest,
 } from "@/contracts";
@@ -196,9 +197,7 @@ export function RegisterForm({
           }
 
           reportUnexpectedAuthError(AUTH_SERVICE_OPERATION.REGISTER, error);
-          setFormError(
-            getAuthFallbackMessage(AUTH_SERVICE_OPERATION.REGISTER),
-          );
+          setFormError(getAuthFallbackMessage(AUTH_SERVICE_OPERATION.REGISTER));
         }
       } else {
         router.push("/onboarding");
@@ -212,6 +211,9 @@ export function RegisterForm({
   }
 
   const classes = cn("flex flex-col gap-5", className);
+  const showPasswordRequirements =
+    (touched.password || hasSubmitted) &&
+    !PasswordSchema.safeParse(values.password).success;
 
   return (
     <>
@@ -222,29 +224,6 @@ export function RegisterForm({
         aria-busy={isSubmitting}
         onSubmit={handleSubmit}
       >
-        <Input
-          id={REGISTER_FIELD_IDS.username}
-          name="username"
-          type="text"
-          label="Nombre de usuario"
-          autoComplete="username"
-          value={values.username}
-          onChange={(event) =>
-            handleFieldChange("username", event.target.value)
-          }
-          onBlur={() => handleFieldBlur("username")}
-          invalid={Boolean(fieldErrors.username)}
-          error={fieldErrors.username}
-          aria-describedby="register-username-help"
-          disabled={isSubmitting}
-        />
-        <p
-          id="register-username-help"
-          className="-mt-3 text-sm text-muted-foreground"
-        >
-          De 3 a 30 caracteres usando letras, números y guiones bajos.
-        </p>
-
         <Input
           id={REGISTER_FIELD_IDS.email}
           name="email"
@@ -266,6 +245,29 @@ export function RegisterForm({
           Usa una dirección de correo a la que tengas acceso para recuperarla.
         </p>
 
+        <Input
+          id={REGISTER_FIELD_IDS.username}
+          name="nickname"
+          type="text"
+          label="Nombre de usuario"
+          autoComplete="nickname"
+          value={values.username}
+          onChange={(event) =>
+            handleFieldChange("username", event.target.value)
+          }
+          onBlur={() => handleFieldBlur("username")}
+          invalid={Boolean(fieldErrors.username)}
+          error={fieldErrors.username}
+          aria-describedby="register-nickname-help"
+          disabled={isSubmitting}
+        />
+        <p
+          id="register-nickname-help"
+          className="-mt-3 text-sm text-muted-foreground"
+        >
+          De 3 a 30 caracteres usando letras, números y guiones bajos.
+        </p>
+
         <PasswordInput
           id={REGISTER_FIELD_IDS.password}
           name="password"
@@ -277,15 +279,22 @@ export function RegisterForm({
           }
           onBlur={() => handleFieldBlur("password")}
           invalid={Boolean(fieldErrors.password)}
-          error={fieldErrors.password}
-          aria-describedby="register-password-requirements"
+          error={showPasswordRequirements ? undefined : fieldErrors.password}
+          aria-describedby={
+            showPasswordRequirements
+              ? "register-password-requirements"
+              : undefined
+          }
           disabled={isSubmitting}
         />
-        <PasswordRequirements
-          id="register-password-requirements"
-          password={values.password}
-          className="-mt-3"
-        />
+        {showPasswordRequirements ? (
+          <PasswordRequirements
+            id="register-password-requirements"
+            password={values.password}
+            unmetOnly
+            className="-mt-3"
+          />
+        ) : null}
 
         <PasswordInput
           id={REGISTER_FIELD_IDS.confirmPassword}

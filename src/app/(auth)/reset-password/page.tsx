@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+
 import { AuthHeader } from "@/components/shared/auth-header";
 import {
   ResetPasswordForm,
@@ -6,14 +8,25 @@ import {
 
 type ResetSearchParams = Record<string, string | string[] | undefined>;
 
-function getLinkStatus(value: string | string[] | undefined): ResetLinkStatus {
-  const status = Array.isArray(value) ? value[0] : value;
+/** The page is opened with a one-time token in its query, so nothing it links
+ * to or loads may receive that URL as a referrer. */
+export const metadata: Metadata = {
+  referrer: "no-referrer",
+};
 
+function firstValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function getLinkStatus(
+  status: string | undefined,
+  token: string | undefined,
+): ResetLinkStatus {
   if (status === "expired") {
     return "expired";
   }
 
-  if (status === "invalid") {
+  if (status === "invalid" || !token) {
     return "invalid";
   }
 
@@ -26,6 +39,7 @@ export default async function ResetPasswordPage({
   searchParams: Promise<ResetSearchParams>;
 }) {
   const params = await searchParams;
+  const token = firstValue(params.token);
 
   return (
     <div className="flex flex-col gap-8">
@@ -34,7 +48,10 @@ export default async function ResetPasswordPage({
         title="Establecer una nueva contraseña"
         description="Elige una nueva contraseña que cumpla con los requisitos de seguridad."
       />
-      <ResetPasswordForm linkStatus={getLinkStatus(params.status)} />
+      <ResetPasswordForm
+        token={token ?? ""}
+        linkStatus={getLinkStatus(firstValue(params.status), token)}
+      />
     </div>
   );
 }

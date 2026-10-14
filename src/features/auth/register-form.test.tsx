@@ -22,6 +22,7 @@ import {
   invokeFormSubmitHandler,
 } from "./auth-test-utils";
 import { RegisterForm } from "./register-form";
+import { PASSWORD_POLICY } from "@/contracts/password-policy";
 
 vi.mock("next/link", async () => {
   const { AuthLinkMock } = await import("./auth-test-utils");
@@ -66,7 +67,7 @@ function submitRegisterForm(): void {
 }
 
 describe("RegisterForm", () => {
-  it("shows password requirements and field validation without submitting invalid data", () => {
+  it("hides requirements initially and validates on submit without sending invalid data", () => {
     let submitted = false;
     const service = createAuthService({
       register: async () => {
@@ -77,15 +78,141 @@ describe("RegisterForm", () => {
 
     render(<RegisterForm service={service} />);
     expect(
-      screen.getByRole("list", { name: "Requisitos de la contraseña" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("list", { name: "Requisitos de la contraseña" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
 
     submitRegisterForm();
 
     expect(submitted).toBe(false);
+    expect(
+      screen.getByRole("list", { name: "Requisitos de la contraseña" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Correo electrónico")).toHaveFocus();
     expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Nombre de usuario")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+  });
+
+  it("places email before nickname and gives autocomplete the correct semantics", () => {
+    const { container } = render(
+      <RegisterForm service={createAuthService()} />,
+    );
+    const fields = [...container.querySelectorAll("input")];
+
+    expect(fields.map((field) => field.name)).toEqual([
+      "email",
+      "nickname",
+      "password",
+      "confirmPassword",
+    ]);
+    expect(fields[0]).toHaveAttribute("type", "email");
+    expect(fields[0]).toHaveAttribute("autocomplete", "email");
+    expect(fields[1]).toHaveAttribute("autocomplete", "nickname");
+    expect(fields[1]).toHaveAttribute("id", "register-nickname");
+    expect(fields[2]).toHaveAttribute("autocomplete", "new-password");
+    expect(fields[3]).toHaveAttribute("autocomplete", "new-password");
+  });
+
+  it("waits for password blur, shows only unmet rules and removes them as they are met", () => {
+    render(<RegisterForm service={createAuthService()} />);
+    const password = screen.getByLabelText("Contraseña");
+
+    fireEvent.change(password, { target: { value: "short" } });
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+    expect(password).not.toHaveAttribute("aria-describedby");
+    expect(password).not.toHaveAttribute("aria-invalid");
+
+    fireEvent.blur(password);
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(
+      screen.getAllByText("La contraseña debe tener al menos 8 caracteres"),
+    ).toHaveLength(1);
+    expect(
+      screen.getByText("La contraseña debe contener una letra mayúscula"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("La contraseña debe contener una letra minúscula"),
+    ).not.toBeInTheDocument();
+    expect(password).toHaveAttribute(
+      "aria-describedby",
+      "register-password-requirements",
+    );
+    expect(password).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("list")).toHaveAttribute("aria-live", "polite");
+
+    fireEvent.change(password, { target: { value: "abcdefgh" } });
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(
+      screen.queryByText("La contraseña debe tener al menos 8 caracteres"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(password, { target: { value: "StrongPass1" } });
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+    expect(password).not.toHaveAttribute("aria-describedby");
+    expect(password).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("shows no checklist after a valid first blur and covers the existing maximum length", () => {
+    render(<RegisterForm service={createAuthService()} />);
+    const password = screen.getByLabelText("Contraseña");
+
+    fireEvent.change(password, { target: { value: "StrongPass1" } });
+    fireEvent.blur(password);
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+
+    fireEvent.change(password, {
+      target: { value: `Aa1${"x".repeat(PASSWORD_POLICY.MAX_LENGTH)}` },
+    });
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(
+      screen.getByText("La contraseña debe tener como máximo 1024 caracteres"),
+    ).toBeInTheDocument();
+  });
+
+  it("submits nickname as username without changing the public payload", async () => {
+    const register = vi.fn(async () => AUTH_TEST_USER);
+    render(
+      <RegisterForm
+        service={createAuthService({ register })}
+        onSuccess={vi.fn()}
+      />,
+    );
+    fillValidRegistration();
+    submitRegisterForm();
+
+    await waitFor(() =>
+      expect(register).toHaveBeenCalledWith({
+        username: "Movie_Fan",
+        email: "user@example.com",
+        password: "StrongPass1",
+        confirmPassword: "StrongPass1",
+      }),
+    );
+  });
+
+  it("retains provider password errors when the local requirements are satisfied", async () => {
+    const service = createAuthService({
+      register: async () => {
+        throw new AuthServiceError({ code: "WEAK_PASSWORD" });
+      },
+    });
+
+    render(<RegisterForm service={service} />);
+    fillValidRegistration();
+    submitRegisterForm();
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "Elige una contraseña que cumpla con todos los requisitos.",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Contraseña")).toHaveAttribute(
       "aria-invalid",
       "true",
     );
@@ -104,7 +231,9 @@ describe("RegisterForm", () => {
 
     const confirmation = screen.getByLabelText("Confirmar contraseña");
     expect(confirmation).toHaveAttribute("aria-invalid", "true");
-    expect(screen.getByText("Las contraseñas no coinciden")).toBeInTheDocument();
+    expect(
+      screen.getByText("Las contraseñas no coinciden"),
+    ).toBeInTheDocument();
     expect(register).not.toHaveBeenCalled();
   });
 
@@ -173,9 +302,7 @@ describe("RegisterForm", () => {
     fillValidRegistration();
     submitRegisterForm();
 
-    await waitFor(() =>
-      expect(routerPush).toHaveBeenCalledWith("/onboarding"),
-    );
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/onboarding"));
     expect(routerPush).toHaveBeenCalledTimes(1);
     expect(
       screen.getByRole("button", { name: "Creando cuenta…" }),
@@ -188,9 +315,7 @@ describe("RegisterForm", () => {
   });
 
   it("does not invoke callbacks or navigate when the form unmounts during registration", async () => {
-    let resolveRegister:
-      | ((user: typeof AUTH_TEST_USER) => void)
-      | undefined;
+    let resolveRegister: ((user: typeof AUTH_TEST_USER) => void) | undefined;
     const onSuccess = vi.fn();
     const service = createAuthService({
       register: async () =>

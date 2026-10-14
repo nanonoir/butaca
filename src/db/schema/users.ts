@@ -8,10 +8,14 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
+import { authUser } from "./auth";
+
 export const users = pgTable(
   "users",
   {
-    id: uuid("id").primaryKey(),
+    id: uuid("id")
+      .primaryKey()
+      .references(() => authUser.id, { onDelete: "cascade" }),
     displayName: varchar("display_name", { length: 80 }).notNull(),
     avatarUrl: text("avatar_url"),
     onboardingCompletedAt: timestamp("onboarding_completed_at", {

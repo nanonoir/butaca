@@ -44,10 +44,18 @@ describe("AuthServiceStub", () => {
     ).resolves.toBeUndefined();
     await expect(
       service.resetPassword({
+        token: "opaque-token",
         newPassword: "StrongPass1",
         confirmPassword: "StrongPass1",
       }),
     ).resolves.toBeUndefined();
+    await expect(
+      service.resetPassword({
+        token: "",
+        newPassword: "StrongPass1",
+        confirmPassword: "StrongPass1",
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
 
   it("rejects hung requests with AUTH_UNAVAILABLE after the finite timeout", async () => {

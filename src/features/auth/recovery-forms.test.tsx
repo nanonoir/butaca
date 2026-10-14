@@ -234,7 +234,7 @@ describe("ForgotPasswordForm", () => {
 describe("ResetPasswordForm", () => {
   it("renders a non-editable expired-link state with recovery navigation", () => {
     render(
-      <ResetPasswordForm
+      <ResetPasswordForm token="opaque-token"
         service={createAuthService()}
         linkStatus={RESET_LINK_STATUS.EXPIRED}
       />,
@@ -261,7 +261,7 @@ describe("ResetPasswordForm", () => {
     );
     const service = createAuthService({ resetPassword });
 
-    render(<ResetPasswordForm service={service} />);
+    render(<ResetPasswordForm token="opaque-token" service={service} />);
     fireEvent.change(screen.getByLabelText("Nueva contraseña"), {
       target: { value: "StrongPass1" },
     });
@@ -293,11 +293,43 @@ describe("ResetPasswordForm", () => {
     ).toBeNull();
   });
 
+  it("sends the link token with the new password and strips the query from the address", async () => {
+    window.history.replaceState(null, "", "/reset-password?token=opaque-token");
+    const resetPassword = vi.fn(async () => undefined);
+
+    render(
+      <ResetPasswordForm
+        token="opaque-token"
+        service={createAuthService({ resetPassword })}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    expect(window.location.search).toBe("");
+    expect(document.body.innerHTML).not.toContain("opaque-token");
+
+    fireEvent.change(screen.getByLabelText("Nueva contraseña"), {
+      target: { value: "StrongPass1" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirmar nueva contraseña"), {
+      target: { value: "StrongPass1" },
+    });
+    submitForm("Actualizar contraseña");
+
+    await waitFor(() =>
+      expect(resetPassword).toHaveBeenCalledWith({
+        token: "opaque-token",
+        newPassword: "StrongPass1",
+        confirmPassword: "StrongPass1",
+      }),
+    );
+  });
+
   it("validates, submits, and shows reusable reset success guidance", async () => {
     const onSuccess = vi.fn();
     const service = createAuthService();
 
-    render(<ResetPasswordForm service={service} onSuccess={onSuccess} />);
+    render(<ResetPasswordForm token="opaque-token" service={service} onSuccess={onSuccess} />);
     fireEvent.change(screen.getByLabelText("Nueva contraseña"), {
       target: { value: "StrongPass1" },
     });
@@ -334,7 +366,7 @@ describe("ResetPasswordForm", () => {
     const resetPassword = vi.fn(async () => undefined);
     const service = createAuthService({ resetPassword });
 
-    render(<ResetPasswordForm service={service} onSuccess={onSuccess} />);
+    render(<ResetPasswordForm token="opaque-token" service={service} onSuccess={onSuccess} />);
     fireEvent.change(screen.getByLabelText("Nueva contraseña"), {
       target: { value: "StrongPass1" },
     });
@@ -371,7 +403,7 @@ describe("ResetPasswordForm", () => {
     });
 
     try {
-      render(<ResetPasswordForm service={createAuthService()} onSuccess={onSuccess} />);
+      render(<ResetPasswordForm token="opaque-token" service={createAuthService()} onSuccess={onSuccess} />);
       fireEvent.change(screen.getByLabelText("Nueva contraseña"), {
         target: { value: "StrongPass1" },
       });
@@ -406,7 +438,7 @@ describe("ResetPasswordForm", () => {
     });
 
     const { unmount } = render(
-      <ResetPasswordForm service={service} onSuccess={onSuccess} />,
+      <ResetPasswordForm token="opaque-token" service={service} onSuccess={onSuccess} />,
     );
     fireEvent.change(screen.getByLabelText("Nueva contraseña"), {
       target: { value: "StrongPass1" },
@@ -434,7 +466,7 @@ describe("ResetPasswordForm", () => {
       },
     });
 
-    render(<ResetPasswordForm service={service} />);
+    render(<ResetPasswordForm token="opaque-token" service={service} />);
     fireEvent.change(screen.getByLabelText("Nueva contraseña"), {
       target: { value: "StrongPass1" },
     });
@@ -465,7 +497,7 @@ describe("ResetPasswordForm", () => {
     });
 
     try {
-      render(<ResetPasswordForm service={service} />);
+      render(<ResetPasswordForm token="opaque-token" service={service} />);
       fireEvent.change(screen.getByLabelText("Nueva contraseña"), {
         target: { value: "SecretPass1" },
       });

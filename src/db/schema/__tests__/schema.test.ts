@@ -82,6 +82,10 @@ const getForeignKeySummary = (table: AnyPgTable) =>
 describe("foundation database schema", () => {
   it("exports only the approved runtime schema surface", () => {
     expect(Object.keys(schema).sort()).toEqual([
+      "authAccount",
+      "authSession",
+      "authUser",
+      "authVerification",
       "movieCache",
       "movieReactionEnum",
       "reviewVerdictEnum",
@@ -311,7 +315,14 @@ describe("foundation database schema", () => {
       reviews: getForeignKeySummary(reviews),
       movieCache: getForeignKeySummary(movieCache),
     }).toEqual({
-      users: [],
+      users: [
+        {
+          columns: ["id"],
+          foreignTable: "auth_user",
+          foreignColumns: ["id"],
+          onDelete: "cascade",
+        },
+      ],
       userPreferences: [
         {
           columns: ["user_id"],

@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../integrations/better-auth", () => ({
+  getAuthBaseUrl: () => "https://butaca.test",
+}));
+
+import { z } from "zod";
 
 import { AuthErrorResponseSchema, AuthUserSchema } from "@/contracts/auth";
 
@@ -7,15 +13,23 @@ import type { UserRecord } from "../../db/schema/users";
 import {
   authErrorBody,
   authErrorStatus,
+  runAuthAction,
+  runAuthRoute,
   toAuthErrorCode,
   toAuthUser,
   toAuthUsername,
 } from "./auth-http";
 import {
   AuthProviderError,
+  AuthRateLimitedError,
+  EmailAlreadyRegisteredError,
+  InvalidAuthTokenError,
   InvalidCredentialsError,
+  ServiceUnavailableError,
   UnauthenticatedError,
   UserProfileNotProvisionedError,
+  VerificationEmailNotSentError,
+  WeakPasswordError,
 } from "./errors";
 
 function createUserRecord(displayName: string): UserRecord {
@@ -110,6 +124,129 @@ describe("auth error responses", () => {
   });
 });
 
+describe("auth POST origin guard", () => {
+  const schema = z.object({ email: z.string() });
+  const sameOrigin = {
+    origin: "https://butaca.test",
+    "sec-fetch-site": "same-origin",
+  };
+
+  function post(headers: Record<string, string>, body?: string): Request {
+    return new Request("https://butaca.test/api/login", {
+      method: "POST",
+      headers,
+      body,
+    });
+  }
+
+  function jsonPost(headers: Record<string, string>): Request {
+    return post(
+      { "content-type": "application/json", ...headers },
+      JSON.stringify({ email: "a@b.test" }),
+    );
+  }
+
+  async function expectRejected(
+    response: Response,
+    provider: ReturnType<typeof vi.fn>,
+  ): Promise<void> {
+    expect(response.status).toBe(400);
+    expect(
+      AuthErrorResponseSchema.parse(await response.json()).error.code,
+    ).toBe("VALIDATION_ERROR");
+    expect(provider).not.toHaveBeenCalled();
+  }
+
+  it.each([
+    [
+      "login CSRF with no cookie from a foreign origin",
+      { origin: "https://evil.test" },
+    ],
+    ["a null origin", { origin: "null" }],
+    ["a malformed origin", { origin: "not a url" }],
+    ["a missing origin", {}],
+    ["an origin with another port", { origin: "https://butaca.test:8443" }],
+    ["a forged referer without origin", { referer: "https://butaca.test/" }],
+    [
+      "cross-site fetch metadata despite a matching origin",
+      { origin: "https://butaca.test", "sec-fetch-site": "cross-site" },
+    ],
+    [
+      "same-site fetch metadata",
+      { origin: "https://butaca.test", "sec-fetch-site": "same-site" },
+    ],
+  ])(
+    "rejects %s on body routes without calling the provider",
+    async (_n, h) => {
+      const provider = vi.fn(async () => new Response(null, { status: 204 }));
+
+      await expectRejected(
+        await runAuthRoute(jsonPost(h), schema, provider),
+        provider,
+      );
+    },
+  );
+
+  it.each([
+    [
+      "logout with a foreign origin and cookie",
+      { origin: "https://evil.test", cookie: "session=1" },
+    ],
+    ["a missing origin", {}],
+    [
+      "cross-site fetch metadata",
+      { origin: "https://butaca.test", "sec-fetch-site": "cross-site" },
+    ],
+  ])(
+    "rejects %s on bodiless routes without calling the provider",
+    async (_n, h) => {
+      const provider = vi.fn(async () => new Response(null, { status: 204 }));
+
+      await expectRejected(await runAuthAction(post(h), provider), provider);
+    },
+  );
+
+  it("rejects simple (form) content types on body routes", async () => {
+    const provider = vi.fn(async () => new Response(null, { status: 204 }));
+    const request = post(
+      { ...sameOrigin, "content-type": "text/plain" },
+      JSON.stringify({ email: "a@b.test" }),
+    );
+
+    await expectRejected(
+      await runAuthRoute(request, schema, provider),
+      provider,
+    );
+  });
+
+  it("runs a same-origin JSON request", async () => {
+    const provider = vi.fn(async () => new Response(null, { status: 204 }));
+    const response = await runAuthRoute(jsonPost(sameOrigin), schema, provider);
+
+    expect(response.status).toBe(204);
+    expect(provider).toHaveBeenCalledWith({ email: "a@b.test" });
+  });
+
+  it("accepts a same-origin client that sends no fetch metadata", async () => {
+    const provider = vi.fn(async () => new Response(null, { status: 204 }));
+    const response = await runAuthRoute(
+      jsonPost({ origin: "https://butaca.test" }),
+      schema,
+      provider,
+    );
+
+    expect(response.status).toBe(204);
+  });
+
+  it("runs a same-origin bodiless request", async () => {
+    const provider = vi.fn(async () => new Response(null, { status: 204 }));
+    const response = await runAuthAction(post(sameOrigin), provider);
+
+    expect(response.status).toBe(204);
+    expect(provider).toHaveBeenCalledOnce();
+  });
+});
+
 describe("toAuthErrorCode", () => {
   it("maps invalid credentials to the credential code", () => {
     expect(toAuthErrorCode(new InvalidCredentialsError())).toBe(
@@ -129,6 +266,23 @@ describe("toAuthErrorCode", () => {
 
   it("maps anything unrecognized to UNKNOWN_ERROR", () => {
     expect(toAuthErrorCode(new Error("boom"))).toBe("UNKNOWN_ERROR");
+  });
+
+  it("maps the Better Auth era errors to existing contract codes", () => {
+    expect(toAuthErrorCode(new ServiceUnavailableError())).toBe(
+      "AUTH_UNAVAILABLE",
+    );
+    expect(toAuthErrorCode(new EmailAlreadyRegisteredError())).toBe(
+      "EMAIL_ALREADY_REGISTERED",
+    );
+    expect(toAuthErrorCode(new WeakPasswordError())).toBe("WEAK_PASSWORD");
+    expect(toAuthErrorCode(new InvalidAuthTokenError())).toBe(
+      "INVALID_RESET_LINK",
+    );
+    expect(toAuthErrorCode(new AuthRateLimitedError())).toBe("RATE_LIMITED");
+    expect(toAuthErrorCode(new VerificationEmailNotSentError())).toBe(
+      "AUTH_UNAVAILABLE",
+    );
     expect(toAuthErrorCode("not an error")).toBe("UNKNOWN_ERROR");
   });
 });

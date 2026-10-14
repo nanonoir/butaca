@@ -18,7 +18,7 @@ import {
   users,
 } from "../../src/db/schema";
 import { createIntegrationDatabase } from "./support/database";
-import { createTestAuthUser, deleteTestAuthUser } from "./support/supabase";
+import { createTestAuthUser, deleteTestAuthUser } from "./support/identity";
 
 let database: ReturnType<typeof createIntegrationDatabase> | undefined;
 let userRepository: UserRepository | undefined;
@@ -168,7 +168,7 @@ async function expectCheckConstraintViolation(
 async function cleanupTask6AuthUsers() {
   const userIds = [...task6AuthUserIds];
   const cleanupResults = await Promise.allSettled(
-    userIds.map((userId) => deleteTestAuthUser(userId)),
+    userIds.map((userId) => deleteTestAuthUser(getDatabase(), userId)),
   );
 
   task6AuthUserIds.length = 0;
@@ -186,7 +186,7 @@ async function cleanupTask6AuthUsers() {
 async function cleanupTask7AuthUsers() {
   const userIds = [...task7AuthUserIds];
   const cleanupResults = await Promise.allSettled(
-    userIds.map((userId) => deleteTestAuthUser(userId)),
+    userIds.map((userId) => deleteTestAuthUser(getDatabase(), userId)),
   );
 
   task7AuthUserIds.length = 0;
@@ -202,7 +202,9 @@ async function cleanupTask7AuthUsers() {
 }
 
 it("creates and finds a profile using the Auth UUID", async () => {
-  const authUser = await createTestAuthUser();
+  const authUser = await createTestAuthUser(getDatabase(), {
+    profile: "absent",
+  });
 
   try {
     const created = await getUserRepository().create({
@@ -219,12 +221,14 @@ it("creates and finds a profile using the Auth UUID", async () => {
     });
     expect(found).toEqual(created);
   } finally {
-    await deleteTestAuthUser(authUser.id);
+    await deleteTestAuthUser(getDatabase(), authUser.id);
   }
 });
 
 it("updates only the requested profile fields", async () => {
-  const authUser = await createTestAuthUser();
+  const authUser = await createTestAuthUser(getDatabase(), {
+    profile: "absent",
+  });
 
   try {
     await getUserRepository().create({
@@ -255,7 +259,7 @@ it("updates only the requested profile fields", async () => {
     );
     expect(unchanged).toEqual(updated);
   } finally {
-    await deleteTestAuthUser(authUser.id);
+    await deleteTestAuthUser(getDatabase(), authUser.id);
   }
 });
 
@@ -271,7 +275,9 @@ it("returns null for an unknown UUID", async () => {
 });
 
 it("upsertFromAuthUser repairs a missing profile idempotently", async () => {
-  const authUser = await createTestAuthUser();
+  const authUser = await createTestAuthUser(getDatabase(), {
+    profile: "absent",
+  });
   const authProfile = {
     id: authUser.id,
     displayName: "Auth profile",
@@ -295,20 +301,17 @@ it("upsertFromAuthUser repairs a missing profile idempotently", async () => {
     });
     expect(preserved).toEqual(edited);
   } finally {
-    await deleteTestAuthUser(authUser.id);
+    await deleteTestAuthUser(getDatabase(), authUser.id);
   }
 });
 
 it("uses transaction-scoped repositories atomically for onboarding persistence", async () => {
-  const authUser = await createTestAuthUser();
+  const authUser = await createTestAuthUser(getDatabase(), {
+    displayName: "Onboarding transaction profile",
+  });
   const completionTimestamp = new Date("2026-08-21T18:00:00.000Z");
 
   try {
-    await getUserRepository().create({
-      id: authUser.id,
-      displayName: "Onboarding transaction profile",
-      avatarUrl: null,
-    });
 
     await getDatabase().transaction(async (transaction) => {
       const users = new UserRepository(transaction);
@@ -346,28 +349,28 @@ it("uses transaction-scoped repositories atomically for onboarding persistence",
       await new UserPreferencesRepository(getDatabase()).findByUserId(authUser.id),
     ).toMatchObject({ preferredGenreIds: [28, 12] });
   } finally {
-    await deleteTestAuthUser(authUser.id);
+    await deleteTestAuthUser(getDatabase(), authUser.id);
   }
 });
 
-it("deleting the Auth user cascades to public.users", async () => {
-  const authUser = await createTestAuthUser();
+it("deleting the Auth user cascades to the profile", async () => {
+  const authUser = await createTestAuthUser(getDatabase(), {
+    displayName: "Cascade profile",
+  });
   let authUserDeleted = false;
 
   try {
-    await getUserRepository().create({
-      id: authUser.id,
+    expect(await getUserRepository().findById(authUser.id)).toMatchObject({
       displayName: "Cascade profile",
-      avatarUrl: null,
     });
 
-    await deleteTestAuthUser(authUser.id);
+    await deleteTestAuthUser(getDatabase(), authUser.id);
     authUserDeleted = true;
 
     expect(await getUserRepository().findById(authUser.id)).toBeNull();
   } finally {
     if (!authUserDeleted) {
-      await deleteTestAuthUser(authUser.id);
+      await deleteTestAuthUser(getDatabase(), authUser.id);
     }
   }
 });
@@ -381,13 +384,10 @@ describe("Task 6 repositories", () => {
 
     try {
       for (const displayName of ["Task 6 primary", "Task 6 secondary"]) {
-        const authUser = await createTestAuthUser();
-        task6AuthUserIds.push(authUser.id);
-        await getUserRepository().create({
-          id: authUser.id,
+        const authUser = await createTestAuthUser(getDatabase(), {
           displayName,
-          avatarUrl: null,
         });
+        task6AuthUserIds.push(authUser.id);
       }
     } catch {
       await cleanupTask6AuthUsers();
@@ -779,13 +779,10 @@ describe("Task 7 repositories", () => {
 
     try {
       for (const displayName of ["Task 7 primary", "Task 7 secondary"]) {
-        const authUser = await createTestAuthUser();
-        task7AuthUserIds.push(authUser.id);
-        await getUserRepository().create({
-          id: authUser.id,
+        const authUser = await createTestAuthUser(getDatabase(), {
           displayName,
-          avatarUrl: null,
         });
+        task7AuthUserIds.push(authUser.id);
       }
     } catch {
       await cleanupTask7AuthUsers();
@@ -1065,7 +1062,7 @@ describe("Task 7 repositories", () => {
       },
       {
         movieId: 7_009,
-        input: { ...validInput, description: "d".repeat(9) },
+        input: { ...validInput, description: "d".repeat(2) },
         expected: {
           code: "23514",
           constraintName: "reviews_description_length_check",
@@ -1089,7 +1086,7 @@ describe("Task 7 repositories", () => {
     const minimum = await repository.create(userId, 7_011, {
       verdict: "RECOMMENDED",
       title: "abc",
-      description: "d".repeat(10),
+      description: "d".repeat(3),
     });
     const maximum = await repository.create(userId, 7_012, {
       verdict: "NOT_WORTH_IT",
@@ -1098,7 +1095,7 @@ describe("Task 7 repositories", () => {
     });
 
     expect(minimum.title).toHaveLength(3);
-    expect(minimum.description).toHaveLength(10);
+    expect(minimum.description).toHaveLength(3);
     expect(maximum.title).toHaveLength(30);
     expect(maximum.description).toHaveLength(400);
   });
@@ -1246,18 +1243,15 @@ describe("Task 13 movie cache repository", () => {
   });
 });
 
-describe("Task 13 cascade from auth.users", () => {
+describe("Task 13 cascade from auth_user", () => {
   it("deleting the Auth user removes every row owned by that user", async () => {
-    const authUser = await createTestAuthUser();
+    const authUser = await createTestAuthUser(getDatabase(), {
+      displayName: "Cascade owner",
+    });
     const movieId = 13_101;
     let authUserDeleted = false;
 
     try {
-      await getUserRepository().create({
-        id: authUser.id,
-        displayName: "Cascade owner",
-        avatarUrl: null,
-      });
       await new UserPreferencesRepository(getDatabase()).create(
         authUser.id,
         [18, 878],
@@ -1282,7 +1276,7 @@ describe("Task 13 cascade from auth.users", () => {
         reviews: 1,
       });
 
-      await deleteTestAuthUser(authUser.id);
+      await deleteTestAuthUser(getDatabase(), authUser.id);
       authUserDeleted = true;
 
       expect(await countRowsOwnedBy(authUser.id)).toEqual({
@@ -1293,7 +1287,7 @@ describe("Task 13 cascade from auth.users", () => {
       });
     } finally {
       if (!authUserDeleted) {
-        await deleteTestAuthUser(authUser.id);
+        await deleteTestAuthUser(getDatabase(), authUser.id);
       }
     }
   });

@@ -28,6 +28,9 @@ export const PasswordSchema = z
   .min(PASSWORD_POLICY.MIN_LENGTH, {
     error: "La contraseña debe tener al menos 8 caracteres",
   })
+  .max(PASSWORD_POLICY.MAX_LENGTH, {
+    error: "La contraseña debe tener como máximo 1024 caracteres",
+  })
   .regex(PASSWORD_POLICY.UPPERCASE, {
     error: "La contraseña debe contener una letra mayúscula",
   })
@@ -66,22 +69,38 @@ export const ForgotPasswordRequestSchema = z.object({
   email: AuthEmailSchema,
 });
 
+const newPasswordFields = {
+  newPassword: PasswordSchema,
+  confirmPassword: z
+    .string()
+    .min(1, { error: "La confirmación de contraseña es obligatoria" }),
+};
+
+function requireMatchingNewPasswords(
+  value: { newPassword: string; confirmPassword: string },
+  context: z.RefinementCtx,
+): void {
+  if (value.newPassword !== value.confirmPassword) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["confirmPassword"],
+      message: "Las contraseñas no coinciden",
+    });
+  }
+}
+
+/** What the reset form collects. The recovery token comes from the link, never
+ * from the user, so it is not part of the form values. */
+export const ResetPasswordFormSchema = z
+  .object(newPasswordFields)
+  .superRefine(requireMatchingNewPasswords);
+
+/** The opaque one-time token delivered by the recovery link's callback query. */
+export const ResetTokenSchema = z.string().min(1);
+
 export const ResetPasswordRequestSchema = z
-  .object({
-    newPassword: PasswordSchema,
-    confirmPassword: z
-      .string()
-      .min(1, { error: "La confirmación de contraseña es obligatoria" }),
-  })
-  .superRefine((value, context) => {
-    if (value.newPassword !== value.confirmPassword) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["confirmPassword"],
-        message: "Las contraseñas no coinciden",
-      });
-    }
-  });
+  .object({ token: ResetTokenSchema, ...newPasswordFields })
+  .superRefine(requireMatchingNewPasswords);
 
 export const AuthUserSchema = z.object({
   id: z.uuid(),
@@ -127,6 +146,7 @@ export type Password = z.infer<typeof PasswordSchema>;
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 export type ForgotPasswordRequest = z.infer<typeof ForgotPasswordRequestSchema>;
+export type ResetPasswordForm = z.infer<typeof ResetPasswordFormSchema>;
 export type ResetPasswordRequest = z.infer<typeof ResetPasswordRequestSchema>;
 export type AuthUser = z.infer<typeof AuthUserSchema>;
 export type AuthErrorCode = z.infer<typeof AuthErrorCodeSchema>;

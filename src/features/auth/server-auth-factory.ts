@@ -1,18 +1,28 @@
 import "server-only";
 
+import { headers } from "next/headers";
+
 import { getDatabase } from "../../db";
 import { UserRepository } from "../../db/repositories/user-repository";
-import { createServerSupabaseClient } from "../../integrations/supabase/server";
+import {
+  createAuthApiPort,
+  getAuth,
+  getAuthRateLimiter,
+} from "../../integrations/better-auth";
 
 import { ServerAuthService } from "./server-auth-service";
 
-/** Built per request: the Supabase client is bound to the current cookie jar,
- * so it must never be cached across requests the way the database is. */
+/** Built per request: the service forwards this request's headers (cookies, IP,
+ * user agent) to the provider, so it must never be cached across requests the
+ * way the database and the provider instance are. */
 export async function getServerAuthService(): Promise<ServerAuthService> {
-  const supabase = await createServerSupabaseClient();
+  // Resolve the request before runtime-only dependencies: this also tells Next
+  // that authenticated pages cannot be prerendered without a request.
+  const requestHeaders = await headers();
 
   return new ServerAuthService(
-    supabase.auth,
+    createAuthApiPort(getAuth()),
     new UserRepository(getDatabase()),
+    { headers: requestHeaders, limiter: getAuthRateLimiter() },
   );
 }

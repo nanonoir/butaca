@@ -3,10 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import {
-  ResetPasswordRequestSchema,
-  type ResetPasswordRequest,
-} from "@/contracts";
+import { ResetPasswordFormSchema, type ResetPasswordForm } from "@/contracts";
 import { AuthTextLink } from "@/components/shared/auth-text-link";
 import { FormAlert } from "@/components/shared/form-alert";
 import { Button } from "@/components/ui/button";
@@ -50,6 +47,8 @@ export type { ResetLinkStatus } from "./reset-password-form.helpers";
 
 export interface ResetPasswordFormProps {
   service?: AuthService;
+  /** One-time token from the recovery link; sent back with the new password. */
+  token: string;
   linkStatus?: ResetLinkStatus;
   onSuccess?: () => void | Promise<void>;
   className?: string;
@@ -57,13 +56,13 @@ export interface ResetPasswordFormProps {
 
 export function ResetPasswordForm({
   service = httpAuthService,
+  token,
   linkStatus = RESET_LINK_STATUS.VALID,
   onSuccess,
   className,
 }: ResetPasswordFormProps) {
   const router = useRouter();
-  const [values, setValues] =
-    useState<ResetPasswordRequest>(INITIAL_RESET_VALUES);
+  const [values, setValues] = useState<ResetPasswordForm>(INITIAL_RESET_VALUES);
   const [fieldErrors, setFieldErrors] = useState<ResetFieldErrors>({});
   const [touched, setTouched] = useState<Record<ResetField, boolean>>({
     newPassword: false,
@@ -79,6 +78,12 @@ export function ResetPasswordForm({
   useEffect(() => {
     isMounted.current = true;
 
+    // The token is held in memory from here on; keeping it in the address bar
+    // would leave it in history and in anything the user copies.
+    if (window.location.search) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+
     return () => {
       isMounted.current = false;
     };
@@ -90,7 +95,7 @@ export function ResetPasswordForm({
     setFormError(null);
 
     if (touched[field] || hasSubmitted) {
-      const result = ResetPasswordRequestSchema.safeParse(nextValues);
+      const result = ResetPasswordFormSchema.safeParse(nextValues);
       setFieldErrors((previous) => ({
         ...previous,
         [field]: result.success
@@ -108,7 +113,7 @@ export function ResetPasswordForm({
 
   function handleFieldBlur(field: ResetField): void {
     setTouched((previous) => ({ ...previous, [field]: true }));
-    const result = ResetPasswordRequestSchema.safeParse(values);
+    const result = ResetPasswordFormSchema.safeParse(values);
     setFieldErrors((previous) => ({
       ...previous,
       [field]: result.success
@@ -127,7 +132,7 @@ export function ResetPasswordForm({
     }
 
     setHasSubmitted(true);
-    const result = ResetPasswordRequestSchema.safeParse(values);
+    const result = ResetPasswordFormSchema.safeParse(values);
 
     if (!result.success) {
       const errors = getZodFieldMessages(result.error.issues, RESET_FIELDS);
@@ -146,7 +151,9 @@ export function ResetPasswordForm({
 
     try {
       try {
-        await withAuthTimeout(service.resetPassword(result.data));
+        await withAuthTimeout(
+          service.resetPassword({ ...result.data, token }),
+        );
       } catch (error) {
         if (!isMounted.current) {
           return;
