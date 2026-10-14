@@ -133,7 +133,7 @@ Validation executed on the completed codebase tree (candidate for PR #51, docs/s
   - Inspected final container runner image: verified zero runtime-secret environment variables leaked into image layers.
   - Docker Compose configuration validated quietly (`docker compose config`).
   - Migration check passed via `drizzle-kit check`.
-- **Documentation Integrity**: Verified all local Markdown cross-links resolved cleanly across all 29 Markdown files in the repository.
+- **Documentation Integrity**: Verified all local Markdown cross-links resolved cleanly across all 31 Markdown files in the repository.
 - **Independent Engineering Review**: PR #48 cutover underwent independent review and received a PASS verdict with two nonblocking suggestions recorded below.
 
 ### Follow-up
