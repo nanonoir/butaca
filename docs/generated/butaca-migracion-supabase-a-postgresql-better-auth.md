@@ -261,7 +261,7 @@ Adaptador/servicio de autenticación de la aplicación
 
 ## 9. Estrategia de implementación — solo desarrollo
 
-El detalle y el progreso pertenecen al [ExecPlan activo](../exec-plans/active/2026-10-14-postgresql-better-auth.md), no a este PRD. La secuencia aprobada es breve: spike aislado de UUID, cookies, sesiones convencionales e integridad identidad/perfil; implementación de baseline, Better Auth, Resend y operación segura; tests; revisión independiente y correcciones; entrega con evidencia y pendientes reales.
+El detalle y el resultado de implementación pertenecen al [ExecPlan completado](../exec-plans/completed/2026-10-14-postgresql-better-auth.md), no a este PRD. La secuencia aprobada fue breve: spike aislado de UUID, cookies, sesiones convencionales e integridad identidad/perfil; implementación de baseline, Better Auth, Resend y operación segura; tests; revisión independiente y correcciones; entrega con evidencia y pendientes reales.
 
 No requiere aprobación intermedia para avanzar entre esas fases en desarrollo. Una incompatibilidad demostrada con las invariantes aprobadas debe reportarse, continuando lo independiente. DNS pendiente no bloquea implementar ni probar con aislamiento; sí impide afirmar entrega real de correo. Ninguna fase autoriza acceder a producción, a secretos reales o realizar operaciones destructivas sobre bases existentes.
 

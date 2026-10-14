@@ -4,7 +4,7 @@
 
 Implement the approved registration-only UX: email first, then nickname, password and confirmation. Give the browser nickname/email autocomplete semantics while keeping the public `username` payload unchanged. Hide password requirements until password blur or submit, show only unmet rules, remove satisfied rules while correcting, and hide the list when valid. Preserve validation policy, provider errors, accessibility and other forms.
 
-References: `src/features/auth/register-form.tsx`, `password-requirements.tsx`, `src/contracts/auth.ts`, `docs/product-specs/auth-flow.md`.
+References: `src/features/auth/register-form.tsx`, `src/features/auth/password-requirements.tsx`, `src/contracts/auth.ts`, `docs/product-specs/auth-flow.md`.
 
 ## Execution
 
@@ -39,7 +39,7 @@ None.
 
 - Unit and component tests: `node node_modules/vitest/vitest.mjs run src/features/auth/register-form.test.tsx src/features/auth/password-requirements.test.tsx src/features/auth/recovery-forms.test.tsx --maxWorkers=2` (3 files / 32 passed).
 - Auth test suite: `node node_modules/vitest/vitest.mjs run src/features/auth --maxWorkers=2` (12 files / 134 passed).
-- Static analysis: ESLint passed across all 4 touched source and test files (`register-form.tsx`, `register-form.test.tsx`, `password-requirements.tsx`, `password-requirements.test.tsx`).
+- Static analysis: ESLint passed across all 4 touched source and test files (`register-form.tsx`, `register-form.test.tsx`, `password-requirements.tsx`, `register-form.helpers.ts`).
 - Typecheck: Full pass on `next typegen && tsc --noEmit`.
 - Verified behaviors: DOM ordering, autocomplete attributes, focus order on first error, pre-blur hidden state, unmet-only list without duplication, dynamic item removal on correction, valid/max-length handling, untouched wire payload (`username`), and preserved provider errors.
 - External/integration scope: Live browser password-manager autofill profiles were not tested (advisory HTML semantics tested via DOM). No DB migrations, private environment changes, production deployments, or Git delivery operations were performed.
