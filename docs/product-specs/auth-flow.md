@@ -30,6 +30,7 @@ This specification defines the MVP authentication experience:
 
 ## Registration Field UX
 
-The current form remains username-first with the existing always-visible
-password checklist. The approved email-first/nickname and progressive-feedback
-adjustment is delivered separately in part 6; it does not change the HTTP payload.
+- Order: email, nickname (visible label "Nombre de usuario"), password, confirmation.
+- Email keeps `autocomplete="email"`; the nickname uses `name="nickname"` and `autocomplete="nickname"`. The HTTP payload remains `username`. Autocomplete hints reduce incorrect associations but cannot override every browser or password manager.
+- Password requirements are hidden initially and during first typing. On password blur or submit, show only rules not met, using the canonical password schema. Later corrections immediately remove satisfied rules; a valid password leaves no checklist.
+- Do not duplicate a checklist item as a separate field error. Keep other provider errors visible, first-error focus in visual order, and password accessibility descriptions linked only to visible feedback. Other auth forms retain their existing behavior.
