@@ -5,6 +5,7 @@ import type { TasteSummary } from "@/contracts/taste";
 
 import { LogoutButton } from "./logout-button";
 import { ProfileAvatarEditor } from "./profile-avatar-editor";
+import { ProfileEmailVerification } from "./profile-email-verification";
 import { ProfilePreferencesSummary } from "./profile-preferences-summary";
 import { ProfileRecentLikes } from "./profile-recent-likes";
 import { ProfileReviews } from "./profile-reviews";
@@ -21,6 +22,7 @@ export interface ProfileScreenProps {
   profile: {
     displayName: string;
     email: string;
+    emailVerified: boolean;
     initials: string;
     preferredGenreIds: readonly number[];
     activity: readonly ProfileActivityItem[];
@@ -119,6 +121,7 @@ export function ProfileScreen({ genreOptions, profile }: ProfileScreenProps) {
 
         <section aria-labelledby="profile-account-title">
           <SectionHeading id="profile-account-title">Cuenta</SectionHeading>
+          <ProfileEmailVerification emailVerified={profile.emailVerified} />
           <LogoutButton />
         </section>
       </div>

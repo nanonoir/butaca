@@ -56,6 +56,7 @@ const PROFILE = {
   ],
   displayName: "Sofía Ramírez",
   email: "sofia.ramirez@correo.com",
+  emailVerified: true,
   initials: "SR",
   preferredGenreIds: [878, 18, 53],
   activity: [

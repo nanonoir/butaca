@@ -67,7 +67,7 @@ Borrar la identidad de `auth_user` arrastra en cascada (`ON DELETE CASCADE`) el 
 
 `AuthService` resuelve la identidad en el servidor mediante `auth.api.getSession` y verifica la existencia del perfil en `public.users`. **Nunca** acepta un `userId` provisto por el cliente.
 
-- **Verificación de correo**: Se envía enlace de verificación tras el registro vía Resend. No bloquea login ni onboarding. El reenvío autenticado está disponible en `POST /api/resend-verification`; el control de Perfil se integra en la parte 7 de la cadena.
+- **Verificación de correo**: Se envía enlace de verificación tras el registro vía Resend. No bloquea login ni onboarding; el usuario puede reenviar la verificación desde Perfil.
 - **Restablecimiento de contraseña**: Utiliza un token explícito de un solo uso con caducidad.
 
 ---

@@ -50,6 +50,7 @@ export default async function ProfilePage() {
       profile={{
         displayName: session.user.displayName,
         email: session.email ?? "",
+        emailVerified: session.emailVerified,
         initials: getProfileInitials(session.user.displayName),
         preferredGenreIds: preferences?.preferredGenreIds ?? [],
         activity: [

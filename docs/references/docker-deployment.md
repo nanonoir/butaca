@@ -136,9 +136,8 @@ No confíes directamente en `CF-Connecting-IP` desde cualquier origen.
 
 ## Correo
 
-La verificación no bloquea login ni onboarding. El reenvío autenticado está
-disponible en `POST /api/resend-verification`; su control en Perfil llega en la
-parte 7 de la cadena. Resend se consulta en cada envío: una vez
+La verificación no bloquea login ni onboarding. Un usuario no verificado puede
+reenviar desde Perfil → Cuenta. Resend se consulta en cada envío: una vez
 verificado el DNS, no hay flag de activación ni reconstrucción de la app.
 Ver [registros DNS y verificación pendiente](./resend-dns.md). La aceptación por
 la API no demuestra entrega en la bandeja del destinatario.
