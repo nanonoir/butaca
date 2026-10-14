@@ -25,3 +25,17 @@ Do not add speculative ideas, wishlist items, or vague suggestions. Each entry m
 - **Description**: One full-suite run concurrent with native Next.js and Docker builds exceeded the real-timer Motion exit assertion deadline in `discover-screen.test.tsx` (805 passed / 1 failed). A subsequent run with `vitest --maxWorkers=2` passed (806 tests), as did the independent reviewer's default-worker run. CPU contention is consistent with these observations, not a separately measured root cause.
 - **Impact**: An intermittent test assertion under concurrent build load; no runtime regression was observed and production builds pass.
 - **Remediation**: Keep worker concurrency bounded (`--maxWorkers=2`) during heavy automated CI/multi-build environments, or advance fake timers explicitly in animation tests if test isolation warrants it.
+
+### TD-004: Readiness Probe Timeout Does Not Cancel the Database Query
+- **Discovered**: 2026-10-14 (PostgreSQL & Better Auth Migration review)
+- **Location**: `src/app/api/ready/route.ts`
+- **Description**: The readiness handler uses `Promise.race` to return after a 2-second timeout, but the losing database query continues running. It relies on the PostgreSQL connection pool's 15-second statement timeout to terminate the query; the probe timeout itself does not cancel it.
+- **Impact**: Timed-out readiness checks can occupy a database connection until the statement timeout, potentially reducing pool capacity during database degradation.
+- **Remediation**: If supported by the database client, pass an `AbortSignal` to the query and abort it when the readiness timeout elapses; otherwise document and validate the bounded pool-level timeout behavior.
+
+### TD-005: Legacy Default Display Name in Profile-Creation Trigger
+- **Discovered**: 2026-10-14 (PostgreSQL & Better Auth Migration review)
+- **Location**: `src/db/migrations/0001_auth_profile_trigger.sql`
+- **Description**: The profile-creation trigger uses the fallback display name `Film Match user`, which is a legacy prototype label rather than the current product name.
+- **Impact**: Accounts that rely on this fallback may display inconsistent branding.
+- **Remediation**: Standardize the fallback in a future migration if this default remains user-visible and product requirements call for the current brand.
